@@ -1,0 +1,13 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+config.json
+outputs/
+work/
+__pycache__/
+*.py[cod]
+*.db
+*.db-*
+.venv/
+
