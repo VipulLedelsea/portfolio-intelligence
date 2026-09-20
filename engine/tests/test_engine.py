@@ -17,6 +17,10 @@ class FakeMarket:
             "atr_14_pct": 3.0, "volume_ratio_5d_to_20d": 1.3,
             "market_time": "2026-09-20T12:00:00+00:00", "fetched_at": "2026-09-20T12:01:00+00:00",
             "data_complete": True,
+            "history": [
+                {"date": f"2026-08-{day:02d}", "close": 90.0 + day / 3, "high": 91.0 + day / 3, "low": 89.0 + day / 3, "volume": 1_000_000}
+                for day in range(1, 29)
+            ],
         }
 
 
@@ -64,6 +68,9 @@ class EngineTests(unittest.TestCase):
         self.assertGreater(decision["target_position_pct"], 0)
         self.assertTrue(decision["read_only"])
         self.assertFalse(decision["order_submission_supported"])
+        self.assertEqual(decision["chart"]["stance"], "IDEA")
+        self.assertGreater(decision["chart"]["levels"]["target_1"], decision["entry_price"])
+        self.assertGreater(decision["chart"]["levels"]["target_2"], decision["chart"]["levels"]["target_1"])
         self.assertEqual(len(engine.memory.history()), 1)
 
     def test_incomplete_research_is_vetoed(self):

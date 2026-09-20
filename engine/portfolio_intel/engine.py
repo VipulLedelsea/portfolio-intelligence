@@ -60,6 +60,12 @@ class PortfolioEngine:
             portfolio = portfolio_review(ticker, trade, risk, self.memory.positions(), self.settings)
             approved = bool(risk["approved"] and portfolio["approved"])
             action = trade["action"] if approved else ("WATCH" if trade["action"] == "IDEA" else trade["action"])
+            technical = next(report for report in reports if report["role"] == "price_action")
+            chart_explanation = (
+                technical.get("evidence", [])[:3] + synthesis.get("evidence", [])[:2]
+                if approved
+                else risk["veto_reasons"][:4]
+            )
             decision = {
                 "run_id": run_id,
                 "symbol": ticker,
@@ -77,6 +83,22 @@ class PortfolioEngine:
                 "trade_plan": trade,
                 "risk_review": risk,
                 "portfolio_review": portfolio,
+                "chart": {
+                    "series": snapshot.get("history", []),
+                    "levels": {
+                        "reference": trade["entry_price"],
+                        "risk": trade["stop_price"],
+                        "target_1": trade["target_1"],
+                        "target_2": trade["target_2"],
+                    },
+                    "target_upside_pct": {
+                        "target_1": trade["target_1_upside_pct"],
+                        "target_2": trade["target_2_upside_pct"],
+                    },
+                    "stance": action,
+                    "explanation": chart_explanation,
+                    "method": "Risk level is two 14-day average ranges below the reference price; scenario targets are 2R and 3R above it.",
+                },
                 "read_only": True,
                 "order_submission_supported": False,
             }

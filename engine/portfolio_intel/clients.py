@@ -156,10 +156,30 @@ class MarketDataClient:
             raise RuntimeError(f"No market data for {ticker}: {error}")
         data = result[0]
         quotes = (data.get("indicators", {}).get("quote") or [{}])[0]
-        closes = [float(v) for v in quotes.get("close", []) if v is not None]
-        highs = [float(v) for v in quotes.get("high", []) if v is not None]
-        lows = [float(v) for v in quotes.get("low", []) if v is not None]
-        volumes = [float(v) for v in quotes.get("volume", []) if v is not None]
+        timestamps = data.get("timestamp", [])
+        raw_closes = quotes.get("close", [])
+        raw_highs = quotes.get("high", [])
+        raw_lows = quotes.get("low", [])
+        raw_volumes = quotes.get("volume", [])
+        rows: list[dict[str, Any]] = []
+        for index, timestamp in enumerate(timestamps):
+            close = raw_closes[index] if index < len(raw_closes) else None
+            if close is None:
+                continue
+            high = raw_highs[index] if index < len(raw_highs) else None
+            low = raw_lows[index] if index < len(raw_lows) else None
+            volume = raw_volumes[index] if index < len(raw_volumes) else None
+            rows.append({
+                "date": datetime.fromtimestamp(timestamp, timezone.utc).date().isoformat(),
+                "close": round(float(close), 4),
+                "high": round(float(high if high is not None else close), 4),
+                "low": round(float(low if low is not None else close), 4),
+                "volume": int(volume or 0),
+            })
+        closes = [row["close"] for row in rows]
+        highs = [row["high"] for row in rows]
+        lows = [row["low"] for row in rows]
+        volumes = [float(row["volume"]) for row in rows]
         if len(closes) < 22:
             raise RuntimeError(f"Insufficient price history for {ticker}")
         meta = data.get("meta", {})
@@ -189,6 +209,7 @@ class MarketDataClient:
             "market_time": datetime.fromtimestamp(meta.get("regularMarketTime", time.time()), timezone.utc).isoformat(),
             "fetched_at": datetime.now(timezone.utc).isoformat(),
             "data_complete": True,
+            "history": rows[-90:],
         }
 
     @staticmethod

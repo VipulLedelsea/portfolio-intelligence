@@ -28,6 +28,10 @@ def plan_trade(snapshot: dict[str, Any], synthesis: dict[str, Any], settings: Se
         "entry_price": round(price, 4),
         "stop_price": round(stop, 4),
         "target_position_pct": round(size_pct, 3),
+        "target_1": round(price + stop_distance * 2, 4),
+        "target_2": round(price + stop_distance * 3, 4),
+        "target_1_upside_pct": round((stop_distance * 2 / price) * 100, 2),
+        "target_2_upside_pct": round((stop_distance * 3 / price) * 100, 2),
         "research_note": "Reference levels are for risk framing only; the application has no order capability.",
     }
 

@@ -13,6 +13,9 @@ This is the working system behind the concept: a governed, read-only multi-agent
 7. Independent risk rules can veto the trade. No later agent can override that veto.
 8. The portfolio manager checks existing positions before sign-off.
 9. Every report and decision is stored in SQLite. The `grade` command compares a recommendation with the latest price and saves a reusable lesson.
+10. Each full review includes a 90-session price chart with a 20-day moving average, the current reference price, an ATR-based risk level, and two clearly labeled scenario targets.
+
+The first and second targets are planning scenarios at roughly two and three times the defined risk distance. They are not price promises. If the evidence is incomplete or governance rejects the setup, the chart says `WATCH` or `PASS` and explains the reasons instead of presenting it as an investment idea.
 
 The `discover` command performs a fast live pre-screen across a diversified large-cap universe. It ranks candidates using transparent trend, momentum, volume, and volatility inputs. A high discovery score is a prompt for deeper research, not a buy signal.
 
