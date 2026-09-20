@@ -66,6 +66,11 @@ class PortfolioHandler(BaseHTTPRequestHandler):
                     raise ValueError("symbol is required")
                 self._json(HTTPStatus.OK, self.engine.analyze(symbol))
                 return
+            if path == "/api/discover":
+                raw_universe = payload.get("universe")
+                universe = raw_universe if isinstance(raw_universe, list) else None
+                self._json(HTTPStatus.OK, self.engine.discover(limit=int(payload.get("limit", 8)), universe=universe))
+                return
             if path == "/api/grade":
                 self._json(HTTPStatus.OK, self.engine.grade(int(payload["decision_id"])))
                 return
@@ -87,4 +92,3 @@ def serve(host: str, port: int, *, settings: Settings, memory: MemoryStore) -> N
         pass
     finally:
         server.server_close()
-

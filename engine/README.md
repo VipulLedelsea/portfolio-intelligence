@@ -14,6 +14,8 @@ This is the working system behind the concept: a governed, multi-agent research 
 8. The portfolio manager checks existing positions before sign-off.
 9. Every report and decision is stored in SQLite. The `grade` command compares a recommendation with the latest price and saves a reusable lesson.
 
+The `discover` command performs a fast live pre-screen across a diversified large-cap universe. It ranks candidates using transparent trend, momentum, volume, and volatility inputs. A high discovery score is a prompt for deeper research, not a buy signal.
+
 The engine is intentionally paper-only. It contains no brokerage order endpoint.
 
 ## Start it
@@ -23,6 +25,7 @@ cd engine
 cp config.example.json config.json
 export OPENAI_API_KEY="your-key"
 python3 -m portfolio_intel analyze AAPL
+python3 -m portfolio_intel discover --limit 8
 ```
 
 The default model is `gpt-5.6-luna`; change `OPENAI_MODEL` or `config.json` to use another Responses API model.
@@ -58,4 +61,3 @@ The tests use fixed market data and a fake research client, so they do not need 
 ## Safety boundary
 
 This project is research infrastructure, not investment advice. Before connecting any broker, add authentication, secrets management, human approval, idempotent orders, reconciliation, market-hours controls, regulatory review, and a kill switch.
-

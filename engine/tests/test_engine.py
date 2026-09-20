@@ -20,6 +20,18 @@ class FakeMarket:
         }
 
 
+class RankedFakeMarket(FakeMarket):
+    def snapshot(self, symbol):
+        value = super().snapshot(symbol)
+        adjustments = {
+            "LEAD": {"return_20d_pct": 18.0, "return_60d_pct": 28.0, "volume_ratio_5d_to_20d": 1.5},
+            "LAG": {"price": 80.0, "return_20d_pct": -12.0, "return_60d_pct": -18.0, "annualized_volatility_pct": 70.0},
+        }
+        value.update(adjustments.get(symbol, {}))
+        value["symbol"] = symbol
+        return value
+
+
 class FakeResearch:
     def __init__(self, score=75, confidence=0.8, complete=True):
         self.score = score
@@ -66,7 +78,13 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(grade["grade"], "C")
         self.assertEqual(len(engine.memory.recent_lessons("all")), 1)
 
+    def test_discovery_ranks_stronger_candidate_first(self):
+        engine = PortfolioEngine(memory=MemoryStore(self.db), market=RankedFakeMarket(), research=FakeResearch())
+        result = engine.discover(limit=2, universe=["LAG", "LEAD"])
+        self.assertEqual(result["candidates"][0]["symbol"], "LEAD")
+        self.assertGreater(result["candidates"][0]["score"], result["candidates"][1]["score"])
+        self.assertTrue(result["paper_only"])
+
 
 if __name__ == "__main__":
     unittest.main()
-

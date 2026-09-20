@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 from typing import Any
 
 from .agents import fallback_debate, run_debate, run_research_agents
@@ -8,6 +10,12 @@ from .clients import MarketDataClient, OpenAIResearchClient, ResearchClient, Saf
 from .config import Settings
 from .governance import plan_trade, portfolio_review, risk_review
 from .memory import MemoryStore
+
+
+DEFAULT_UNIVERSE = [
+    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "AVGO", "JPM", "V", "MA",
+    "LLY", "UNH", "XOM", "COST", "WMT", "HD", "CRM", "NFLX", "AMD", "ORCL",
+]
 
 
 class PortfolioEngine:
@@ -79,6 +87,90 @@ class PortfolioEngine:
             self.memory.fail_run(run_id, str(exc))
             raise
 
+    def discover(self, *, limit: int = 8, universe: list[str] | None = None) -> dict[str, Any]:
+        """Rank a liquid stock universe for further research using current market data."""
+        symbols = list(dict.fromkeys(symbol.upper().strip() for symbol in (universe or DEFAULT_UNIVERSE) if symbol.strip()))
+        if not symbols:
+            raise ValueError("The discovery universe is empty")
+        if len(symbols) > 100:
+            raise ValueError("Discovery is limited to 100 symbols per scan")
+        candidates: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
+        with ThreadPoolExecutor(max_workers=min(8, len(symbols)), thread_name_prefix="market-scan") as pool:
+            futures = {pool.submit(self.market.snapshot, symbol): symbol for symbol in symbols}
+            for future in as_completed(futures):
+                symbol = futures[future]
+                try:
+                    snapshot = future.result()
+                    candidates.append(self._score_candidate(snapshot))
+                except Exception as exc:
+                    errors.append({"symbol": symbol, "error": str(exc)})
+        candidates.sort(key=lambda candidate: candidate["score"], reverse=True)
+        bounded_limit = max(1, min(int(limit), 25))
+        return {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "universe_size": len(symbols),
+            "successful": len(candidates),
+            "candidates": candidates[:bounded_limit],
+            "errors": errors,
+            "method": "Transparent technical pre-screen: trend, 20/60-day momentum, volume participation, and volatility penalty.",
+            "next_step": "Run the full committee on a candidate before treating it as actionable.",
+            "paper_only": True,
+        }
+
+    @staticmethod
+    def _score_candidate(snapshot: dict[str, Any]) -> dict[str, Any]:
+        price = float(snapshot["price"])
+        sma20 = float(snapshot["sma_20"])
+        sma50 = float(snapshot["sma_50"] or sma20)
+        r20 = float(snapshot["return_20d_pct"])
+        r60 = float(snapshot["return_60d_pct"])
+        volume_ratio = float(snapshot["volume_ratio_5d_to_20d"])
+        volatility = float(snapshot["annualized_volatility_pct"])
+        score = 50.0
+        reasons: list[str] = []
+        cautions: list[str] = []
+        if price > sma20:
+            score += 10
+            reasons.append("Trading above its 20-day average")
+        else:
+            score -= 10
+            cautions.append("Trading below its 20-day average")
+        if sma20 > sma50:
+            score += 10
+            reasons.append("20-day trend is above the 50-day trend")
+        else:
+            score -= 10
+            cautions.append("Intermediate trend has not turned positive")
+        score += max(-15, min(15, r20 / 1.5))
+        score += max(-10, min(10, r60 / 3.0))
+        score += max(-5, min(5, (volume_ratio - 1) * 10))
+        volatility_penalty = max(0, min(20, (volatility - 35) * 0.25))
+        score -= volatility_penalty
+        if r20 > 0:
+            reasons.append(f"Positive 20-day momentum of {r20:.1f}%")
+        else:
+            cautions.append(f"Negative 20-day momentum of {r20:.1f}%")
+        if volume_ratio >= 1.15:
+            reasons.append(f"Recent volume is {volume_ratio:.2f}× baseline")
+        if volatility > 55:
+            cautions.append(f"Elevated annualized volatility of {volatility:.1f}%")
+        score = round(max(0, min(100, score)), 1)
+        label = "Strong research candidate" if score >= 70 else "Research candidate" if score >= 60 else "Watch only"
+        return {
+            "symbol": snapshot["symbol"],
+            "score": score,
+            "label": label,
+            "price": price,
+            "return_1d_pct": snapshot["return_1d_pct"],
+            "return_20d_pct": r20,
+            "return_60d_pct": r60,
+            "annualized_volatility_pct": volatility,
+            "reasons": reasons[:4],
+            "cautions": cautions[:3],
+            "market_time": snapshot["market_time"],
+        }
+
     def grade(self, decision_id: int) -> dict[str, Any]:
         decision = self.memory.get_decision(decision_id)
         if not decision:
@@ -119,4 +211,3 @@ class PortfolioEngine:
         }
         self.memory.save_evaluation(decision_id, evaluation)
         return evaluation
-

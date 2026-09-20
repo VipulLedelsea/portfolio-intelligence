@@ -21,6 +21,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     analyze = sub.add_parser("analyze", help="Run the complete research and governance pipeline")
     analyze.add_argument("symbol")
+    discover = sub.add_parser("discover", help="Rank a liquid stock universe for further research")
+    discover.add_argument("--limit", type=int, default=8)
+    discover.add_argument("--universe", help="Comma-separated ticker symbols; defaults to a diversified large-cap universe")
     grade = sub.add_parser("grade", help="Grade a saved recommendation against the latest market price")
     grade.add_argument("decision_id", type=int)
     history = sub.add_parser("history", help="Show saved recommendations and grades")
@@ -55,6 +58,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "analyze":
             print_json(engine.analyze(args.symbol))
+        elif args.command == "discover":
+            universe = [item.strip() for item in args.universe.split(",")] if args.universe else None
+            print_json(engine.discover(limit=args.limit, universe=universe))
         elif args.command == "grade":
             print_json(engine.grade(args.decision_id))
     except Exception as exc:
@@ -65,4 +71,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
