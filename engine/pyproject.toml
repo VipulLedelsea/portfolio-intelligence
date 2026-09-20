@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "portfolio-intelligence"
+version = "0.1.0"
+description = "Governed multi-agent investment research and paper-trading engine"
+requires-python = ">=3.11"
+dependencies = ["certifi>=2024.2.2"]
+
+[project.scripts]
+portfolio-intel = "portfolio_intel.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["portfolio_intel*"]

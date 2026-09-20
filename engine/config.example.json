@@ -1,0 +1,12 @@
+{
+  "model": "gpt-5.6-luna",
+  "starting_equity": 100000,
+  "max_position_pct": 5.0,
+  "max_sector_pct": 20.0,
+  "risk_per_trade_pct": 0.5,
+  "max_annualized_volatility_pct": 85.0,
+  "minimum_confidence": 0.60,
+  "minimum_research_score": 45,
+  "recommendation_horizon_days": 30
+}
+

@@ -1,0 +1,198 @@
+from __future__ import annotations
+
+import json
+import math
+import os
+import ssl
+import statistics
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import datetime, timezone
+from typing import Any, Protocol
+
+try:
+    import certifi
+except ImportError:  # pragma: no cover - standard trust store is the fallback
+    certifi = None
+
+
+def trusted_ssl_context() -> ssl.SSLContext:
+    return ssl.create_default_context(cafile=certifi.where() if certifi else None)
+
+
+REPORT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "role": {"type": "string"},
+        "symbol": {"type": "string"},
+        "score": {"type": "number", "minimum": 0, "maximum": 100},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "thesis": {"type": "string"},
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "risks": {"type": "array", "items": {"type": "string"}},
+        "sources": {"type": "array", "items": {"type": "string"}},
+        "as_of": {"type": "string"},
+        "data_complete": {"type": "boolean"},
+    },
+    "required": [
+        "role", "symbol", "score", "confidence", "thesis", "evidence",
+        "risks", "sources", "as_of", "data_complete",
+    ],
+}
+
+
+class ResearchClient(Protocol):
+    def report(self, *, role: str, symbol: str, instructions: str, context: dict[str, Any], use_web: bool) -> dict[str, Any]: ...
+
+
+class OpenAIResearchClient:
+    """Small dependency-free Responses API client with strict structured output."""
+
+    endpoint = "https://api.openai.com/v1/responses"
+
+    def __init__(self, model: str, api_key: str | None = None, timeout: int = 90) -> None:
+        self.model = model
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
+        self.timeout = timeout
+        if not self.api_key:
+            raise ValueError("OPENAI_API_KEY is not configured")
+
+    def report(self, *, role: str, symbol: str, instructions: str, context: dict[str, Any], use_web: bool) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "store": False,
+            "instructions": instructions,
+            "input": json.dumps({"symbol": symbol, "role": role, "context": context}),
+            "reasoning": {"effort": "low"},
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "agent_report",
+                    "strict": True,
+                    "schema": REPORT_SCHEMA,
+                }
+            },
+        }
+        if use_web:
+            payload["tools"] = [{"type": "web_search"}]
+        request = urllib.request.Request(
+            self.endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout, context=trusted_ssl_context()) as response:
+                    raw = json.load(response)
+                text = self._output_text(raw)
+                report = json.loads(text)
+                report["role"] = role
+                report["symbol"] = symbol
+                return report
+            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+                last_error = exc
+                if attempt < 2:
+                    time.sleep(1.5 * (attempt + 1))
+        raise RuntimeError(f"OpenAI research request failed after retries: {last_error}")
+
+    @staticmethod
+    def _output_text(response: dict[str, Any]) -> str:
+        chunks: list[str] = []
+        for item in response.get("output", []):
+            if item.get("type") != "message":
+                continue
+            for content in item.get("content", []):
+                if content.get("type") == "output_text" and content.get("text"):
+                    chunks.append(content["text"])
+        if not chunks:
+            raise RuntimeError("Responses API returned no output text")
+        return "".join(chunks)
+
+
+class SafeFallbackResearchClient:
+    """Keeps the pipeline runnable but marks research incomplete so risk can veto."""
+
+    def report(self, *, role: str, symbol: str, instructions: str, context: dict[str, Any], use_web: bool) -> dict[str, Any]:
+        return {
+            "role": role,
+            "symbol": symbol,
+            "score": 50,
+            "confidence": 0.20,
+            "thesis": f"{role.title()} research is unavailable until OPENAI_API_KEY is configured.",
+            "evidence": ["The orchestration path completed in safe fallback mode."],
+            "risks": ["Required external research was not available."],
+            "sources": [],
+            "as_of": datetime.now(timezone.utc).isoformat(),
+            "data_complete": False,
+        }
+
+
+class MarketDataClient:
+    """Fetches daily OHLCV data from Yahoo's public chart endpoint."""
+
+    def __init__(self, timeout: int = 20) -> None:
+        self.timeout = timeout
+
+    def snapshot(self, symbol: str) -> dict[str, Any]:
+        ticker = symbol.upper().strip()
+        if not ticker or not all(ch.isalnum() or ch in ".-^" for ch in ticker):
+            raise ValueError("Invalid ticker symbol")
+        encoded = urllib.parse.quote(ticker, safe="")
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{encoded}?range=6mo&interval=1d&events=div%2Csplits"
+        request = urllib.request.Request(url, headers={"User-Agent": "PortfolioIntelligence/0.1"})
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout, context=trusted_ssl_context()) as response:
+                payload = json.load(response)
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+            raise RuntimeError(f"Could not fetch market data for {ticker}: {exc}") from exc
+        result = payload.get("chart", {}).get("result") or []
+        if not result:
+            error = payload.get("chart", {}).get("error")
+            raise RuntimeError(f"No market data for {ticker}: {error}")
+        data = result[0]
+        quotes = (data.get("indicators", {}).get("quote") or [{}])[0]
+        closes = [float(v) for v in quotes.get("close", []) if v is not None]
+        highs = [float(v) for v in quotes.get("high", []) if v is not None]
+        lows = [float(v) for v in quotes.get("low", []) if v is not None]
+        volumes = [float(v) for v in quotes.get("volume", []) if v is not None]
+        if len(closes) < 22:
+            raise RuntimeError(f"Insufficient price history for {ticker}")
+        meta = data.get("meta", {})
+        current = float(meta.get("regularMarketPrice") or closes[-1])
+        returns = [math.log(closes[i] / closes[i - 1]) for i in range(1, len(closes)) if closes[i - 1] > 0]
+        annual_vol = statistics.pstdev(returns[-60:]) * math.sqrt(252) * 100 if len(returns) >= 2 else 0.0
+        true_ranges = [highs[i] - lows[i] for i in range(min(len(highs), len(lows)))]
+        atr14 = statistics.fmean(true_ranges[-14:]) if true_ranges else current * 0.03
+        volume_recent = statistics.fmean(volumes[-5:]) if len(volumes) >= 5 else 0.0
+        volume_base = statistics.fmean(volumes[-25:-5]) if len(volumes) >= 25 else volume_recent or 1.0
+        return {
+            "symbol": ticker,
+            "currency": meta.get("currency", "USD"),
+            "exchange": meta.get("exchangeName") or meta.get("fullExchangeName") or "Unknown",
+            "price": round(current, 4),
+            "previous_close": round(float(meta.get("chartPreviousClose") or closes[-2]), 4),
+            "return_1d_pct": round(self._period_return(closes, 1), 3),
+            "return_5d_pct": round(self._period_return(closes, 5), 3),
+            "return_20d_pct": round(self._period_return(closes, 20), 3),
+            "return_60d_pct": round(self._period_return(closes, 60), 3),
+            "sma_20": round(statistics.fmean(closes[-20:]), 4),
+            "sma_50": round(statistics.fmean(closes[-50:]), 4) if len(closes) >= 50 else None,
+            "annualized_volatility_pct": round(annual_vol, 3),
+            "atr_14": round(atr14, 4),
+            "atr_14_pct": round((atr14 / current) * 100, 3),
+            "volume_ratio_5d_to_20d": round(volume_recent / volume_base, 3) if volume_base else 1.0,
+            "market_time": datetime.fromtimestamp(meta.get("regularMarketTime", time.time()), timezone.utc).isoformat(),
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "data_complete": True,
+        }
+
+    @staticmethod
+    def _period_return(closes: list[float], days: int) -> float:
+        if len(closes) <= days:
+            return 0.0
+        return (closes[-1] / closes[-days - 1] - 1) * 100
