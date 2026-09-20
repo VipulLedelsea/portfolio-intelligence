@@ -6,16 +6,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .agents import fallback_debate, run_debate, run_research_agents
-from .clients import MarketDataClient, OpenAIResearchClient, ResearchClient, SafeFallbackResearchClient
+from .clients import MarketDataClient, OpenAIResearchClient, ResearchClient, SafeFallbackResearchClient, SP500UniverseClient
 from .config import Settings
 from .governance import plan_trade, portfolio_review, risk_review
 from .memory import MemoryStore
-
-
-DEFAULT_UNIVERSE = [
-    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "AVGO", "JPM", "V", "MA",
-    "LLY", "UNH", "XOM", "COST", "WMT", "HD", "CRM", "NFLX", "AMD", "ORCL",
-]
 
 
 class PortfolioEngine:
@@ -26,10 +20,12 @@ class PortfolioEngine:
         memory: MemoryStore | None = None,
         market: MarketDataClient | Any | None = None,
         research: ResearchClient | None = None,
+        universe_client: SP500UniverseClient | Any | None = None,
     ) -> None:
         self.settings = settings or Settings.load()
         self.memory = memory or MemoryStore(os.environ.get("PORTFOLIO_INTEL_DB", "portfolio_memory.db"))
         self.market = market or MarketDataClient()
+        self.universe_client = universe_client or SP500UniverseClient()
         if research is not None:
             self.research = research
             self.has_llm = not isinstance(research, SafeFallbackResearchClient)
@@ -110,28 +106,47 @@ class PortfolioEngine:
             self.memory.fail_run(run_id, str(exc))
             raise
 
-    def discover(self, *, limit: int = 8, universe: list[str] | None = None) -> dict[str, Any]:
-        """Rank a liquid stock universe for further research using current market data."""
-        symbols = list(dict.fromkeys(symbol.upper().strip() for symbol in (universe or DEFAULT_UNIVERSE) if symbol.strip()))
+    def discover(self, *, limit: int = 20, universe: list[str] | None = None) -> dict[str, Any]:
+        """Rank the S&P 500 or an explicit universe using current market data."""
+        if universe is None:
+            constituent_records = self.universe_client.constituents()
+            universe_name = "S&P 500"
+            universe_source = getattr(self.universe_client, "source_url", None)
+        else:
+            constituent_records = [
+                {"symbol": symbol.upper().strip(), "index_symbol": symbol.upper().strip(), "company": symbol.upper().strip(), "sector": "Unknown"}
+                for symbol in universe if symbol.strip()
+            ]
+            universe_name = "Custom universe"
+            universe_source = None
+        symbols = list(dict.fromkeys(record["symbol"] for record in constituent_records if record["symbol"]))
+        metadata = {record["symbol"]: record for record in constituent_records}
         if not symbols:
             raise ValueError("The discovery universe is empty")
-        if len(symbols) > 100:
-            raise ValueError("Discovery is limited to 100 symbols per scan")
+        if len(symbols) > 600:
+            raise ValueError("Discovery is limited to 600 symbols per scan")
         candidates: list[dict[str, Any]] = []
         errors: list[dict[str, str]] = []
-        with ThreadPoolExecutor(max_workers=min(8, len(symbols)), thread_name_prefix="market-scan") as pool:
-            futures = {pool.submit(self.market.snapshot, symbol): symbol for symbol in symbols}
-            for future in as_completed(futures):
-                symbol = futures[future]
-                try:
-                    snapshot = future.result()
-                    candidates.append(self._score_candidate(snapshot))
-                except Exception as exc:
-                    errors.append({"symbol": symbol, "error": str(exc)})
+        if hasattr(self.market, "snapshots"):
+            snapshots, errors = self.market.snapshots(symbols)
+            for symbol, snapshot in snapshots.items():
+                candidates.append(self._score_candidate(snapshot, metadata.get(symbol)))
+        else:
+            with ThreadPoolExecutor(max_workers=min(16, len(symbols)), thread_name_prefix="market-scan") as pool:
+                futures = {pool.submit(self.market.snapshot, symbol): symbol for symbol in symbols}
+                for future in as_completed(futures):
+                    symbol = futures[future]
+                    try:
+                        snapshot = future.result()
+                        candidates.append(self._score_candidate(snapshot, metadata.get(symbol)))
+                    except Exception as exc:
+                        errors.append({"symbol": symbol, "error": str(exc)})
         candidates.sort(key=lambda candidate: candidate["score"], reverse=True)
-        bounded_limit = max(1, min(int(limit), 25))
+        bounded_limit = max(1, min(int(limit), 50))
         return {
             "generated_at": datetime.now(timezone.utc).isoformat(),
+            "universe_name": universe_name,
+            "universe_source": universe_source,
             "universe_size": len(symbols),
             "successful": len(candidates),
             "candidates": candidates[:bounded_limit],
@@ -143,7 +158,7 @@ class PortfolioEngine:
         }
 
     @staticmethod
-    def _score_candidate(snapshot: dict[str, Any]) -> dict[str, Any]:
+    def _score_candidate(snapshot: dict[str, Any], metadata: dict[str, str] | None = None) -> dict[str, Any]:
         price = float(snapshot["price"])
         sma20 = float(snapshot["sma_20"])
         sma50 = float(snapshot["sma_50"] or sma20)
@@ -183,6 +198,8 @@ class PortfolioEngine:
         label = "Strong research candidate" if score >= 70 else "Research candidate" if score >= 60 else "Watch only"
         return {
             "symbol": snapshot["symbol"],
+            "company": (metadata or {}).get("company", snapshot["symbol"]),
+            "sector": (metadata or {}).get("sector", "Unknown"),
             "score": score,
             "label": label,
             "price": price,

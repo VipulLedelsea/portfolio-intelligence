@@ -17,7 +17,7 @@ This is the working system behind the concept: a governed, read-only multi-agent
 
 The first and second targets are planning scenarios at roughly two and three times the defined risk distance. They are not price promises. If the evidence is incomplete or governance rejects the setup, the chart says `WATCH` or `PASS` and explains the reasons instead of presenting it as an investment idea.
 
-The `discover` command performs a fast live pre-screen across a diversified large-cap universe. It ranks candidates using transparent trend, momentum, volume, and volatility inputs. A high discovery score is a prompt for deeper research, not a buy signal.
+The `discover` command loads the current S&P 500 constituent set, scans the available six-month market history in batches, and returns the top 20 candidates. It ranks candidates using transparent trend, 20/60-day momentum, volume participation, and volatility inputs. Company and sector labels come from the constituent feed. A high discovery score is a prompt for deeper research, not a buy signal.
 
 The engine is intentionally read-only. It has no broker adapter, order preview, order submission, or cancellation endpoint. A connected brokerage app elsewhere in ChatGPT is not accessible to this service.
 
@@ -28,7 +28,7 @@ cd engine
 cp config.example.json config.json
 export OPENAI_API_KEY="your-key"
 python3 -m portfolio_intel analyze AAPL
-python3 -m portfolio_intel discover --limit 8
+python3 -m portfolio_intel discover --limit 20
 ```
 
 The default model is `gpt-5.6-luna`; change `OPENAI_MODEL` or `config.json` to use another Responses API model.

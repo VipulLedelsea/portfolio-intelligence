@@ -36,6 +36,16 @@ class RankedFakeMarket(FakeMarket):
         return value
 
 
+class FakeUniverse:
+    source_url = "https://example.com/sp500.csv"
+
+    def constituents(self):
+        return [
+            {"symbol": f"S{index:03d}", "index_symbol": f"S{index:03d}", "company": f"Company {index}", "sector": "Test sector"}
+            for index in range(25)
+        ]
+
+
 class FakeResearch:
     def __init__(self, score=75, confidence=0.8, complete=True):
         self.score = score
@@ -94,6 +104,17 @@ class EngineTests(unittest.TestCase):
         self.assertGreater(result["candidates"][0]["score"], result["candidates"][1]["score"])
         self.assertTrue(result["read_only"])
         self.assertFalse(result["order_submission_supported"])
+
+    def test_default_discovery_scans_full_index_and_returns_top_20(self):
+        engine = PortfolioEngine(
+            memory=MemoryStore(self.db), market=FakeMarket(), research=FakeResearch(), universe_client=FakeUniverse()
+        )
+        result = engine.discover()
+        self.assertEqual(result["universe_name"], "S&P 500")
+        self.assertEqual(result["universe_size"], 25)
+        self.assertEqual(result["successful"], 25)
+        self.assertEqual(len(result["candidates"]), 20)
+        self.assertEqual(result["candidates"][0]["sector"], "Test sector")
 
 
 if __name__ == "__main__":

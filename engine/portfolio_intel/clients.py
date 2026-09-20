@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
 import math
 import os
@@ -9,6 +11,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
@@ -132,6 +135,44 @@ class SafeFallbackResearchClient:
         }
 
 
+class SP500UniverseClient:
+    """Loads the current S&P 500 constituent set from a maintained CSV feed."""
+
+    source_url = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
+
+    def __init__(self, timeout: int = 20, cache_seconds: int = 21_600) -> None:
+        self.timeout = timeout
+        self.cache_seconds = cache_seconds
+        self._cached_at = 0.0
+        self._cached: list[dict[str, str]] = []
+
+    def constituents(self) -> list[dict[str, str]]:
+        if self._cached and time.time() - self._cached_at < self.cache_seconds:
+            return list(self._cached)
+        request = urllib.request.Request(self.source_url, headers={"User-Agent": "PortfolioIntelligence/0.2"})
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout, context=trusted_ssl_context()) as response:
+                text = response.read().decode("utf-8-sig")
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+            raise RuntimeError(f"Could not fetch the S&P 500 constituent list: {exc}") from exc
+        records: list[dict[str, str]] = []
+        for row in csv.DictReader(io.StringIO(text)):
+            raw_symbol = (row.get("Symbol") or "").strip().upper()
+            if not raw_symbol:
+                continue
+            records.append({
+                "symbol": raw_symbol.replace(".", "-"),
+                "index_symbol": raw_symbol,
+                "company": (row.get("Security") or raw_symbol).strip(),
+                "sector": (row.get("GICS Sector") or "Unknown").strip(),
+            })
+        if len(records) < 450:
+            raise RuntimeError(f"S&P 500 constituent feed returned only {len(records)} securities")
+        self._cached = records
+        self._cached_at = time.time()
+        return list(records)
+
+
 class MarketDataClient:
     """Fetches daily OHLCV data from Yahoo's public chart endpoint."""
 
@@ -154,7 +195,51 @@ class MarketDataClient:
         if not result:
             error = payload.get("chart", {}).get("error")
             raise RuntimeError(f"No market data for {ticker}: {error}")
-        data = result[0]
+        return self._snapshot_from_data(ticker, result[0])
+
+    def snapshots(self, symbols: list[str], *, batch_size: int = 20) -> tuple[dict[str, dict[str, Any]], list[dict[str, str]]]:
+        """Fetch many symbols in a few requests for broad-universe discovery."""
+        tickers = list(dict.fromkeys(symbol.upper().strip() for symbol in symbols if symbol.strip()))
+        snapshots: dict[str, dict[str, Any]] = {}
+        errors: list[dict[str, str]] = []
+        batches = [tickers[start:start + batch_size] for start in range(0, len(tickers), batch_size)]
+        with ThreadPoolExecutor(max_workers=min(6, len(batches) or 1), thread_name_prefix="market-batch") as pool:
+            futures = {pool.submit(self._snapshot_batch, batch): batch for batch in batches}
+            for future in as_completed(futures):
+                batch_snapshots, batch_errors = future.result()
+                snapshots.update(batch_snapshots)
+                errors.extend(batch_errors)
+        return snapshots, errors
+
+    def _snapshot_batch(self, batch: list[str]) -> tuple[dict[str, dict[str, Any]], list[dict[str, str]]]:
+        snapshots: dict[str, dict[str, Any]] = {}
+        errors: list[dict[str, str]] = []
+        query = urllib.parse.urlencode({"symbols": ",".join(batch), "range": "6mo", "interval": "1d"})
+        url = f"https://query1.finance.yahoo.com/v7/finance/spark?{query}"
+        request = urllib.request.Request(url, headers={"User-Agent": "PortfolioIntelligence/0.2"})
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout, context=trusted_ssl_context()) as response:
+                payload = json.load(response)
+            results = payload.get("spark", {}).get("result") or []
+            returned: set[str] = set()
+            for item in results:
+                ticker = str(item.get("symbol", "")).upper()
+                response_items = item.get("response") or []
+                if not ticker or not response_items:
+                    continue
+                returned.add(ticker)
+                try:
+                    snapshots[ticker] = self._snapshot_from_data(ticker, response_items[0])
+                except Exception as exc:
+                    errors.append({"symbol": ticker, "error": str(exc)})
+            for ticker in batch:
+                if ticker not in returned:
+                    errors.append({"symbol": ticker, "error": "No market data returned"})
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+            errors.extend({"symbol": ticker, "error": f"Batch market-data request failed: {exc}"} for ticker in batch)
+        return snapshots, errors
+
+    def _snapshot_from_data(self, ticker: str, data: dict[str, Any]) -> dict[str, Any]:
         quotes = (data.get("indicators", {}).get("quote") or [{}])[0]
         timestamps = data.get("timestamp", [])
         raw_closes = quotes.get("close", [])
