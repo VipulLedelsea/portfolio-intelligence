@@ -16,7 +16,7 @@ def plan_trade(snapshot: dict[str, Any], synthesis: dict[str, Any], settings: Se
     confidence = float(synthesis["confidence"])
     score = float(synthesis["score"])
     if score >= 65 and confidence >= settings.minimum_confidence:
-        action = "BUY"
+        action = "IDEA"
     elif score >= 50:
         action = "WATCH"
         size_pct = 0.0
@@ -28,8 +28,7 @@ def plan_trade(snapshot: dict[str, Any], synthesis: dict[str, Any], settings: Se
         "entry_price": round(price, 4),
         "stop_price": round(stop, 4),
         "target_position_pct": round(size_pct, 3),
-        "order_type": "LIMIT",
-        "execution_note": "Enter in two tranches; cancel if the invalidation level is breached before fill.",
+        "research_note": "Reference levels are for risk framing only; the application has no order capability.",
     }
 
 
@@ -56,8 +55,8 @@ def risk_review(
         )
     if float(plan["target_position_pct"]) > settings.max_position_pct:
         reasons.append("Proposed position exceeds the configured position cap")
-    if plan["action"] != "BUY":
-        reasons.append(f"Trader action is {plan['action']}, not BUY")
+    if plan["action"] != "IDEA":
+        reasons.append(f"Research stance is {plan['action']}, not IDEA")
     return {
         "approved": not reasons,
         "veto_reasons": reasons,
@@ -73,11 +72,10 @@ def portfolio_review(symbol: str, plan: dict[str, Any], risk: dict[str, Any], po
         reasons.append("An existing position is recorded; addition requires explicit portfolio context")
     if not risk["approved"]:
         reasons.append("Risk veto is active")
-    approved = not reasons and plan["action"] == "BUY"
+    approved = not reasons and plan["action"] == "IDEA"
     return {
         "approved": approved,
         "reasons": reasons,
         "final_position_pct": risk["reviewed_position_pct"] if approved else 0.0,
-        "portfolio_note": "Approved for paper execution." if approved else "No paper order created.",
+        "portfolio_note": "Cleared as a research idea." if approved else "Not cleared as a research idea.",
     }
-

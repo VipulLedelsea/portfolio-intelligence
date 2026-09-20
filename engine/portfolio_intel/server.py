@@ -49,7 +49,7 @@ class PortfolioHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         if path == "/health":
-            self._json(HTTPStatus.OK, {"status": "ok", "paper_only": True})
+            self._json(HTTPStatus.OK, {"status": "ok", "read_only": True, "order_submission_supported": False})
             return
         if path == "/api/history":
             self._json(HTTPStatus.OK, self.engine.memory.history())
@@ -85,7 +85,7 @@ def serve(host: str, port: int, *, settings: Settings, memory: MemoryStore) -> N
     PortfolioHandler.engine = PortfolioEngine(settings=settings, memory=memory)
     server = ThreadingHTTPServer((host, port), PortfolioHandler)
     print(f"Portfolio Intelligence running at http://{host}:{port}")
-    print("Paper mode is enforced. Press Ctrl-C to stop.")
+    print("Read-only mode is enforced; this service cannot place orders. Press Ctrl-C to stop.")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

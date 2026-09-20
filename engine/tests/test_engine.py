@@ -60,8 +60,10 @@ class EngineTests(unittest.TestCase):
         engine = PortfolioEngine(memory=MemoryStore(self.db), market=FakeMarket(), research=FakeResearch())
         decision = engine.analyze("TEST")
         self.assertTrue(decision["approved"])
-        self.assertEqual(decision["action"], "BUY")
+        self.assertEqual(decision["action"], "IDEA")
         self.assertGreater(decision["target_position_pct"], 0)
+        self.assertTrue(decision["read_only"])
+        self.assertFalse(decision["order_submission_supported"])
         self.assertEqual(len(engine.memory.history()), 1)
 
     def test_incomplete_research_is_vetoed(self):
@@ -83,7 +85,8 @@ class EngineTests(unittest.TestCase):
         result = engine.discover(limit=2, universe=["LAG", "LEAD"])
         self.assertEqual(result["candidates"][0]["symbol"], "LEAD")
         self.assertGreater(result["candidates"][0]["score"], result["candidates"][1]["score"])
-        self.assertTrue(result["paper_only"])
+        self.assertTrue(result["read_only"])
+        self.assertFalse(result["order_submission_supported"])
 
 
 if __name__ == "__main__":

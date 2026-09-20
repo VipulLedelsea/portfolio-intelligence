@@ -45,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     memory = MemoryStore(Path(args.db))
     if args.command == "position":
         memory.upsert_position(args.symbol, args.shares, args.average_cost, args.sector)
-        print_json({"saved": True, "symbol": args.symbol.upper(), "paper_only": True})
+        print_json({"saved": True, "symbol": args.symbol.upper(), "read_only": True})
         return 0
     if args.command == "history":
         print_json(memory.history(args.limit))
@@ -64,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "grade":
             print_json(engine.grade(args.decision_id))
     except Exception as exc:
-        print_json({"error": str(exc), "paper_only": True})
+        print_json({"error": str(exc), "read_only": True})
         return 1
     return 0
 

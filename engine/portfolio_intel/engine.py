@@ -59,7 +59,7 @@ class PortfolioEngine:
             risk = risk_review(snapshot, reports, synthesis, trade, self.settings)
             portfolio = portfolio_review(ticker, trade, risk, self.memory.positions(), self.settings)
             approved = bool(risk["approved"] and portfolio["approved"])
-            action = trade["action"] if approved else ("WATCH" if trade["action"] == "BUY" else trade["action"])
+            action = trade["action"] if approved else ("WATCH" if trade["action"] == "IDEA" else trade["action"])
             decision = {
                 "run_id": run_id,
                 "symbol": ticker,
@@ -77,7 +77,8 @@ class PortfolioEngine:
                 "trade_plan": trade,
                 "risk_review": risk,
                 "portfolio_review": portfolio,
-                "paper_only": True,
+                "read_only": True,
+                "order_submission_supported": False,
             }
             decision_id = self.memory.save_decision(run_id, decision)
             decision["decision_id"] = decision_id
@@ -115,7 +116,8 @@ class PortfolioEngine:
             "errors": errors,
             "method": "Transparent technical pre-screen: trend, 20/60-day momentum, volume participation, and volatility penalty.",
             "next_step": "Run the full committee on a candidate before treating it as actionable.",
-            "paper_only": True,
+            "read_only": True,
+            "order_submission_supported": False,
         }
 
     @staticmethod
@@ -180,7 +182,7 @@ class PortfolioEngine:
         entry = float(decision["entry_price"])
         return_pct = (observed / entry - 1) * 100
         action = decision["action"]
-        effective = return_pct if action == "BUY" else -return_pct if action == "PASS" else -abs(return_pct) * 0.25
+        effective = return_pct if action == "IDEA" else -return_pct if action == "PASS" else -abs(return_pct) * 0.25
         if effective >= 15:
             grade = "A"
         elif effective >= 7:

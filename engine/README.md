@@ -1,6 +1,6 @@
 # Portfolio Intelligence engine
 
-This is the working system behind the concept: a governed, multi-agent research and paper-trading engine with persistent SQLite memory.
+This is the working system behind the concept: a governed, read-only multi-agent stock-research engine with persistent SQLite memory.
 
 ## What runs
 
@@ -16,7 +16,7 @@ This is the working system behind the concept: a governed, multi-agent research 
 
 The `discover` command performs a fast live pre-screen across a diversified large-cap universe. It ranks candidates using transparent trend, momentum, volume, and volatility inputs. A high discovery score is a prompt for deeper research, not a buy signal.
 
-The engine is intentionally paper-only. It contains no brokerage order endpoint.
+The engine is intentionally read-only. It has no broker adapter, order preview, order submission, or cancellation endpoint. A connected brokerage app elsewhere in ChatGPT is not accessible to this service.
 
 ## Start it
 
@@ -60,4 +60,4 @@ The tests use fixed market data and a fake research client, so they do not need 
 
 ## Safety boundary
 
-This project is research infrastructure, not investment advice. Before connecting any broker, add authentication, secrets management, human approval, idempotent orders, reconciliation, market-hours controls, regulatory review, and a kill switch.
+This project is research infrastructure, not investment advice. It uses market data to surface ideas and deliberately cannot place trades.
