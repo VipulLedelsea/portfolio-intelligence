@@ -161,7 +161,7 @@ class SP500UniverseClient:
             if not raw_symbol:
                 continue
             records.append({
-                "symbol": raw_symbol.replace(".", "-"),
+                "symbol": raw_symbol,
                 "index_symbol": raw_symbol,
                 "company": (row.get("Security") or raw_symbol).strip(),
                 "sector": (row.get("GICS Sector") or "Unknown").strip(),
@@ -174,28 +174,24 @@ class SP500UniverseClient:
 
 
 class MarketDataClient:
-    """Fetches daily OHLCV data from Yahoo's public chart endpoint."""
+    """Fetches read-only quotes and daily OHLCV bars from Robinhood."""
 
-    def __init__(self, timeout: int = 20) -> None:
+    provider_name = "Robinhood"
+    historicals_endpoint = "https://api.robinhood.com/quotes/historicals/"
+    quotes_endpoint = "https://api.robinhood.com/quotes/"
+
+    def __init__(self, timeout: int = 45) -> None:
         self.timeout = timeout
 
     def snapshot(self, symbol: str) -> dict[str, Any]:
         ticker = symbol.upper().strip()
         if not ticker or not all(ch.isalnum() or ch in ".-^" for ch in ticker):
             raise ValueError("Invalid ticker symbol")
-        encoded = urllib.parse.quote(ticker, safe="")
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{encoded}?range=6mo&interval=1d&events=div%2Csplits"
-        request = urllib.request.Request(url, headers={"User-Agent": "PortfolioIntelligence/0.1"})
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout, context=trusted_ssl_context()) as response:
-                payload = json.load(response)
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
-            raise RuntimeError(f"Could not fetch market data for {ticker}: {exc}") from exc
-        result = payload.get("chart", {}).get("result") or []
-        if not result:
-            error = payload.get("chart", {}).get("error")
-            raise RuntimeError(f"No market data for {ticker}: {error}")
-        return self._snapshot_from_data(ticker, result[0])
+        snapshots, errors = self._snapshot_batch([ticker])
+        if ticker not in snapshots:
+            reason = errors[0]["error"] if errors else "No market data returned"
+            raise RuntimeError(f"Could not fetch Robinhood market data for {ticker}: {reason}")
+        return snapshots[ticker]
 
     def snapshots(self, symbols: list[str], *, batch_size: int = 20) -> tuple[dict[str, dict[str, Any]], list[dict[str, str]]]:
         """Fetch many symbols in a few requests for broad-universe discovery."""
@@ -214,73 +210,97 @@ class MarketDataClient:
     def _snapshot_batch(self, batch: list[str]) -> tuple[dict[str, dict[str, Any]], list[dict[str, str]]]:
         snapshots: dict[str, dict[str, Any]] = {}
         errors: list[dict[str, str]] = []
-        query = urllib.parse.urlencode({"symbols": ",".join(batch), "range": "6mo", "interval": "1d"})
-        url = f"https://query1.finance.yahoo.com/v7/finance/spark?{query}"
-        request = urllib.request.Request(url, headers={"User-Agent": "PortfolioIntelligence/0.2"})
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout, context=trusted_ssl_context()) as response:
-                payload = json.load(response)
-            results = payload.get("spark", {}).get("result") or []
+            query = urllib.parse.urlencode({
+                "symbols": ",".join(batch), "bounds": "regular", "interval": "day", "span": "6month",
+            }, safe=",")
+            payload = self._fetch_json(f"{self.historicals_endpoint}?{query}")
+            quote_query = urllib.parse.urlencode({"symbols": ",".join(batch)}, safe=",")
+            try:
+                quote_payload = self._fetch_json(f"{self.quotes_endpoint}?{quote_query}")
+            except RuntimeError:
+                quote_payload = {"results": []}
+            quote_map = {
+                str(item.get("symbol", "")).upper(): item
+                for item in (quote_payload.get("results") or []) if item
+            }
+            results = payload.get("results") or []
             returned: set[str] = set()
             for item in results:
                 ticker = str(item.get("symbol", "")).upper()
-                response_items = item.get("response") or []
-                if not ticker or not response_items:
+                if not ticker:
                     continue
                 returned.add(ticker)
                 try:
-                    snapshots[ticker] = self._snapshot_from_data(ticker, response_items[0])
+                    snapshots[ticker] = self._snapshot_from_robinhood(ticker, item, quote_map.get(ticker))
                 except Exception as exc:
                     errors.append({"symbol": ticker, "error": str(exc)})
             for ticker in batch:
                 if ticker not in returned:
-                    errors.append({"symbol": ticker, "error": "No market data returned"})
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
-            errors.extend({"symbol": ticker, "error": f"Batch market-data request failed: {exc}"} for ticker in batch)
+                    errors.append({"symbol": ticker, "error": "Robinhood returned no historical data"})
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, RuntimeError) as exc:
+            errors.extend({"symbol": ticker, "error": f"Robinhood market-data request failed: {exc}"} for ticker in batch)
         return snapshots, errors
 
-    def _snapshot_from_data(self, ticker: str, data: dict[str, Any]) -> dict[str, Any]:
-        quotes = (data.get("indicators", {}).get("quote") or [{}])[0]
-        timestamps = data.get("timestamp", [])
-        raw_closes = quotes.get("close", [])
-        raw_highs = quotes.get("high", [])
-        raw_lows = quotes.get("low", [])
-        raw_volumes = quotes.get("volume", [])
+    def _fetch_json(self, url: str) -> dict[str, Any]:
+        request = urllib.request.Request(url, headers={"User-Agent": "PortfolioIntelligence/0.3"})
+        last_error: Exception | None = None
+        for attempt in range(2):
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout, context=trusted_ssl_context()) as response:
+                    value = json.load(response)
+                if not isinstance(value, dict):
+                    raise RuntimeError("Robinhood returned an unexpected response")
+                return value
+            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+                last_error = exc
+                if attempt == 0:
+                    time.sleep(0.5)
+        raise RuntimeError(str(last_error))
+
+    def _snapshot_from_robinhood(
+        self, ticker: str, data: dict[str, Any], quote: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         rows: list[dict[str, Any]] = []
-        for index, timestamp in enumerate(timestamps):
-            close = raw_closes[index] if index < len(raw_closes) else None
-            if close is None:
+        for bar in data.get("historicals") or []:
+            if not bar or bar.get("interpolated"):
                 continue
-            high = raw_highs[index] if index < len(raw_highs) else None
-            low = raw_lows[index] if index < len(raw_lows) else None
-            volume = raw_volumes[index] if index < len(raw_volumes) else None
+            close = float(bar["close_price"])
             rows.append({
-                "date": datetime.fromtimestamp(timestamp, timezone.utc).date().isoformat(),
-                "close": round(float(close), 4),
-                "high": round(float(high if high is not None else close), 4),
-                "low": round(float(low if low is not None else close), 4),
-                "volume": int(volume or 0),
+                "date": str(bar["begins_at"])[:10],
+                "open": round(float(bar.get("open_price") or close), 4),
+                "close": round(close, 4),
+                "high": round(float(bar.get("high_price") or close), 4),
+                "low": round(float(bar.get("low_price") or close), 4),
+                "volume": int(bar.get("volume") or 0),
             })
         closes = [row["close"] for row in rows]
         highs = [row["high"] for row in rows]
         lows = [row["low"] for row in rows]
         volumes = [float(row["volume"]) for row in rows]
         if len(closes) < 22:
-            raise RuntimeError(f"Insufficient price history for {ticker}")
-        meta = data.get("meta", {})
-        current = float(meta.get("regularMarketPrice") or closes[-1])
+            raise RuntimeError(f"Insufficient Robinhood price history for {ticker}")
+        quote = quote or {}
+        current = float(quote.get("last_trade_price") or closes[-1])
         returns = [math.log(closes[i] / closes[i - 1]) for i in range(1, len(closes)) if closes[i - 1] > 0]
         annual_vol = statistics.pstdev(returns[-60:]) * math.sqrt(252) * 100 if len(returns) >= 2 else 0.0
-        true_ranges = [highs[i] - lows[i] for i in range(min(len(highs), len(lows)))]
+        true_ranges = [
+            highs[index] - lows[index] if index == 0 else max(
+                highs[index] - lows[index],
+                abs(highs[index] - closes[index - 1]),
+                abs(lows[index] - closes[index - 1]),
+            )
+            for index in range(min(len(highs), len(lows)))
+        ]
         atr14 = statistics.fmean(true_ranges[-14:]) if true_ranges else current * 0.03
         volume_recent = statistics.fmean(volumes[-5:]) if len(volumes) >= 5 else 0.0
         volume_base = statistics.fmean(volumes[-25:-5]) if len(volumes) >= 25 else volume_recent or 1.0
         return {
             "symbol": ticker,
-            "currency": meta.get("currency", "USD"),
-            "exchange": meta.get("exchangeName") or meta.get("fullExchangeName") or "Unknown",
+            "currency": "USD",
+            "exchange": "US Market",
             "price": round(current, 4),
-            "previous_close": round(float(meta.get("chartPreviousClose") or closes[-2]), 4),
+            "previous_close": round(float(quote.get("adjusted_previous_close") or closes[-2]), 4),
             "return_1d_pct": round(self._period_return(closes, 1), 3),
             "return_5d_pct": round(self._period_return(closes, 5), 3),
             "return_20d_pct": round(self._period_return(closes, 20), 3),
@@ -291,8 +311,10 @@ class MarketDataClient:
             "atr_14": round(atr14, 4),
             "atr_14_pct": round((atr14 / current) * 100, 3),
             "volume_ratio_5d_to_20d": round(volume_recent / volume_base, 3) if volume_base else 1.0,
-            "market_time": datetime.fromtimestamp(meta.get("regularMarketTime", time.time()), timezone.utc).isoformat(),
+            "market_time": quote.get("venue_last_trade_time") or data.get("historicals", [{}])[-1].get("begins_at"),
             "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "data_source": "Robinhood",
+            "data_source_detail": "Regular-hours, split-adjusted daily OHLCV bars",
             "data_complete": True,
             "history": rows[-90:],
         }

@@ -8,6 +8,8 @@ from portfolio_intel.memory import MemoryStore
 
 
 class FakeMarket:
+    provider_name = "Test market data"
+
     def snapshot(self, symbol):
         return {
             "symbol": symbol, "currency": "USD", "exchange": "TEST", "price": 100.0,
@@ -17,8 +19,10 @@ class FakeMarket:
             "atr_14_pct": 3.0, "volume_ratio_5d_to_20d": 1.3,
             "market_time": "2026-09-20T12:00:00+00:00", "fetched_at": "2026-09-20T12:01:00+00:00",
             "data_complete": True,
+            "data_source": "Test market data",
+            "data_source_detail": "Fixed daily OHLCV bars",
             "history": [
-                {"date": f"2026-08-{day:02d}", "close": 90.0 + day / 3, "high": 91.0 + day / 3, "low": 89.0 + day / 3, "volume": 1_000_000}
+                {"date": f"2026-08-{day:02d}", "open": 89.5 + day / 3, "close": 90.0 + day / 3, "high": 91.0 + day / 3, "low": 89.0 + day / 3, "volume": 1_000_000}
                 for day in range(1, 29)
             ],
         }
@@ -114,6 +118,7 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["universe_size"], 25)
         self.assertEqual(result["successful"], 25)
         self.assertEqual(len(result["candidates"]), 20)
+        self.assertEqual(result["market_data_source"], "Test market data")
         self.assertEqual(result["candidates"][0]["sector"], "Test sector")
 
 

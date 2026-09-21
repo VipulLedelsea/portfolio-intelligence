@@ -81,6 +81,8 @@ class PortfolioEngine:
                 "portfolio_review": portfolio,
                 "chart": {
                     "series": snapshot.get("history", []),
+                    "source": snapshot.get("data_source", "Market data"),
+                    "source_detail": snapshot.get("data_source_detail", "Daily OHLCV bars"),
                     "levels": {
                         "reference": trade["entry_price"],
                         "risk": trade["stop_price"],
@@ -147,6 +149,7 @@ class PortfolioEngine:
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "universe_name": universe_name,
             "universe_source": universe_source,
+            "market_data_source": getattr(self.market, "provider_name", "Market data"),
             "universe_size": len(symbols),
             "successful": len(candidates),
             "candidates": candidates[:bounded_limit],
