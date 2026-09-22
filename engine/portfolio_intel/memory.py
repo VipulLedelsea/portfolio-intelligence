@@ -190,7 +190,14 @@ class MemoryStore:
     def get_decision(self, decision_id: int) -> dict[str, Any] | None:
         with self.connect() as connection:
             row = connection.execute("SELECT * FROM decisions WHERE id=?", (decision_id,)).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        stored = dict(row)
+        try:
+            payload = json.loads(stored.get("decision_json") or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        return {**stored, **payload}
 
     def save_evaluation(self, decision_id: int, evaluation: dict[str, Any]) -> None:
         with self.connect() as connection:
@@ -226,4 +233,3 @@ class MemoryStore:
                 (limit,),
             ).fetchall()
         return [dict(row) for row in rows]
-

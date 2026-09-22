@@ -9,7 +9,16 @@ def plan_trade(snapshot: dict[str, Any], synthesis: dict[str, Any], settings: Se
     price = float(snapshot["price"])
     atr = max(float(snapshot["atr_14"]), price * 0.01)
     stop_distance = max(2 * atr, price * 0.05)
-    stop = max(0.01, price - stop_distance)
+    direction = str(snapshot.get("supertrend", {}).get("direction", "LONG")).upper()
+    if direction == "SHORT":
+        stop = price + stop_distance
+        target_1 = max(0.01, price - stop_distance * 2)
+        target_2 = max(0.01, price - stop_distance * 3)
+    else:
+        direction = "LONG"
+        stop = max(0.01, price - stop_distance)
+        target_1 = price + stop_distance * 2
+        target_2 = price + stop_distance * 3
     risk_budget = settings.starting_equity * settings.risk_per_trade_pct / 100
     notional = risk_budget / (stop_distance / price)
     size_pct = min(settings.max_position_pct, notional / settings.starting_equity * 100)
@@ -25,13 +34,16 @@ def plan_trade(snapshot: dict[str, Any], synthesis: dict[str, Any], settings: Se
         size_pct = 0.0
     return {
         "action": action,
+        "direction": direction,
         "entry_price": round(price, 4),
         "stop_price": round(stop, 4),
         "target_position_pct": round(size_pct, 3),
-        "target_1": round(price + stop_distance * 2, 4),
-        "target_2": round(price + stop_distance * 3, 4),
-        "target_1_upside_pct": round((stop_distance * 2 / price) * 100, 2),
-        "target_2_upside_pct": round((stop_distance * 3 / price) * 100, 2),
+        "target_1": round(target_1, 4),
+        "target_2": round(target_2, 4),
+        "target_1_return_pct": round(((target_1 / price) - 1) * 100, 2),
+        "target_2_return_pct": round(((target_2 / price) - 1) * 100, 2),
+        "target_1_upside_pct": round(((target_1 / price) - 1) * 100, 2),
+        "target_2_upside_pct": round(((target_2 / price) - 1) * 100, 2),
         "research_note": "Reference levels are for risk framing only; the application has no order capability.",
     }
 

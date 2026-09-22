@@ -62,10 +62,17 @@ class PortfolioEngine:
                 if approved
                 else risk["veto_reasons"][:4]
             )
+            supertrend = snapshot.get("supertrend", {})
+            chart_explanation.insert(
+                0,
+                f"Supertrend ({supertrend.get('period', 10)}, {supertrend.get('multiplier', 3)}) is "
+                f"{trade['direction']} at ${float(supertrend.get('value', snapshot['price'])):.2f}.",
+            )
             decision = {
                 "run_id": run_id,
                 "symbol": ticker,
                 "action": action,
+                "direction": trade["direction"],
                 "approved": approved,
                 "entry_price": trade["entry_price"],
                 "stop_price": trade["stop_price"],
@@ -83,19 +90,24 @@ class PortfolioEngine:
                     "series": snapshot.get("history", []),
                     "source": snapshot.get("data_source", "Market data"),
                     "source_detail": snapshot.get("data_source_detail", "Daily OHLCV bars"),
+                    "supertrend": supertrend,
                     "levels": {
                         "reference": trade["entry_price"],
                         "risk": trade["stop_price"],
                         "target_1": trade["target_1"],
                         "target_2": trade["target_2"],
                     },
-                    "target_upside_pct": {
-                        "target_1": trade["target_1_upside_pct"],
-                        "target_2": trade["target_2_upside_pct"],
+                    "target_return_pct": {
+                        "target_1": trade["target_1_return_pct"],
+                        "target_2": trade["target_2_return_pct"],
                     },
+                    "direction": trade["direction"],
                     "stance": action,
                     "explanation": chart_explanation,
-                    "method": "Risk level is two 14-day average ranges below the reference price; scenario targets are 2R and 3R above it.",
+                    "method": (
+                        f"{trade['direction']} scenario: risk is two 14-day average ranges against the setup; "
+                        "targets are 2R and 3R in the signal direction."
+                    ),
                 },
                 "read_only": True,
                 "order_submission_supported": False,
@@ -143,8 +155,16 @@ class PortfolioEngine:
                         candidates.append(self._score_candidate(snapshot, metadata.get(symbol)))
                     except Exception as exc:
                         errors.append({"symbol": symbol, "error": str(exc)})
-        candidates.sort(key=lambda candidate: candidate["score"], reverse=True)
+        candidates.sort(key=lambda candidate: (-candidate["score"], candidate["symbol"]))
         bounded_limit = max(1, min(int(limit), 50))
+        long_candidates = sorted(
+            (candidate for candidate in candidates if candidate["direction"] == "LONG"),
+            key=lambda candidate: (-candidate["long_score"], candidate["symbol"]),
+        )
+        short_candidates = sorted(
+            (candidate for candidate in candidates if candidate["direction"] == "SHORT"),
+            key=lambda candidate: (-candidate["short_score"], candidate["symbol"]),
+        )
         return {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "universe_name": universe_name,
@@ -153,8 +173,11 @@ class PortfolioEngine:
             "universe_size": len(symbols),
             "successful": len(candidates),
             "candidates": candidates[:bounded_limit],
+            "long_candidates": long_candidates[:bounded_limit],
+            "short_candidates": short_candidates[:bounded_limit],
+            "direction_counts": {"LONG": len(long_candidates), "SHORT": len(short_candidates)},
             "errors": errors,
-            "method": "Transparent technical pre-screen: trend, 20/60-day momentum, volume participation, and volatility penalty.",
+            "method": "Directional pre-screen: Supertrend (10, 3), trend, 20/60-day momentum, volume participation, and volatility.",
             "next_step": "Run the full committee on a candidate before treating it as actionable.",
             "read_only": True,
             "order_submission_supported": False,
@@ -169,47 +192,83 @@ class PortfolioEngine:
         r60 = float(snapshot["return_60d_pct"])
         volume_ratio = float(snapshot["volume_ratio_5d_to_20d"])
         volatility = float(snapshot["annualized_volatility_pct"])
-        score = 50.0
+        supertrend = snapshot.get("supertrend") or {}
+        supertrend_direction = str(supertrend.get("direction") or ("LONG" if price >= sma20 else "SHORT")).upper()
+        long_score = 50.0
+        short_score = 50.0
         reasons: list[str] = []
         cautions: list[str] = []
         if price > sma20:
-            score += 10
-            reasons.append("Trading above its 20-day average")
+            long_score += 8
+            short_score -= 8
         else:
-            score -= 10
-            cautions.append("Trading below its 20-day average")
+            long_score -= 8
+            short_score += 8
         if sma20 > sma50:
-            score += 10
-            reasons.append("20-day trend is above the 50-day trend")
+            long_score += 8
+            short_score -= 8
         else:
-            score -= 10
-            cautions.append("Intermediate trend has not turned positive")
-        score += max(-15, min(15, r20 / 1.5))
-        score += max(-10, min(10, r60 / 3.0))
-        score += max(-5, min(5, (volume_ratio - 1) * 10))
+            long_score -= 8
+            short_score += 8
+        long_score += max(-10, min(10, r20 / 3.0))
+        long_score += max(-8, min(8, r60 / 6.0))
+        short_score += max(-10, min(10, -r20 / 3.0))
+        short_score += max(-8, min(8, -r60 / 6.0))
+        participation = max(-3, min(3, (volume_ratio - 1) * 6))
+        long_score += participation
+        short_score += participation
+        if supertrend_direction == "LONG":
+            long_score += 12
+            short_score -= 12
+        else:
+            long_score -= 12
+            short_score += 12
         volatility_penalty = max(0, min(20, (volatility - 35) * 0.25))
-        score -= volatility_penalty
-        if r20 > 0:
-            reasons.append(f"Positive 20-day momentum of {r20:.1f}%")
+        long_score -= volatility_penalty
+        short_score -= volatility_penalty
+        long_score = round(max(0, min(100, long_score)), 1)
+        short_score = round(max(0, min(100, short_score)), 1)
+        direction = "LONG" if long_score >= short_score else "SHORT"
+        score = long_score if direction == "LONG" else short_score
+        line_value = float(supertrend.get("value") or price)
+        signal_age = int(supertrend.get("bars_since_flip") or 0)
+        reasons.append(f"Supertrend (10, 3) is {supertrend_direction} at ${line_value:.2f}")
+        if bool(supertrend.get("flipped_today")):
+            reasons.append(f"Fresh {supertrend_direction.lower()} signal on the latest daily bar")
         else:
-            cautions.append(f"Negative 20-day momentum of {r20:.1f}%")
+            reasons.append(f"Signal has held for {signal_age + 1} daily bars")
+        if direction == "LONG":
+            (reasons if price > sma20 else cautions).append("Price is above its 20-day average" if price > sma20 else "Price is below its 20-day average")
+            (reasons if sma20 > sma50 else cautions).append("20-day trend is above the 50-day trend" if sma20 > sma50 else "20-day trend is below the 50-day trend")
+            (reasons if r20 > 0 else cautions).append(f"20-day momentum is {r20:+.1f}%")
+        else:
+            (reasons if price < sma20 else cautions).append("Price is below its 20-day average" if price < sma20 else "Price remains above its 20-day average")
+            (reasons if sma20 < sma50 else cautions).append("20-day trend is below the 50-day trend" if sma20 < sma50 else "20-day trend remains above the 50-day trend")
+            (reasons if r20 < 0 else cautions).append(f"20-day momentum is {r20:+.1f}%")
         if volume_ratio >= 1.15:
             reasons.append(f"Recent volume is {volume_ratio:.2f}× baseline")
         if volatility > 55:
             cautions.append(f"Elevated annualized volatility of {volatility:.1f}%")
-        score = round(max(0, min(100, score)), 1)
-        label = "Strong research candidate" if score >= 70 else "Research candidate" if score >= 60 else "Watch only"
+        strength = "Strong" if score >= 70 else "Developing" if score >= 60 else "Weak"
+        label = f"{strength} {direction.lower()} setup"
         return {
             "symbol": snapshot["symbol"],
             "company": (metadata or {}).get("company", snapshot["symbol"]),
             "sector": (metadata or {}).get("sector", "Unknown"),
             "score": score,
+            "long_score": long_score,
+            "short_score": short_score,
+            "direction": direction,
             "label": label,
             "price": price,
             "return_1d_pct": snapshot["return_1d_pct"],
             "return_20d_pct": r20,
             "return_60d_pct": r60,
             "annualized_volatility_pct": volatility,
+            "supertrend_value": line_value,
+            "supertrend_direction": supertrend_direction,
+            "supertrend_flipped_today": bool(supertrend.get("flipped_today")),
+            "signal_age_bars": signal_age,
             "reasons": reasons[:4],
             "cautions": cautions[:3],
             "market_time": snapshot["market_time"],
@@ -224,7 +283,9 @@ class PortfolioEngine:
         entry = float(decision["entry_price"])
         return_pct = (observed / entry - 1) * 100
         action = decision["action"]
-        effective = return_pct if action == "IDEA" else -return_pct if action == "PASS" else -abs(return_pct) * 0.25
+        direction = str(decision.get("direction", "LONG"))
+        directional_return = -return_pct if direction == "SHORT" else return_pct
+        effective = directional_return if action == "IDEA" else -directional_return if action == "PASS" else -abs(directional_return) * 0.25
         if effective >= 15:
             grade = "A"
         elif effective >= 7:
@@ -245,6 +306,7 @@ class PortfolioEngine:
             "decision_id": decision_id,
             "symbol": decision["symbol"],
             "action": action,
+            "direction": direction,
             "entry_price": entry,
             "observed_price": observed,
             "return_pct": round(return_pct, 3),

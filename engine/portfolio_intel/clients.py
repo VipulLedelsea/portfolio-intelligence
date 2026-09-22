@@ -280,6 +280,7 @@ class MarketDataClient:
         volumes = [float(row["volume"]) for row in rows]
         if len(closes) < 22:
             raise RuntimeError(f"Insufficient Robinhood price history for {ticker}")
+        supertrend = self._calculate_supertrend(rows, period=10, multiplier=3.0)
         quote = quote or {}
         current = float(quote.get("last_trade_price") or closes[-1])
         returns = [math.log(closes[i] / closes[i - 1]) for i in range(1, len(closes)) if closes[i - 1] > 0]
@@ -315,8 +316,95 @@ class MarketDataClient:
             "fetched_at": datetime.now(timezone.utc).isoformat(),
             "data_source": "Robinhood",
             "data_source_detail": "Regular-hours, split-adjusted daily OHLCV bars",
+            "supertrend": supertrend,
             "data_complete": True,
             "history": rows[-90:],
+        }
+
+    @staticmethod
+    def _calculate_supertrend(
+        rows: list[dict[str, Any]], *, period: int = 10, multiplier: float = 3.0,
+    ) -> dict[str, Any]:
+        """Add TradingView-style ATR Supertrend values to OHLC rows."""
+        true_ranges: list[float] = []
+        atr_values: list[float | None] = [None] * len(rows)
+        for index, row in enumerate(rows):
+            high, low = float(row["high"]), float(row["low"])
+            previous_close = float(rows[index - 1]["close"]) if index else None
+            true_ranges.append(
+                high - low if previous_close is None else max(
+                    high - low, abs(high - previous_close), abs(low - previous_close),
+                )
+            )
+            if index == period - 1:
+                atr_values[index] = statistics.fmean(true_ranges[:period])
+            elif index >= period and atr_values[index - 1] is not None:
+                atr_values[index] = ((atr_values[index - 1] * (period - 1)) + true_ranges[index]) / period
+
+        final_upper: list[float | None] = [None] * len(rows)
+        final_lower: list[float | None] = [None] * len(rows)
+        directions: list[str | None] = [None] * len(rows)
+        values: list[float | None] = [None] * len(rows)
+        for index, row in enumerate(rows):
+            atr = atr_values[index]
+            if atr is None:
+                continue
+            high, low, close = float(row["high"]), float(row["low"]), float(row["close"])
+            midpoint = (high + low) / 2
+            basic_upper = midpoint + multiplier * atr
+            basic_lower = midpoint - multiplier * atr
+            previous_upper = final_upper[index - 1] if index else None
+            previous_lower = final_lower[index - 1] if index else None
+            previous_close = float(rows[index - 1]["close"]) if index else close
+            final_upper[index] = (
+                basic_upper
+                if previous_upper is None or basic_upper < previous_upper or previous_close > previous_upper
+                else previous_upper
+            )
+            final_lower[index] = (
+                basic_lower
+                if previous_lower is None or basic_lower > previous_lower or previous_close < previous_lower
+                else previous_lower
+            )
+            previous_direction = directions[index - 1] if index else None
+            if previous_direction is None:
+                direction = "LONG" if close >= midpoint else "SHORT"
+            elif previous_direction == "SHORT" and close > float(final_upper[index]):
+                direction = "LONG"
+            elif previous_direction == "LONG" and close < float(final_lower[index]):
+                direction = "SHORT"
+            else:
+                direction = previous_direction
+            directions[index] = direction
+            values[index] = final_lower[index] if direction == "LONG" else final_upper[index]
+            row["supertrend"] = round(float(values[index]), 4)
+            row["supertrend_direction"] = direction
+
+        valid_indices = [index for index, direction in enumerate(directions) if direction]
+        if not valid_indices:
+            raise RuntimeError("Insufficient history to calculate Supertrend")
+        last_index = valid_indices[-1]
+        last_direction = str(directions[last_index])
+        prior_direction = next(
+            (str(directions[index]) for index in range(last_index - 1, -1, -1) if directions[index]),
+            last_direction,
+        )
+        bars_since_flip = 0
+        for index in range(last_index - 1, -1, -1):
+            if directions[index] and directions[index] != last_direction:
+                break
+            if directions[index]:
+                bars_since_flip += 1
+        last_close = float(rows[last_index]["close"])
+        last_value = float(values[last_index])
+        return {
+            "period": period,
+            "multiplier": multiplier,
+            "direction": last_direction,
+            "value": round(last_value, 4),
+            "distance_pct": round(((last_close / last_value) - 1) * 100, 3),
+            "flipped_today": prior_direction != last_direction,
+            "bars_since_flip": bars_since_flip,
         }
 
     @staticmethod

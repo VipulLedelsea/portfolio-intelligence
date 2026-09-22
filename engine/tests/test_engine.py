@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from portfolio_intel.config import Settings
+from portfolio_intel.clients import MarketDataClient
 from portfolio_intel.engine import PortfolioEngine
 from portfolio_intel.memory import MemoryStore
 
@@ -21,8 +22,9 @@ class FakeMarket:
             "data_complete": True,
             "data_source": "Test market data",
             "data_source_detail": "Fixed daily OHLCV bars",
+            "supertrend": {"period": 10, "multiplier": 3.0, "direction": "LONG", "value": 92.0, "distance_pct": 8.7, "flipped_today": False, "bars_since_flip": 8},
             "history": [
-                {"date": f"2026-08-{day:02d}", "open": 89.5 + day / 3, "close": 90.0 + day / 3, "high": 91.0 + day / 3, "low": 89.0 + day / 3, "volume": 1_000_000}
+                {"date": f"2026-08-{day:02d}", "open": 89.5 + day / 3, "close": 90.0 + day / 3, "high": 91.0 + day / 3, "low": 89.0 + day / 3, "volume": 1_000_000, "supertrend": 87.0 + day / 3, "supertrend_direction": "LONG"}
                 for day in range(1, 29)
             ],
         }
@@ -33,7 +35,8 @@ class RankedFakeMarket(FakeMarket):
         value = super().snapshot(symbol)
         adjustments = {
             "LEAD": {"return_20d_pct": 18.0, "return_60d_pct": 28.0, "volume_ratio_5d_to_20d": 1.5},
-            "LAG": {"price": 80.0, "return_20d_pct": -12.0, "return_60d_pct": -18.0, "annualized_volatility_pct": 70.0},
+            "LAG": {"price": 80.0, "sma_20": 88.0, "sma_50": 94.0, "return_20d_pct": -12.0, "return_60d_pct": -18.0, "annualized_volatility_pct": 45.0, "supertrend": {"period": 10, "multiplier": 3.0, "direction": "SHORT", "value": 89.0, "distance_pct": -10.1, "flipped_today": False, "bars_since_flip": 5}},
+            "SHORT": {"price": 80.0, "sma_20": 88.0, "sma_50": 94.0, "return_20d_pct": -12.0, "return_60d_pct": -18.0, "supertrend": {"period": 10, "multiplier": 3.0, "direction": "SHORT", "value": 89.0, "distance_pct": -10.1, "flipped_today": True, "bars_since_flip": 0}},
         }
         value.update(adjustments.get(symbol, {}))
         value["symbol"] = symbol
@@ -83,9 +86,19 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(decision["read_only"])
         self.assertFalse(decision["order_submission_supported"])
         self.assertEqual(decision["chart"]["stance"], "IDEA")
+        self.assertEqual(decision["direction"], "LONG")
+        self.assertEqual(decision["chart"]["supertrend"]["direction"], "LONG")
         self.assertGreater(decision["chart"]["levels"]["target_1"], decision["entry_price"])
         self.assertGreater(decision["chart"]["levels"]["target_2"], decision["chart"]["levels"]["target_1"])
         self.assertEqual(len(engine.memory.history()), 1)
+
+    def test_short_supertrend_reverses_risk_and_target_levels(self):
+        engine = PortfolioEngine(memory=MemoryStore(self.db), market=RankedFakeMarket(), research=FakeResearch())
+        decision = engine.analyze("SHORT")
+        self.assertEqual(decision["direction"], "SHORT")
+        self.assertGreater(decision["stop_price"], decision["entry_price"])
+        self.assertLess(decision["chart"]["levels"]["target_1"], decision["entry_price"])
+        self.assertLess(decision["chart"]["levels"]["target_2"], decision["chart"]["levels"]["target_1"])
 
     def test_incomplete_research_is_vetoed(self):
         engine = PortfolioEngine(memory=MemoryStore(self.db), market=FakeMarket(), research=FakeResearch(complete=False))
@@ -106,6 +119,8 @@ class EngineTests(unittest.TestCase):
         result = engine.discover(limit=2, universe=["LAG", "LEAD"])
         self.assertEqual(result["candidates"][0]["symbol"], "LEAD")
         self.assertGreater(result["candidates"][0]["score"], result["candidates"][1]["score"])
+        self.assertEqual(result["long_candidates"][0]["direction"], "LONG")
+        self.assertEqual(result["short_candidates"][0]["direction"], "SHORT")
         self.assertTrue(result["read_only"])
         self.assertFalse(result["order_submission_supported"])
 
@@ -120,6 +135,17 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(len(result["candidates"]), 20)
         self.assertEqual(result["market_data_source"], "Test market data")
         self.assertEqual(result["candidates"][0]["sector"], "Test sector")
+
+    def test_supertrend_calculation_marks_falling_market_short(self):
+        closes = [100 + index for index in range(25)] + [124 - index * 2 for index in range(1, 26)]
+        rows = [
+            {"date": f"D{index}", "open": close + 0.5, "high": close + 1.0, "low": close - 1.0, "close": close, "volume": 1_000_000}
+            for index, close in enumerate(closes)
+        ]
+        signal = MarketDataClient._calculate_supertrend(rows, period=10, multiplier=3.0)
+        self.assertEqual(signal["direction"], "SHORT")
+        self.assertGreater(signal["value"], rows[-1]["close"])
+        self.assertEqual(rows[-1]["supertrend_direction"], "SHORT")
 
 
 if __name__ == "__main__":
