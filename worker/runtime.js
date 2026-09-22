@@ -6,6 +6,7 @@ const SCAN_CACHE_SECONDS = 300;
 const ANALYSIS_CACHE_SECONDS = 90;
 let discoveryInFlight = null;
 const analysisInFlight = new Map();
+const memoryCache = new Map();
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const round = (value, digits = 3) => Number(Number(value).toFixed(digits));
@@ -446,16 +447,32 @@ async function readBody(request) {
 }
 
 async function fromCache(request, cacheName, maxAge, producer, ctx) {
-  const cache = caches.default;
+  const now = Date.now();
+  const memoryHit = memoryCache.get(cacheName);
+  if (memoryHit && memoryHit.expiresAt > now) return memoryHit.payload;
+  if (memoryHit) memoryCache.delete(cacheName);
   const cacheUrl = new URL(request.url);
   cacheUrl.pathname = `/__cache/${cacheName}`;
   cacheUrl.search = "";
   const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
-  const existing = await cache.match(cacheKey);
-  if (existing) return existing.json();
+  let cache = null;
+  try {
+    cache = globalThis.caches?.default || null;
+    const existing = cache ? await cache.match(cacheKey) : null;
+    if (existing) {
+      const payload = await existing.json();
+      memoryCache.set(cacheName, { payload, expiresAt: now + maxAge * 1000 });
+      return payload;
+    }
+  } catch {
+    cache = null;
+  }
   const payload = await producer();
-  const stored = json(payload, 200, { "cache-control": `public, max-age=${maxAge}` });
-  ctx.waitUntil(cache.put(cacheKey, stored.clone()));
+  memoryCache.set(cacheName, { payload, expiresAt: Date.now() + maxAge * 1000 });
+  if (cache) {
+    const stored = json(payload, 200, { "cache-control": `public, max-age=${maxAge}` });
+    ctx.waitUntil(cache.put(cacheKey, stored.clone()).catch(() => {}));
+  }
   return payload;
 }
 
