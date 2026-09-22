@@ -4,7 +4,7 @@ This is the working system behind the concept: a governed, read-only multi-agent
 
 ## What runs
 
-1. Read-only Robinhood quotes and split-adjusted daily OHLCV history are fetched for the requested ticker.
+1. Read-only Robinhood quotes and split-adjusted daily OHLCV history are fetched for the requested ticker. During market hours, five-minute bars are aggregated into a clearly labeled provisional daily candle.
 2. Fundamentals, news, and sentiment agents research in parallel.
 3. A deterministic price-action analyst computes trend, volatility, ATR, volume, and Supertrend (10, 3) signals.
 4. Bull and bear agents debate the same evidence packet.
@@ -17,7 +17,9 @@ This is the working system behind the concept: a governed, read-only multi-agent
 
 The first and second targets are planning scenarios at roughly two and three times the defined risk distance. Long setups put invalidation below the reference and targets above it; short setups reverse that geometry. They are not price promises. If the evidence is incomplete or governance rejects the setup, the chart says `WATCH` or `PASS` and explains the reasons instead of presenting it as an investment idea.
 
-The `discover` command loads the current S&P 500 constituent set, scans six months of Robinhood market data in read-only batches, and returns overall, long, and short top-20 lists. It ranks candidates using Supertrend direction plus transparent trend, 20/60-day momentum, volume participation, and volatility inputs. The dashboard can switch between those lists and opens the same ticker in TradingView for external confirmation. Company and sector labels come from the constituent feed. A high discovery score is a prompt for deeper research, not a buy or short signal.
+The `discover` command loads the current S&P 500 constituent set, scans six months of Robinhood market data in read-only batches, and returns overall, long, and short top-20 lists. It ranks candidates using TradingView-compatible daily Supertrend direction plus transparent trend, 20/60-day momentum, volume participation, and volatility inputs. The dashboard can switch between those lists and opens the same ticker on TradingView's daily interval for external confirmation. Company and sector labels come from the constituent feed. A high discovery score is a prompt for deeper research, not a buy or short signal.
+
+The scanner treats Supertrend as the source of truth for LONG versus SHORT. A live intraday flip is labeled `PROVISIONAL`, includes the prior confirmed direction, and receives a score penalty until the daily candle closes. Data-vendor differences can still produce small line-value differences, but the app no longer silently compares yesterday's Robinhood candle with today's TradingView candle.
 
 The engine is intentionally read-only. It has no authenticated broker adapter, order preview, order submission, or cancellation endpoint. The locally running service does not inherit access to a connected brokerage account.
 

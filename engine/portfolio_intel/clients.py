@@ -220,9 +220,20 @@ class MarketDataClient:
                 quote_payload = self._fetch_json(f"{self.quotes_endpoint}?{quote_query}")
             except RuntimeError:
                 quote_payload = {"results": []}
+            live_query = urllib.parse.urlencode({
+                "symbols": ",".join(batch), "bounds": "regular", "interval": "5minute", "span": "day",
+            }, safe=",")
+            try:
+                live_payload = self._fetch_json(f"{self.historicals_endpoint}?{live_query}")
+            except RuntimeError:
+                live_payload = {"results": []}
             quote_map = {
                 str(item.get("symbol", "")).upper(): item
                 for item in (quote_payload.get("results") or []) if item
+            }
+            live_map = {
+                str(item.get("symbol", "")).upper(): item
+                for item in (live_payload.get("results") or []) if item
             }
             results = payload.get("results") or []
             returned: set[str] = set()
@@ -232,7 +243,9 @@ class MarketDataClient:
                     continue
                 returned.add(ticker)
                 try:
-                    snapshots[ticker] = self._snapshot_from_robinhood(ticker, item, quote_map.get(ticker))
+                    snapshots[ticker] = self._snapshot_from_robinhood(
+                        ticker, item, quote_map.get(ticker), live_map.get(ticker),
+                    )
                 except Exception as exc:
                     errors.append({"symbol": ticker, "error": str(exc)})
             for ticker in batch:
@@ -259,7 +272,11 @@ class MarketDataClient:
         raise RuntimeError(str(last_error))
 
     def _snapshot_from_robinhood(
-        self, ticker: str, data: dict[str, Any], quote: dict[str, Any] | None,
+        self,
+        ticker: str,
+        data: dict[str, Any],
+        quote: dict[str, Any] | None,
+        intraday: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         rows: list[dict[str, Any]] = []
         for bar in data.get("historicals") or []:
@@ -280,7 +297,31 @@ class MarketDataClient:
         volumes = [float(row["volume"]) for row in rows]
         if len(closes) < 22:
             raise RuntimeError(f"Insufficient Robinhood price history for {ticker}")
-        supertrend = self._calculate_supertrend(rows, period=10, multiplier=3.0)
+        confirmed_supertrend = self._calculate_supertrend(rows, period=10, multiplier=3.0)
+        confirmed_date = rows[-1]["date"]
+        live_bar = self._aggregate_intraday_bar(intraday)
+        if live_bar and live_bar["date"] > confirmed_date:
+            live_rows = [dict(row) for row in rows] + [live_bar]
+            supertrend = self._calculate_supertrend(live_rows, period=10, multiplier=3.0)
+            rows = live_rows
+            supertrend.update({
+                "is_confirmed": False,
+                "bar_status": "live_provisional",
+                "as_of": live_bar["begins_at"],
+                "confirmed_direction": confirmed_supertrend["direction"],
+                "confirmed_value": confirmed_supertrend["value"],
+                "confirmed_as_of": confirmed_date,
+            })
+        else:
+            supertrend = confirmed_supertrend
+            supertrend.update({
+                "is_confirmed": True,
+                "bar_status": "confirmed_close",
+                "as_of": confirmed_date,
+                "confirmed_direction": confirmed_supertrend["direction"],
+                "confirmed_value": confirmed_supertrend["value"],
+                "confirmed_as_of": confirmed_date,
+            })
         quote = quote or {}
         current = float(quote.get("last_trade_price") or closes[-1])
         returns = [math.log(closes[i] / closes[i - 1]) for i in range(1, len(closes)) if closes[i - 1] > 0]
@@ -315,10 +356,35 @@ class MarketDataClient:
             "market_time": quote.get("venue_last_trade_time") or data.get("historicals", [{}])[-1].get("begins_at"),
             "fetched_at": datetime.now(timezone.utc).isoformat(),
             "data_source": "Robinhood",
-            "data_source_detail": "Regular-hours, split-adjusted daily OHLCV bars",
+            "data_source_detail": "Completed daily bars plus an aggregated live regular-hours bar when available",
             "supertrend": supertrend,
             "data_complete": True,
             "history": rows[-90:],
+        }
+
+    @staticmethod
+    def _aggregate_intraday_bar(intraday: dict[str, Any] | None) -> dict[str, Any] | None:
+        bars = [
+            bar for bar in ((intraday or {}).get("historicals") or [])
+            if bar and not bar.get("interpolated") and bar.get("session") in (None, "reg")
+        ]
+        if not bars:
+            return None
+        latest_date = str(bars[-1].get("begins_at", ""))[:10]
+        bars = [bar for bar in bars if str(bar.get("begins_at", ""))[:10] == latest_date]
+        if not bars:
+            return None
+        first, last = bars[0], bars[-1]
+        close = float(last["close_price"])
+        return {
+            "date": latest_date,
+            "begins_at": str(last["begins_at"]),
+            "open": round(float(first.get("open_price") or close), 4),
+            "close": round(close, 4),
+            "high": round(max(float(bar.get("high_price") or close) for bar in bars), 4),
+            "low": round(min(float(bar.get("low_price") or close) for bar in bars), 4),
+            "volume": sum(int(bar.get("volume") or 0) for bar in bars),
+            "bar_status": "live_provisional",
         }
 
     @staticmethod
@@ -368,7 +434,8 @@ class MarketDataClient:
             )
             previous_direction = directions[index - 1] if index else None
             if previous_direction is None:
-                direction = "LONG" if close >= midpoint else "SHORT"
+                # TradingView initializes Supertrend as down until ATR is available.
+                direction = "SHORT"
             elif previous_direction == "SHORT" and close > float(final_upper[index]):
                 direction = "LONG"
             elif previous_direction == "LONG" and close < float(final_lower[index]):

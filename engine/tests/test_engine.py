@@ -22,7 +22,7 @@ class FakeMarket:
             "data_complete": True,
             "data_source": "Test market data",
             "data_source_detail": "Fixed daily OHLCV bars",
-            "supertrend": {"period": 10, "multiplier": 3.0, "direction": "LONG", "value": 92.0, "distance_pct": 8.7, "flipped_today": False, "bars_since_flip": 8},
+            "supertrend": {"period": 10, "multiplier": 3.0, "direction": "LONG", "value": 92.0, "distance_pct": 8.7, "flipped_today": False, "bars_since_flip": 8, "is_confirmed": True, "confirmed_direction": "LONG"},
             "history": [
                 {"date": f"2026-08-{day:02d}", "open": 89.5 + day / 3, "close": 90.0 + day / 3, "high": 91.0 + day / 3, "low": 89.0 + day / 3, "volume": 1_000_000, "supertrend": 87.0 + day / 3, "supertrend_direction": "LONG"}
                 for day in range(1, 29)
@@ -146,6 +146,38 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(signal["direction"], "SHORT")
         self.assertGreater(signal["value"], rows[-1]["close"])
         self.assertEqual(rows[-1]["supertrend_direction"], "SHORT")
+
+    def test_supertrend_uses_tradingview_downtrend_initialization(self):
+        rows = [
+            {"date": f"D{index}", "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 1000}
+            for index in range(15)
+        ]
+        MarketDataClient._calculate_supertrend(rows, period=10, multiplier=3.0)
+        self.assertEqual(rows[9]["supertrend_direction"], "SHORT")
+
+    def test_supertrend_direction_owns_long_or_short_classification(self):
+        snapshot = FakeMarket().snapshot("CONFLICT")
+        snapshot["supertrend"] = {
+            "direction": "SHORT", "value": 105.0, "is_confirmed": False,
+            "confirmed_direction": "LONG", "flipped_today": True, "bars_since_flip": 0,
+        }
+        candidate = PortfolioEngine._score_candidate(snapshot)
+        self.assertEqual(candidate["direction"], "SHORT")
+        self.assertEqual(candidate["label"], "Provisional short flip")
+        self.assertTrue(any("wait for the close" in caution for caution in candidate["cautions"]))
+
+    def test_intraday_bars_aggregate_into_one_provisional_daily_candle(self):
+        intraday = {"historicals": [
+            {"begins_at": "2026-09-22T13:30:00Z", "open_price": "100", "close_price": "101", "high_price": "102", "low_price": "99", "volume": 100, "session": "reg", "interpolated": False},
+            {"begins_at": "2026-09-22T13:35:00Z", "open_price": "101", "close_price": "103", "high_price": "104", "low_price": "100", "volume": 150, "session": "reg", "interpolated": False},
+        ]}
+        bar = MarketDataClient._aggregate_intraday_bar(intraday)
+        self.assertEqual(bar["open"], 100.0)
+        self.assertEqual(bar["close"], 103.0)
+        self.assertEqual(bar["high"], 104.0)
+        self.assertEqual(bar["low"], 99.0)
+        self.assertEqual(bar["volume"], 250)
+        self.assertEqual(bar["bar_status"], "live_provisional")
 
 
 if __name__ == "__main__":

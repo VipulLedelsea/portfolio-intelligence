@@ -68,6 +68,15 @@ class PortfolioEngine:
                 f"Supertrend ({supertrend.get('period', 10)}, {supertrend.get('multiplier', 3)}) is "
                 f"{trade['direction']} at ${float(supertrend.get('value', snapshot['price'])):.2f}.",
             )
+            if not supertrend.get("is_confirmed", True):
+                if supertrend.get("direction") != supertrend.get("confirmed_direction"):
+                    chart_explanation.insert(
+                        1,
+                        f"Today's live daily bar has provisionally flipped from "
+                        f"{supertrend.get('confirmed_direction')} to {supertrend.get('direction')}; confirm at the close.",
+                    )
+                else:
+                    chart_explanation.insert(1, "Today's live daily bar agrees with the last confirmed signal.")
             decision = {
                 "run_id": run_id,
                 "symbol": ticker,
@@ -177,7 +186,7 @@ class PortfolioEngine:
             "short_candidates": short_candidates[:bounded_limit],
             "direction_counts": {"LONG": len(long_candidates), "SHORT": len(short_candidates)},
             "errors": errors,
-            "method": "Directional pre-screen: Supertrend (10, 3), trend, 20/60-day momentum, volume participation, and volatility.",
+            "method": "Directional pre-screen: daily Supertrend (10, 3), trend, 20/60-day momentum, volume participation, and volatility. Live-bar flips remain provisional until the close.",
             "next_step": "Run the full committee on a candidate before treating it as actionable.",
             "read_only": True,
             "order_submission_supported": False,
@@ -228,11 +237,28 @@ class PortfolioEngine:
         short_score -= volatility_penalty
         long_score = round(max(0, min(100, long_score)), 1)
         short_score = round(max(0, min(100, short_score)), 1)
-        direction = "LONG" if long_score >= short_score else "SHORT"
+        direction = supertrend_direction if supertrend_direction in ("LONG", "SHORT") else (
+            "LONG" if long_score >= short_score else "SHORT"
+        )
         score = long_score if direction == "LONG" else short_score
         line_value = float(supertrend.get("value") or price)
         signal_age = int(supertrend.get("bars_since_flip") or 0)
-        reasons.append(f"Supertrend (10, 3) is {supertrend_direction} at ${line_value:.2f}")
+        is_confirmed = bool(supertrend.get("is_confirmed", True))
+        confirmed_direction = str(supertrend.get("confirmed_direction") or supertrend_direction).upper()
+        if not is_confirmed and supertrend_direction != confirmed_direction:
+            reasons.append(
+                f"Live Supertrend is provisionally {supertrend_direction} at ${line_value:.2f}"
+            )
+            cautions.append(
+                f"Latest confirmed daily signal is {confirmed_direction}; wait for the close to confirm the flip"
+            )
+            long_score -= 8
+            short_score -= 8
+            score = long_score if direction == "LONG" else short_score
+        elif not is_confirmed:
+            reasons.append(f"Live Supertrend remains {supertrend_direction} at ${line_value:.2f}")
+        else:
+            reasons.append(f"Confirmed Supertrend (10, 3) is {supertrend_direction} at ${line_value:.2f}")
         if bool(supertrend.get("flipped_today")):
             reasons.append(f"Fresh {supertrend_direction.lower()} signal on the latest daily bar")
         else:
@@ -249,8 +275,15 @@ class PortfolioEngine:
             reasons.append(f"Recent volume is {volume_ratio:.2f}× baseline")
         if volatility > 55:
             cautions.append(f"Elevated annualized volatility of {volatility:.1f}%")
+        score = round(max(0, min(100, score)), 1)
+        long_score = round(max(0, min(100, long_score)), 1)
+        short_score = round(max(0, min(100, short_score)), 1)
         strength = "Strong" if score >= 70 else "Developing" if score >= 60 else "Weak"
-        label = f"{strength} {direction.lower()} setup"
+        label = (
+            f"Provisional {direction.lower()} flip"
+            if not is_confirmed and supertrend_direction != confirmed_direction
+            else f"{strength} {direction.lower()} setup"
+        )
         return {
             "symbol": snapshot["symbol"],
             "company": (metadata or {}).get("company", snapshot["symbol"]),
@@ -267,6 +300,8 @@ class PortfolioEngine:
             "annualized_volatility_pct": volatility,
             "supertrend_value": line_value,
             "supertrend_direction": supertrend_direction,
+            "supertrend_confirmed_direction": confirmed_direction,
+            "supertrend_is_confirmed": is_confirmed,
             "supertrend_flipped_today": bool(supertrend.get("flipped_today")),
             "signal_age_bars": signal_age,
             "reasons": reasons[:4],
