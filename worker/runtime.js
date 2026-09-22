@@ -98,6 +98,30 @@ async function subscriptionAccess(request, env, { force = false } = {}) {
   return value;
 }
 
+async function subscriptionAccessFromCheckout(request, env, sessionId) {
+  const user = authenticatedUser(request);
+  if (!user) throw Object.assign(new Error("Sign in with ChatGPT to verify checkout"), { status: 401 });
+  if (!/^cs_(test|live)_[A-Za-z0-9]+$/.test(sessionId)) throw Object.assign(new Error("Invalid Stripe checkout session"), { status: 400 });
+  const session = await stripeRequest(env, `/checkout/sessions/${encodeURIComponent(sessionId)}`);
+  if (session.client_reference_id !== user.id) throw Object.assign(new Error("This checkout belongs to another account"), { status: 403 });
+  if (session.status !== "complete" || !session.subscription) throw Object.assign(new Error("Stripe checkout is not complete"), { status: 402 });
+  const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription.id;
+  const subscription = await stripeRequest(env, `/subscriptions/${encodeURIComponent(subscriptionId)}`);
+  const subscribed = ["active", "trialing"].includes(subscription.status);
+  const value = {
+    paywall_enabled: true,
+    configured: true,
+    signed_in: true,
+    subscribed,
+    email: user.email,
+    customer_id: typeof session.customer === "string" ? session.customer : session.customer?.id,
+    subscription_status: subscription.status,
+    renews_at: subscription.current_period_end ? new Date(subscription.current_period_end * 1000).toISOString() : null,
+  };
+  accessCache.set(user.id, { value, expiresAt: Date.now() + 2 * 60 * 1000 });
+  return value;
+}
+
 async function requireSubscription(request, env) {
   const access = await subscriptionAccess(request, env);
   if (!access.paywall_enabled || access.subscribed) return access;
@@ -119,7 +143,7 @@ async function createCheckout(request, env) {
       mode: "subscription",
       customer: customer.id,
       client_reference_id: user.id,
-      success_url: `${origin}/?checkout=success`,
+      success_url: `${origin}/?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/?checkout=cancelled`,
       allow_promotion_codes: "true",
       "line_items[0][quantity]": "1",
@@ -606,7 +630,10 @@ async function handle(request, env, ctx) {
   if (request.method === "GET" && url.pathname === "/health") return json({ status: "ok", read_only: true, order_submission_supported: false, data_source: "Robinhood" });
   if (request.method === "GET" && url.pathname === "/api/access") {
     try {
-      const { customer_id, ...access } = await subscriptionAccess(request, env);
+      const sessionId = url.searchParams.get("session_id");
+      const { customer_id, ...access } = sessionId
+        ? await subscriptionAccessFromCheckout(request, env, sessionId)
+        : await subscriptionAccess(request, env);
       void customer_id;
       return json(access);
     } catch (error) { return json({ error: cleanError(error) }, 502); }

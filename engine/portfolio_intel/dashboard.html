@@ -78,10 +78,10 @@ subscribe.addEventListener('click',()=>billingRedirect('/api/billing/checkout',s
 manageBilling.addEventListener('click',()=>billingRedirect('/api/billing/portal',manageBilling));
 async function initializeAccess(){
   try{
-    const response=await fetch('/api/access'),access=await response.json();
+    const pageParams=new URLSearchParams(location.search),sessionId=pageParams.get('session_id'),response=await fetch('/api/access'+(sessionId?'?session_id='+encodeURIComponent(sessionId):'')),access=await response.json();
     if(!response.ok)throw new Error(access.error||'Could not check access');
     if(!access.paywall_enabled){app.classList.remove('hidden');scan();return}
-    if(access.subscribed){paywall.classList.add('hidden');app.classList.remove('hidden');manageBilling.classList.remove('hidden');scan();return}
+    if(access.subscribed){paywall.classList.add('hidden');app.classList.remove('hidden');manageBilling.classList.remove('hidden');if(sessionId)history.replaceState({},'',location.pathname);scan();return}
     app.classList.add('hidden');paywall.classList.remove('hidden');
     if(!access.configured){paywallStatus.textContent='Secure billing setup is being finalized. Please check back shortly.';return}
     if(!access.signed_in){signIn.classList.remove('hidden');paywallStatus.textContent='Sign in first so your subscription follows your ChatGPT account.';return}
