@@ -10,4 +10,5 @@ __pycache__/
 *.db
 *.db-*
 .venv/
-
+dist/
+site.tar.gz
