@@ -7,8 +7,8 @@ from .config import Settings
 
 def plan_trade(snapshot: dict[str, Any], synthesis: dict[str, Any], settings: Settings) -> dict[str, Any]:
     price = float(snapshot["price"])
-    atr = max(float(snapshot["atr_14"]), price * 0.01)
-    stop_distance = max(2 * atr, price * 0.05)
+    atr = max(float(snapshot.get("signal_atr_14", snapshot["atr_14"])), price * 0.0025)
+    stop_distance = max(2 * atr, price * 0.0125)
     direction = str(snapshot.get("supertrend", {}).get("direction", "LONG")).upper()
     if direction == "SHORT":
         stop = price + stop_distance

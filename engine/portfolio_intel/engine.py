@@ -63,20 +63,21 @@ class PortfolioEngine:
                 else risk["veto_reasons"][:4]
             )
             supertrend = snapshot.get("supertrend", {})
+            signal_timeframe = str(supertrend.get("timeframe", "1h")).upper()
             chart_explanation.insert(
                 0,
-                f"Supertrend ({supertrend.get('period', 10)}, {supertrend.get('multiplier', 3)}) is "
+                f"{signal_timeframe} Supertrend ({supertrend.get('period', 10)}, {supertrend.get('multiplier', 3)}) is "
                 f"{trade['direction']} at ${float(supertrend.get('value', snapshot['price'])):.2f}.",
             )
             if not supertrend.get("is_confirmed", True):
                 if supertrend.get("direction") != supertrend.get("confirmed_direction"):
                     chart_explanation.insert(
                         1,
-                        f"Today's live daily bar has provisionally flipped from "
+                        f"The live one-hour bar has provisionally flipped from "
                         f"{supertrend.get('confirmed_direction')} to {supertrend.get('direction')}; confirm at the close.",
                     )
                 else:
-                    chart_explanation.insert(1, "Today's live daily bar agrees with the last confirmed signal.")
+                    chart_explanation.insert(1, "The live one-hour bar agrees with the last confirmed signal.")
             decision = {
                 "run_id": run_id,
                 "symbol": ticker,
@@ -114,7 +115,7 @@ class PortfolioEngine:
                     "stance": action,
                     "explanation": chart_explanation,
                     "method": (
-                        f"{trade['direction']} scenario: risk is two 14-day average ranges against the setup; "
+                        f"{trade['direction']} scenario: risk is two 14-hour average ranges against the setup; "
                         "targets are 2R and 3R in the signal direction."
                     ),
                 },
@@ -186,7 +187,7 @@ class PortfolioEngine:
             "short_candidates": short_candidates[:bounded_limit],
             "direction_counts": {"LONG": len(long_candidates), "SHORT": len(short_candidates)},
             "errors": errors,
-            "method": "Directional pre-screen: daily Supertrend (10, 3), trend, 20/60-day momentum, volume participation, and volatility. Live-bar flips remain provisional until the close.",
+            "method": "Short-hold pre-screen: one-hour Supertrend (10, 3) drives direction; daily trend, 20/60-day momentum, volume, and volatility provide context. Live hourly flips remain provisional until that candle closes.",
             "next_step": "Run the full committee on a candidate before treating it as actionable.",
             "read_only": True,
             "order_submission_supported": False,
@@ -240,9 +241,24 @@ class PortfolioEngine:
         direction = supertrend_direction if supertrend_direction in ("LONG", "SHORT") else (
             "LONG" if long_score >= short_score else "SHORT"
         )
-        score = long_score if direction == "LONG" else short_score
         line_value = float(supertrend.get("value") or price)
         signal_age = int(supertrend.get("bars_since_flip") or 0)
+        if signal_age <= 6:
+            freshness_adjustment = 8
+        elif signal_age <= 18:
+            freshness_adjustment = 5
+        elif signal_age <= 36:
+            freshness_adjustment = 2
+        elif signal_age <= 60:
+            freshness_adjustment = -4
+        else:
+            freshness_adjustment = -8
+        if direction == "LONG":
+            long_score += freshness_adjustment
+        else:
+            short_score += freshness_adjustment
+        score = long_score if direction == "LONG" else short_score
+        signal_timeframe = str(supertrend.get("timeframe", "1h")).upper()
         is_confirmed = bool(supertrend.get("is_confirmed", True))
         confirmed_direction = str(supertrend.get("confirmed_direction") or supertrend_direction).upper()
         if not is_confirmed and supertrend_direction != confirmed_direction:
@@ -250,7 +266,7 @@ class PortfolioEngine:
                 f"Live Supertrend is provisionally {supertrend_direction} at ${line_value:.2f}"
             )
             cautions.append(
-                f"Latest confirmed daily signal is {confirmed_direction}; wait for the close to confirm the flip"
+                f"Latest confirmed {signal_timeframe} signal is {confirmed_direction}; wait for the hourly close"
             )
             long_score -= 8
             short_score -= 8
@@ -258,11 +274,13 @@ class PortfolioEngine:
         elif not is_confirmed:
             reasons.append(f"Live Supertrend remains {supertrend_direction} at ${line_value:.2f}")
         else:
-            reasons.append(f"Confirmed Supertrend (10, 3) is {supertrend_direction} at ${line_value:.2f}")
+            reasons.append(f"Confirmed {signal_timeframe} Supertrend (10, 3) is {supertrend_direction} at ${line_value:.2f}")
         if bool(supertrend.get("flipped_today")):
-            reasons.append(f"Fresh {supertrend_direction.lower()} signal on the latest daily bar")
+            reasons.append(f"Fresh {supertrend_direction.lower()} signal on the latest one-hour bar")
+        elif signal_age <= 36:
+            reasons.append(f"Signal has held for {signal_age + 1} hourly bars")
         else:
-            reasons.append(f"Signal has held for {signal_age + 1} daily bars")
+            cautions.append(f"Signal is {signal_age + 1} hourly bars old; a new entry may be late")
         if direction == "LONG":
             (reasons if price > sma20 else cautions).append("Price is above its 20-day average" if price > sma20 else "Price is below its 20-day average")
             (reasons if sma20 > sma50 else cautions).append("20-day trend is above the 50-day trend" if sma20 > sma50 else "20-day trend is below the 50-day trend")

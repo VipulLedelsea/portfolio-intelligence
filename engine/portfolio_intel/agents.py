@@ -34,8 +34,8 @@ Do not invent facts or sources. Your score is conviction in the bull case after 
 Surface hidden assumptions, permanent-loss paths, crowding, accounting or execution risks, and the fastest plausible thesis break.
 Do not invent facts or sources. Your score is severity of downside risk, where 100 is most severe.""",
     "synthesis": """You chair the investment committee. Steelman both supplied debate positions before deciding.
-Your score is the attractiveness of initiating or adding to a long position, 0 to 100. Your confidence must reflect evidence quality and disagreement.
-State a concise investable thesis and the decisive invalidation conditions. Use only supplied evidence and sources.""",
+Your score is the attractiveness of the market snapshot's proposed Supertrend direction, 0 to 100: LONG means owning the security and SHORT means expressing a bearish trade. Your confidence must reflect evidence quality and disagreement.
+State a concise directional thesis and the decisive invalidation conditions. Use only supplied evidence and sources.""",
 }
 
 
@@ -46,38 +46,45 @@ def technical_report(snapshot: dict[str, Any]) -> dict[str, Any]:
     r20 = float(snapshot["return_20d_pct"])
     r60 = float(snapshot["return_60d_pct"])
     volume_ratio = float(snapshot["volume_ratio_5d_to_20d"])
+    supertrend = snapshot.get("supertrend") or {}
+    direction = str(supertrend.get("direction", "LONG")).upper()
+    sign = 1 if direction == "LONG" else -1
     score = 50.0
-    evidence: list[str] = []
-    if price > sma20:
+    evidence: list[str] = [
+        f"One-hour Supertrend is {direction} at ${float(supertrend.get('value', price)):.2f}."
+    ]
+    if (price - sma20) * sign > 0:
         score += 10
-        evidence.append(f"Price is {((price / sma20) - 1) * 100:.1f}% above the 20-day average.")
+        evidence.append(f"Price versus the 20-day average supports the {direction.lower()} setup.")
     else:
         score -= 10
-        evidence.append(f"Price is {(1 - price / sma20) * 100:.1f}% below the 20-day average.")
-    if sma20 > sma50:
+        evidence.append(f"Price versus the 20-day average conflicts with the {direction.lower()} setup.")
+    if (sma20 - sma50) * sign > 0:
         score += 10
-        evidence.append("The 20-day average is above the 50-day average.")
+        evidence.append(f"The daily moving-average structure supports the {direction.lower()} setup.")
     else:
         score -= 10
-        evidence.append("The 20-day average is below the 50-day average.")
-    score += max(-15, min(15, r20 / 2))
-    score += max(-10, min(10, r60 / 4))
+        evidence.append(f"The daily moving-average structure conflicts with the {direction.lower()} setup.")
+    score += max(-15, min(15, r20 * sign / 2))
+    score += max(-10, min(10, r60 * sign / 4))
     if volume_ratio > 1.2:
         evidence.append(f"Recent volume is {volume_ratio:.2f}× the prior 20-day baseline.")
     risks = []
     if snapshot["annualized_volatility_pct"] > 60:
         risks.append(f"Annualized volatility is elevated at {snapshot['annualized_volatility_pct']:.1f}%.")
-    if r20 > 20:
-        risks.append("The 20-day move is extended and vulnerable to mean reversion.")
+    if r20 * sign > 20:
+        risks.append("The directional 20-day move is extended and vulnerable to mean reversion.")
+    if not supertrend.get("is_confirmed", True):
+        risks.append("The current one-hour Supertrend bar is provisional until it closes.")
     return {
         "role": "price_action",
         "symbol": snapshot["symbol"],
         "score": round(max(0, min(100, score)), 2),
         "confidence": 0.86,
-        "thesis": "Trend and momentum are constructive." if score >= 60 else "Price action is mixed or weak.",
+        "thesis": f"The one-hour {direction.lower()} setup is technically supported." if score >= 60 else f"The one-hour {direction.lower()} setup has conflicting technical evidence.",
         "evidence": evidence,
         "risks": risks or ["Technical signals can reverse without changes in fundamentals."],
-        "sources": ["Yahoo Finance chart data"],
+        "sources": ["Robinhood market data"],
         "as_of": snapshot["fetched_at"],
         "data_complete": bool(snapshot.get("data_complete")),
     }
@@ -162,4 +169,3 @@ def fallback_debate(symbol: str, reports: list[dict[str, Any]]) -> tuple[dict[st
         "evidence": bull["evidence"], "risks": bear["risks"], "sources": [], "as_of": now, "data_complete": complete,
     }
     return bull, bear, synthesis
-

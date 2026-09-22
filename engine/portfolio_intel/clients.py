@@ -215,6 +215,13 @@ class MarketDataClient:
                 "symbols": ",".join(batch), "bounds": "regular", "interval": "day", "span": "6month",
             }, safe=",")
             payload = self._fetch_json(f"{self.historicals_endpoint}?{query}")
+            signal_query = urllib.parse.urlencode({
+                "symbols": ",".join(batch), "bounds": "regular", "interval": "hour", "span": "month",
+            }, safe=",")
+            try:
+                signal_payload = self._fetch_json(f"{self.historicals_endpoint}?{signal_query}")
+            except RuntimeError:
+                signal_payload = {"results": []}
             quote_query = urllib.parse.urlencode({"symbols": ",".join(batch)}, safe=",")
             try:
                 quote_payload = self._fetch_json(f"{self.quotes_endpoint}?{quote_query}")
@@ -235,6 +242,10 @@ class MarketDataClient:
                 str(item.get("symbol", "")).upper(): item
                 for item in (live_payload.get("results") or []) if item
             }
+            signal_map = {
+                str(item.get("symbol", "")).upper(): item
+                for item in (signal_payload.get("results") or []) if item
+            }
             results = payload.get("results") or []
             returned: set[str] = set()
             for item in results:
@@ -244,7 +255,7 @@ class MarketDataClient:
                 returned.add(ticker)
                 try:
                     snapshots[ticker] = self._snapshot_from_robinhood(
-                        ticker, item, quote_map.get(ticker), live_map.get(ticker),
+                        ticker, item, quote_map.get(ticker), signal_map.get(ticker), live_map.get(ticker),
                     )
                 except Exception as exc:
                     errors.append({"symbol": ticker, "error": str(exc)})
@@ -276,14 +287,15 @@ class MarketDataClient:
         ticker: str,
         data: dict[str, Any],
         quote: dict[str, Any] | None,
+        hourly: dict[str, Any] | None = None,
         intraday: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        rows: list[dict[str, Any]] = []
+        daily_rows: list[dict[str, Any]] = []
         for bar in data.get("historicals") or []:
             if not bar or bar.get("interpolated"):
                 continue
             close = float(bar["close_price"])
-            rows.append({
+            daily_rows.append({
                 "date": str(bar["begins_at"])[:10],
                 "open": round(float(bar.get("open_price") or close), 4),
                 "close": round(close, 4),
@@ -291,37 +303,56 @@ class MarketDataClient:
                 "low": round(float(bar.get("low_price") or close), 4),
                 "volume": int(bar.get("volume") or 0),
             })
-        closes = [row["close"] for row in rows]
-        highs = [row["high"] for row in rows]
-        lows = [row["low"] for row in rows]
-        volumes = [float(row["volume"]) for row in rows]
+        closes = [row["close"] for row in daily_rows]
+        highs = [row["high"] for row in daily_rows]
+        lows = [row["low"] for row in daily_rows]
+        volumes = [float(row["volume"]) for row in daily_rows]
         if len(closes) < 22:
             raise RuntimeError(f"Insufficient Robinhood price history for {ticker}")
-        confirmed_supertrend = self._calculate_supertrend(rows, period=10, multiplier=3.0)
-        confirmed_date = rows[-1]["date"]
-        live_bar = self._aggregate_intraday_bar(intraday)
-        if live_bar and live_bar["date"] > confirmed_date:
-            live_rows = [dict(row) for row in rows] + [live_bar]
-            supertrend = self._calculate_supertrend(live_rows, period=10, multiplier=3.0)
-            rows = live_rows
+        signal_rows: list[dict[str, Any]] = []
+        for bar in (hourly or {}).get("historicals") or []:
+            if not bar or bar.get("interpolated"):
+                continue
+            close = float(bar["close_price"])
+            signal_rows.append({
+                "date": str(bar["begins_at"]),
+                "open": round(float(bar.get("open_price") or close), 4),
+                "close": round(close, 4),
+                "high": round(float(bar.get("high_price") or close), 4),
+                "low": round(float(bar.get("low_price") or close), 4),
+                "volume": int(bar.get("volume") or 0),
+                "bar_status": "confirmed_close",
+            })
+        if len(signal_rows) < 22:
+            raise RuntimeError(f"Insufficient Robinhood one-hour history for {ticker}")
+        live_hours = self._aggregate_intraday_hours(intraday)
+        if live_hours and live_hours[0]["date"][:10] > signal_rows[-1]["date"][:10]:
+            signal_rows.extend(live_hours)
+        has_live_bar = signal_rows[-1].get("bar_status") == "live_provisional"
+        if has_live_bar:
+            confirmed_rows = [dict(row) for row in signal_rows[:-1]]
+            confirmed_supertrend = self._calculate_supertrend(confirmed_rows, period=10, multiplier=3.0)
+            signal_rows = [dict(row) for row in confirmed_rows] + [dict(signal_rows[-1])]
+            supertrend = self._calculate_supertrend(signal_rows, period=10, multiplier=3.0)
             supertrend.update({
                 "is_confirmed": False,
                 "bar_status": "live_provisional",
-                "as_of": live_bar["begins_at"],
+                "as_of": signal_rows[-1]["date"],
                 "confirmed_direction": confirmed_supertrend["direction"],
                 "confirmed_value": confirmed_supertrend["value"],
-                "confirmed_as_of": confirmed_date,
+                "confirmed_as_of": confirmed_rows[-1]["date"],
             })
         else:
-            supertrend = confirmed_supertrend
+            supertrend = self._calculate_supertrend(signal_rows, period=10, multiplier=3.0)
             supertrend.update({
                 "is_confirmed": True,
                 "bar_status": "confirmed_close",
-                "as_of": confirmed_date,
-                "confirmed_direction": confirmed_supertrend["direction"],
-                "confirmed_value": confirmed_supertrend["value"],
-                "confirmed_as_of": confirmed_date,
+                "as_of": signal_rows[-1]["date"],
+                "confirmed_direction": supertrend["direction"],
+                "confirmed_value": supertrend["value"],
+                "confirmed_as_of": signal_rows[-1]["date"],
             })
+        supertrend.update({"timeframe": "1h", "interval_minutes": 60})
         quote = quote or {}
         current = float(quote.get("last_trade_price") or closes[-1])
         returns = [math.log(closes[i] / closes[i - 1]) for i in range(1, len(closes)) if closes[i - 1] > 0]
@@ -335,6 +366,18 @@ class MarketDataClient:
             for index in range(min(len(highs), len(lows)))
         ]
         atr14 = statistics.fmean(true_ranges[-14:]) if true_ranges else current * 0.03
+        signal_highs = [float(row["high"]) for row in signal_rows]
+        signal_lows = [float(row["low"]) for row in signal_rows]
+        signal_closes = [float(row["close"]) for row in signal_rows]
+        signal_ranges = [
+            signal_highs[index] - signal_lows[index] if index == 0 else max(
+                signal_highs[index] - signal_lows[index],
+                abs(signal_highs[index] - signal_closes[index - 1]),
+                abs(signal_lows[index] - signal_closes[index - 1]),
+            )
+            for index in range(len(signal_rows))
+        ]
+        signal_atr14 = statistics.fmean(signal_ranges[-14:]) if signal_ranges else atr14
         volume_recent = statistics.fmean(volumes[-5:]) if len(volumes) >= 5 else 0.0
         volume_base = statistics.fmean(volumes[-25:-5]) if len(volumes) >= 25 else volume_recent or 1.0
         return {
@@ -352,40 +395,52 @@ class MarketDataClient:
             "annualized_volatility_pct": round(annual_vol, 3),
             "atr_14": round(atr14, 4),
             "atr_14_pct": round((atr14 / current) * 100, 3),
+            "signal_atr_14": round(signal_atr14, 4),
+            "signal_atr_14_pct": round((signal_atr14 / current) * 100, 3),
             "volume_ratio_5d_to_20d": round(volume_recent / volume_base, 3) if volume_base else 1.0,
             "market_time": quote.get("venue_last_trade_time") or data.get("historicals", [{}])[-1].get("begins_at"),
             "fetched_at": datetime.now(timezone.utc).isoformat(),
             "data_source": "Robinhood",
-            "data_source_detail": "Completed daily bars plus an aggregated live regular-hours bar when available",
+            "data_source_detail": "Robinhood regular-hours one-hour candles; the live hour is aggregated from five-minute bars",
             "supertrend": supertrend,
             "data_complete": True,
-            "history": rows[-90:],
+            "history": signal_rows[-120:],
         }
 
     @staticmethod
-    def _aggregate_intraday_bar(intraday: dict[str, Any] | None) -> dict[str, Any] | None:
+    def _aggregate_intraday_hours(intraday: dict[str, Any] | None) -> list[dict[str, Any]]:
         bars = [
             bar for bar in ((intraday or {}).get("historicals") or [])
             if bar and not bar.get("interpolated") and bar.get("session") in (None, "reg")
         ]
         if not bars:
-            return None
+            return []
         latest_date = str(bars[-1].get("begins_at", ""))[:10]
         bars = [bar for bar in bars if str(bar.get("begins_at", ""))[:10] == latest_date]
         if not bars:
-            return None
-        first, last = bars[0], bars[-1]
-        close = float(last["close_price"])
-        return {
-            "date": latest_date,
-            "begins_at": str(last["begins_at"]),
-            "open": round(float(first.get("open_price") or close), 4),
-            "close": round(close, 4),
-            "high": round(max(float(bar.get("high_price") or close) for bar in bars), 4),
-            "low": round(min(float(bar.get("low_price") or close) for bar in bars), 4),
-            "volume": sum(int(bar.get("volume") or 0) for bar in bars),
-            "bar_status": "live_provisional",
-        }
+            return []
+        start = datetime.fromisoformat(str(bars[0]["begins_at"]).replace("Z", "+00:00"))
+        buckets: dict[int, list[dict[str, Any]]] = {}
+        for bar in bars:
+            begins_at = datetime.fromisoformat(str(bar["begins_at"]).replace("Z", "+00:00"))
+            bucket = int((begins_at - start).total_seconds() // 3600)
+            buckets.setdefault(bucket, []).append(bar)
+        aggregated: list[dict[str, Any]] = []
+        ordered = sorted(buckets.items())
+        for position, (_, bucket_bars) in enumerate(ordered):
+            first, last = bucket_bars[0], bucket_bars[-1]
+            close = float(last["close_price"])
+            is_last = position == len(ordered) - 1
+            aggregated.append({
+                "date": str(first["begins_at"]),
+                "open": round(float(first.get("open_price") or close), 4),
+                "close": round(close, 4),
+                "high": round(max(float(bar.get("high_price") or close) for bar in bucket_bars), 4),
+                "low": round(min(float(bar.get("low_price") or close) for bar in bucket_bars), 4),
+                "volume": sum(int(bar.get("volume") or 0) for bar in bucket_bars),
+                "bar_status": "live_provisional" if is_last else "confirmed_close",
+            })
+        return aggregated
 
     @staticmethod
     def _calculate_supertrend(

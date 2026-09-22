@@ -17,12 +17,13 @@ class FakeMarket:
             "previous_close": 99.0, "return_1d_pct": 1.0, "return_5d_pct": 4.0,
             "return_20d_pct": 8.0, "return_60d_pct": 14.0, "sma_20": 95.0,
             "sma_50": 90.0, "annualized_volatility_pct": 35.0, "atr_14": 3.0,
+            "signal_atr_14": 1.0, "signal_atr_14_pct": 1.0,
             "atr_14_pct": 3.0, "volume_ratio_5d_to_20d": 1.3,
             "market_time": "2026-09-20T12:00:00+00:00", "fetched_at": "2026-09-20T12:01:00+00:00",
             "data_complete": True,
             "data_source": "Test market data",
-            "data_source_detail": "Fixed daily OHLCV bars",
-            "supertrend": {"period": 10, "multiplier": 3.0, "direction": "LONG", "value": 92.0, "distance_pct": 8.7, "flipped_today": False, "bars_since_flip": 8, "is_confirmed": True, "confirmed_direction": "LONG"},
+            "data_source_detail": "Fixed one-hour OHLCV bars",
+            "supertrend": {"period": 10, "multiplier": 3.0, "direction": "LONG", "value": 92.0, "distance_pct": 8.7, "flipped_today": False, "bars_since_flip": 8, "is_confirmed": True, "confirmed_direction": "LONG", "timeframe": "1h"},
             "history": [
                 {"date": f"2026-08-{day:02d}", "open": 89.5 + day / 3, "close": 90.0 + day / 3, "high": 91.0 + day / 3, "low": 89.0 + day / 3, "volume": 1_000_000, "supertrend": 87.0 + day / 3, "supertrend_direction": "LONG"}
                 for day in range(1, 29)
@@ -164,14 +165,26 @@ class EngineTests(unittest.TestCase):
         candidate = PortfolioEngine._score_candidate(snapshot)
         self.assertEqual(candidate["direction"], "SHORT")
         self.assertEqual(candidate["label"], "Provisional short flip")
-        self.assertTrue(any("wait for the close" in caution for caution in candidate["cautions"]))
+        self.assertTrue(any("wait for the hourly close" in caution for caution in candidate["cautions"]))
 
-    def test_intraday_bars_aggregate_into_one_provisional_daily_candle(self):
+    def test_fresh_hourly_signal_outranks_stale_signal(self):
+        fresh = FakeMarket().snapshot("FRESH")
+        stale = FakeMarket().snapshot("STALE")
+        fresh["supertrend"]["bars_since_flip"] = 3
+        stale["supertrend"]["bars_since_flip"] = 80
+        fresh_candidate = PortfolioEngine._score_candidate(fresh)
+        stale_candidate = PortfolioEngine._score_candidate(stale)
+        self.assertGreater(fresh_candidate["score"], stale_candidate["score"])
+        self.assertTrue(any("entry may be late" in caution for caution in stale_candidate["cautions"]))
+
+    def test_intraday_bars_aggregate_into_one_provisional_hourly_candle(self):
         intraday = {"historicals": [
             {"begins_at": "2026-09-22T13:30:00Z", "open_price": "100", "close_price": "101", "high_price": "102", "low_price": "99", "volume": 100, "session": "reg", "interpolated": False},
             {"begins_at": "2026-09-22T13:35:00Z", "open_price": "101", "close_price": "103", "high_price": "104", "low_price": "100", "volume": 150, "session": "reg", "interpolated": False},
         ]}
-        bar = MarketDataClient._aggregate_intraday_bar(intraday)
+        hours = MarketDataClient._aggregate_intraday_hours(intraday)
+        self.assertEqual(len(hours), 1)
+        bar = hours[0]
         self.assertEqual(bar["open"], 100.0)
         self.assertEqual(bar["close"], 103.0)
         self.assertEqual(bar["high"], 104.0)
