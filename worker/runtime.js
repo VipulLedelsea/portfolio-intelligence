@@ -2,11 +2,14 @@ const ROBINHOOD_HISTORICALS = "https://api.robinhood.com/quotes/historicals/";
 const ROBINHOOD_QUOTES = "https://api.robinhood.com/quotes/";
 const ROBINHOOD_FUNDAMENTALS = "https://api.robinhood.com/fundamentals/";
 const SP500_SOURCE = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv";
+const STRIPE_API = "https://api.stripe.com/v1";
+const SUBSCRIPTION_PRICE_CENTS = 1499;
 const SCAN_CACHE_SECONDS = 300;
 const ANALYSIS_CACHE_SECONDS = 90;
 let discoveryInFlight = null;
 const analysisInFlight = new Map();
 const memoryCache = new Map();
+const accessCache = new Map();
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const round = (value, digits = 3) => Number(Number(value).toFixed(digits));
@@ -28,6 +31,114 @@ function json(payload, status = 200, extraHeaders = {}) {
 function cleanError(error) {
   const message = error instanceof Error ? error.message : String(error);
   return message.replace(/https?:\/\/[^\s]+/g, "market-data service").slice(0, 300);
+}
+
+function authenticatedUser(request) {
+  const id = request.headers.get("oai-authenticated-user-id");
+  const email = request.headers.get("oai-authenticated-user-email");
+  return id && email ? { id, email } : null;
+}
+
+async function stripeRequest(env, path, { method = "GET", params = null } = {}) {
+  if (!env.STRIPE_SECRET_KEY) throw new Error("Stripe billing is not configured yet");
+  const response = await fetch(`${STRIPE_API}${path}`, {
+    method,
+    headers: {
+      authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+      ...(params ? { "content-type": "application/x-www-form-urlencoded" } : {}),
+    },
+    body: params ? new URLSearchParams(params) : null,
+    signal: AbortSignal.timeout(20000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.error?.message || `Stripe returned HTTP ${response.status}`);
+  return payload;
+}
+
+async function findStripeCustomer(env, userId) {
+  const safeUserId = userId.replace(/[\\']/g, "");
+  const query = encodeURIComponent(`metadata['site_user_id']:'${safeUserId}'`);
+  const payload = await stripeRequest(env, `/customers/search?query=${query}&limit=1`);
+  return payload.data?.[0] || null;
+}
+
+async function createStripeCustomer(env, user) {
+  return stripeRequest(env, "/customers", {
+    method: "POST",
+    params: { email: user.email, "metadata[site_user_id]": user.id, description: "IntelligentPortfolio subscriber" },
+  });
+}
+
+async function activeStripeSubscription(env, customerId) {
+  const payload = await stripeRequest(env, `/subscriptions?customer=${encodeURIComponent(customerId)}&status=all&limit=20`);
+  return (payload.data || []).find(subscription => ["active", "trialing"].includes(subscription.status)) || null;
+}
+
+async function subscriptionAccess(request, env, { force = false } = {}) {
+  const enabled = env.PAYWALL_ENABLED === "true";
+  if (!enabled) return { paywall_enabled: false, configured: Boolean(env.STRIPE_SECRET_KEY), signed_in: Boolean(authenticatedUser(request)), subscribed: true };
+  if (!env.STRIPE_SECRET_KEY) return { paywall_enabled: true, configured: false, signed_in: Boolean(authenticatedUser(request)), subscribed: false };
+  const user = authenticatedUser(request);
+  if (!user) return { paywall_enabled: true, configured: true, signed_in: false, subscribed: false };
+  const cached = accessCache.get(user.id);
+  if (!force && cached && cached.expiresAt > Date.now()) return cached.value;
+  const customer = await findStripeCustomer(env, user.id);
+  const subscription = customer ? await activeStripeSubscription(env, customer.id) : null;
+  const value = {
+    paywall_enabled: true,
+    configured: true,
+    signed_in: true,
+    subscribed: Boolean(subscription),
+    email: user.email,
+    customer_id: customer?.id || null,
+    subscription_status: subscription?.status || null,
+    renews_at: subscription?.current_period_end ? new Date(subscription.current_period_end * 1000).toISOString() : null,
+  };
+  accessCache.set(user.id, { value, expiresAt: Date.now() + 2 * 60 * 1000 });
+  return value;
+}
+
+async function requireSubscription(request, env) {
+  const access = await subscriptionAccess(request, env);
+  if (!access.paywall_enabled || access.subscribed) return access;
+  const message = access.signed_in ? "An active IntelligentPortfolio subscription is required" : "Sign in with ChatGPT to continue";
+  throw Object.assign(new Error(message), { status: 402 });
+}
+
+async function createCheckout(request, env) {
+  if (env.PAYWALL_ENABLED !== "true") throw new Error("The subscription paywall is not enabled yet");
+  const user = authenticatedUser(request);
+  if (!user) throw Object.assign(new Error("Sign in with ChatGPT before subscribing"), { status: 401 });
+  const current = await subscriptionAccess(request, env, { force: true });
+  if (current.subscribed) throw new Error("This account already has an active subscription");
+  const customer = await findStripeCustomer(env, user.id) || await createStripeCustomer(env, user);
+  const origin = new URL(request.url).origin;
+  return stripeRequest(env, "/checkout/sessions", {
+    method: "POST",
+    params: {
+      mode: "subscription",
+      customer: customer.id,
+      client_reference_id: user.id,
+      success_url: `${origin}/?checkout=success`,
+      cancel_url: `${origin}/?checkout=cancelled`,
+      allow_promotion_codes: "true",
+      "line_items[0][quantity]": "1",
+      "line_items[0][price_data][currency]": "usd",
+      "line_items[0][price_data][unit_amount]": String(SUBSCRIPTION_PRICE_CENTS),
+      "line_items[0][price_data][recurring][interval]": "month",
+      "line_items[0][price_data][product_data][name]": "IntelligentPortfolio Pro",
+      "subscription_data[metadata][site_user_id]": user.id,
+    },
+  });
+}
+
+async function createBillingPortal(request, env) {
+  const access = await subscriptionAccess(request, env, { force: true });
+  if (!access.subscribed || !access.customer_id) throw Object.assign(new Error("An active subscription is required"), { status: 402 });
+  return stripeRequest(env, "/billing_portal/sessions", {
+    method: "POST",
+    params: { customer: access.customer_id, return_url: new URL(request.url).origin },
+  });
 }
 
 async function fetchJson(url) {
@@ -493,10 +604,26 @@ async function handle(request, env, ctx) {
     });
   }
   if (request.method === "GET" && url.pathname === "/health") return json({ status: "ok", read_only: true, order_submission_supported: false, data_source: "Robinhood" });
+  if (request.method === "GET" && url.pathname === "/api/access") {
+    try {
+      const { customer_id, ...access } = await subscriptionAccess(request, env);
+      void customer_id;
+      return json(access);
+    } catch (error) { return json({ error: cleanError(error) }, 502); }
+  }
   if (request.method === "GET" && url.pathname === "/api/history") return json([]);
   if (request.method !== "POST") return json({ error: "Not found" }, 404);
   try {
+    if (url.pathname === "/api/billing/checkout") {
+      const session = await createCheckout(request, env);
+      return json({ url: session.url });
+    }
+    if (url.pathname === "/api/billing/portal") {
+      const session = await createBillingPortal(request, env);
+      return json({ url: session.url });
+    }
     if (url.pathname === "/api/discover") {
+      await requireSubscription(request, env);
       await readBody(request);
       const payload = await fromCache(request, "sp500-discovery-v1", SCAN_CACHE_SECONDS, async () => {
         if (!discoveryInFlight) discoveryInFlight = discover().finally(() => { discoveryInFlight = null; });
@@ -505,6 +632,7 @@ async function handle(request, env, ctx) {
       return json(payload);
     }
     if (url.pathname === "/api/analyze") {
+      await requireSubscription(request, env);
       const body = await readBody(request);
       const symbol = String(body.symbol || "").trim().toUpperCase();
       if (!/^[A-Z0-9.\-^]{1,12}$/.test(symbol)) throw new Error("Enter a valid ticker symbol");
@@ -518,7 +646,7 @@ async function handle(request, env, ctx) {
     return json({ error: "Not found" }, 404);
   } catch (error) {
     const message = cleanError(error);
-    const status = /valid ticker|body is too large/i.test(message) ? 400 : 502;
+    const status = Number(error?.status) || (/valid ticker|body is too large/i.test(message) ? 400 : 502);
     return json({ error: message }, status);
   }
 }
