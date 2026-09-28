@@ -229,9 +229,9 @@ function normalizeBars(item, timeframe) {
     };
   }).filter(bar => {
     if (!bar.close || !bar.date) return false;
-    if (timeframe !== "hour") return true;
+    if (timeframe !== "5minute") return true;
     const begins = Date.parse(bar.date);
-    return !Number.isFinite(begins) || begins <= now - 60 * 60 * 1000;
+    return !Number.isFinite(begins) || begins <= now - 5 * 60 * 1000;
   });
 }
 
@@ -271,7 +271,7 @@ function calculateSupertrend(rows, period = 10, multiplier = 3) {
     row.supertrend_direction = direction;
   }
   const lastIndex = directions.reduce((last, direction, index) => direction ? index : last, -1);
-  if (lastIndex < 0) throw new Error("Insufficient one-hour history to calculate Supertrend");
+  if (lastIndex < 0) throw new Error("Insufficient five-minute history to calculate Supertrend");
   const direction = directions[lastIndex];
   let priorDirection = direction;
   for (let index = lastIndex - 1; index >= 0; index -= 1) if (directions[index]) { priorDirection = directions[index]; break; }
@@ -294,8 +294,8 @@ function calculateSupertrend(rows, period = 10, multiplier = 3) {
     confirmed_direction: direction,
     confirmed_value: round(values[lastIndex], 4),
     confirmed_as_of: rows[lastIndex].date,
-    timeframe: "1h",
-    interval_minutes: 60,
+    timeframe: "5m",
+    interval_minutes: 5,
   };
 }
 
@@ -309,22 +309,22 @@ function standardDeviation(values) {
   return Math.sqrt(mean(values.map(value => (value - average) ** 2)));
 }
 
-function snapshotFromPayload(symbol, dailyItem, hourlyItem, quote) {
+function snapshotFromPayload(symbol, dailyItem, signalItem, quote) {
   const daily = normalizeBars(dailyItem, "day");
-  const hourly = normalizeBars(hourlyItem, "hour");
+  const signal = normalizeBars(signalItem, "5minute");
   if (daily.length < 22) throw new Error(`Insufficient daily history for ${symbol}`);
-  if (hourly.length < 22) throw new Error(`Insufficient confirmed one-hour history for ${symbol}`);
+  if (signal.length < 22) throw new Error(`Insufficient confirmed five-minute history for ${symbol}`);
   const closes = daily.map(row => row.close);
   const highs = daily.map(row => row.high);
   const lows = daily.map(row => row.low);
   const volumes = daily.map(row => row.volume);
-  const supertrend = calculateSupertrend(hourly);
+  const supertrend = calculateSupertrend(signal);
   const price = numeric(quote?.last_trade_price) || closes.at(-1);
   const logReturns = closes.slice(1).map((close, index) => Math.log(close / closes[index])).filter(Number.isFinite);
   const trueRanges = highs.map((high, index) => index === 0 ? high - lows[index] : Math.max(high - lows[index], Math.abs(high - closes[index - 1]), Math.abs(lows[index] - closes[index - 1])));
-  const hourlyRanges = hourly.map((row, index) => index === 0 ? row.high - row.low : Math.max(row.high - row.low, Math.abs(row.high - hourly[index - 1].close), Math.abs(row.low - hourly[index - 1].close)));
+  const signalRanges = signal.map((row, index) => index === 0 ? row.high - row.low : Math.max(row.high - row.low, Math.abs(row.high - signal[index - 1].close), Math.abs(row.low - signal[index - 1].close)));
   const atr14 = mean(trueRanges.slice(-14)) || price * 0.03;
-  const signalAtr14 = mean(hourlyRanges.slice(-14)) || atr14;
+  const signalAtr14 = mean(signalRanges.slice(-14)) || atr14;
   const recentVolume = mean(volumes.slice(-5));
   const baseVolume = mean(volumes.slice(-25, -5)) || recentVolume || 1;
   return {
@@ -345,31 +345,31 @@ function snapshotFromPayload(symbol, dailyItem, hourlyItem, quote) {
     signal_atr_14: round(signalAtr14, 4),
     signal_atr_14_pct: round(signalAtr14 / price * 100, 3),
     volume_ratio_5d_to_20d: round(recentVolume / baseVolume, 3),
-    market_time: quote?.venue_last_trade_time || hourly.at(-1)?.date || daily.at(-1)?.date,
+    market_time: quote?.venue_last_trade_time || signal.at(-1)?.date || daily.at(-1)?.date,
     fetched_at: new Date().toISOString(),
     data_source: "Robinhood",
-    data_source_detail: "Robinhood regular-hours one-hour candles; only completed hourly bars are used for signals",
+    data_source_detail: "Robinhood regular-hours five-minute candles; only completed bars are used for signals",
     supertrend,
     data_complete: true,
-    history: hourly.slice(-120),
+    history: signal.slice(-120),
   };
 }
 
 async function fetchBatch(symbols) {
   const encoded = encodeURIComponent(symbols.join(",")).replaceAll("%2C", ",");
-  const [dailyPayload, hourlyPayload, quotePayload] = await Promise.all([
+  const [dailyPayload, signalPayload, quotePayload] = await Promise.all([
     fetchJson(`${ROBINHOOD_HISTORICALS}?symbols=${encoded}&bounds=regular&interval=day&span=6month`),
-    fetchJson(`${ROBINHOOD_HISTORICALS}?symbols=${encoded}&bounds=regular&interval=hour&span=month`),
+    fetchJson(`${ROBINHOOD_HISTORICALS}?symbols=${encoded}&bounds=regular&interval=5minute&span=week`),
     fetchJson(`${ROBINHOOD_QUOTES}?symbols=${encoded}`),
   ]);
   const daily = new Map((dailyPayload.results || []).filter(Boolean).map(item => [String(item.symbol || "").toUpperCase(), item]));
-  const hourly = new Map((hourlyPayload.results || []).filter(Boolean).map(item => [String(item.symbol || "").toUpperCase(), item]));
+  const signal = new Map((signalPayload.results || []).filter(Boolean).map(item => [String(item.symbol || "").toUpperCase(), item]));
   const quotes = new Map((quotePayload.results || []).filter(Boolean).map(item => [String(item.symbol || "").toUpperCase(), item]));
   const snapshots = new Map(), errors = [];
   for (const symbol of symbols) {
     try {
-      if (!daily.has(symbol) || !hourly.has(symbol)) throw new Error("Robinhood returned no history");
-      snapshots.set(symbol, snapshotFromPayload(symbol, daily.get(symbol), hourly.get(symbol), quotes.get(symbol)));
+      if (!daily.has(symbol) || !signal.has(symbol)) throw new Error("Robinhood returned no history");
+      snapshots.set(symbol, snapshotFromPayload(symbol, daily.get(symbol), signal.get(symbol), quotes.get(symbol)));
     } catch (error) { errors.push({ symbol, error: cleanError(error) }); }
   }
   return { snapshots, errors };
@@ -420,10 +420,10 @@ function scoreCandidate(snapshot, metadata = {}) {
   if (direction === "LONG") longScore += freshness; else shortScore += freshness;
   longScore = round(clamp(longScore, 0, 100), 1); shortScore = round(clamp(shortScore, 0, 100), 1);
   const score = direction === "LONG" ? longScore : shortScore;
-  reasons.push(`Confirmed 1H Supertrend (10, 3) is ${direction} at $${numeric(supertrend.value).toFixed(2)}`);
-  if (supertrend.flipped_today) reasons.push(`Fresh ${direction.toLowerCase()} signal on the latest completed one-hour bar`);
-  else if (age <= 36) reasons.push(`Signal has held for ${age + 1} completed hourly bars`);
-  else cautions.push(`Signal is ${age + 1} hourly bars old; a new entry may be late`);
+  reasons.push(`Confirmed 5M Supertrend (10, 3) is ${direction} at $${numeric(supertrend.value).toFixed(2)}`);
+  if (supertrend.flipped_today) reasons.push(`Fresh ${direction.toLowerCase()} signal on the latest completed five-minute bar`);
+  else if (age <= 36) reasons.push(`Signal has held for ${age + 1} completed five-minute bars`);
+  else cautions.push(`Signal is ${age + 1} five-minute bars old; a new entry may be late`);
   if (direction === "LONG") {
     (price > sma20 ? reasons : cautions).push(price > sma20 ? "Price is above its 20-day average" : "Price is below its 20-day average");
     (sma20 > sma50 ? reasons : cautions).push(sma20 > sma50 ? "20-day trend is above the 50-day trend" : "20-day trend is below the 50-day trend");
@@ -482,8 +482,8 @@ async function discover() {
     short_candidates: shortCandidates.slice(0, 20),
     direction_counts: { LONG: longCandidates.length, SHORT: shortCandidates.length },
     errors,
-    method: "Short-hold pre-screen: confirmed one-hour Supertrend (10, 3) drives direction; daily trend, 20/60-day momentum, volume, and volatility provide context.",
-    next_step: "Confirm the completed one-hour signal in TradingView and run the detailed review before making your own decision.",
+    method: "Short-hold pre-screen: confirmed five-minute Supertrend (10, 3) drives entry timing; daily trend, 20/60-day momentum, volume, and volatility provide context.",
+    next_step: "Confirm the completed five-minute signal in TradingView and run the detailed review before making your own decision.",
     read_only: true,
     order_submission_supported: false,
   };
@@ -516,11 +516,11 @@ async function analyze(symbol) {
     makeReport("fundamentals", symbol, fundamentalEvidence.length ? 58 : 50, fundamentalEvidence.length ? 0.6 : 0.25, fundamentalEvidence.length ? "Robinhood company fundamentals are available, but this technical scan does not model earnings quality or intrinsic value." : "Fundamental data was unavailable from the public market-data feed.", fundamentalEvidence, ["Financial statements and analyst estimates are not independently verified here."], Boolean(fundamentalEvidence.length)),
     makeReport("news", symbol, 50, 0.2, "No verified breaking-news feed is connected to this public deployment.", [], ["A fresh filing, earnings release, or headline could invalidate the setup."], false),
     makeReport("sentiment", symbol, 50 + clamp((snapshot.volume_ratio_5d_to_20d - 1) * 12, -12, 12), 0.55, `Price/volume behavior is being used as a sentiment proxy; recent volume is ${snapshot.volume_ratio_5d_to_20d.toFixed(2)}× its baseline.`, [`20-day return is ${snapshot.return_20d_pct >= 0 ? "+" : ""}${snapshot.return_20d_pct.toFixed(1)}%.`], ["This is not direct social-platform sentiment."], true),
-    makeReport("price_action", symbol, technicalScore, 0.78, `${direction} on confirmed one-hour Supertrend, with a ${candidate.label.toLowerCase()}.`, candidate.reasons, candidate.cautions, true),
+    makeReport("price_action", symbol, technicalScore, 0.78, `${direction} on confirmed five-minute Supertrend, with a ${candidate.label.toLowerCase()}.`, candidate.reasons, candidate.cautions, true),
   ];
   const averageScore = mean(reports.map(report => report.score));
   const complete = reports.every(report => report.data_complete);
-  const synthesis = makeReport("synthesis", symbol, averageScore, complete ? 0.68 : 0.48, `${direction} technical setup on completed one-hour candles${complete ? "." : ", but missing verified news or fundamental context keeps the research gate from clearing."}`, candidate.reasons, reports.flatMap(report => report.risks).slice(0, 5), complete);
+  const synthesis = makeReport("synthesis", symbol, averageScore, complete ? 0.68 : 0.48, `${direction} technical setup on completed five-minute candles${complete ? "." : ", but missing verified news or fundamental context keeps the research gate from clearing."}`, candidate.reasons, reports.flatMap(report => report.risks).slice(0, 5), complete);
   const bull = makeReport("bull", symbol, direction === "LONG" ? technicalScore : 100 - technicalScore, 0.62, direction === "LONG" ? "Trend, momentum, and Supertrend are aligned for the bullish case." : "A reversal back above the Supertrend line is the main bullish counter-case.", candidate.reasons, candidate.cautions, true);
   const bear = makeReport("bear", symbol, direction === "SHORT" ? technicalScore : 100 - technicalScore, 0.7, direction === "SHORT" ? "Trend, momentum, and Supertrend are aligned for the bearish case." : "Headline risk, volatility, and a close below Supertrend are the main reasons the long setup could fail.", candidate.cautions.length ? candidate.cautions : ["No setup is certain."], ["Risk is defined by the invalidation level."], true);
   const price = snapshot.price;
@@ -534,7 +534,7 @@ async function analyze(symbol) {
   const action = approved ? "IDEA" : technicalScore >= 55 ? "WATCH" : "PASS";
   const levels = { reference: round(price, 4), risk: round(stop, 4), target_1: round(target1, 4), target_2: round(target2, 4) };
   const chartExplanation = [
-    `1H Supertrend (10, 3) is ${direction} at $${numeric(snapshot.supertrend.value).toFixed(2)} on the latest completed candle.`,
+    `5M Supertrend (10, 3) is ${direction} at $${numeric(snapshot.supertrend.value).toFixed(2)} on the latest completed candle.`,
     ...candidate.reasons.slice(1, 3),
     ...(approved ? [] : vetoReasons),
   ];
@@ -567,7 +567,7 @@ async function analyze(symbol) {
       direction,
       stance: action,
       explanation: chartExplanation,
-      method: `${direction} scenario: risk is two 14-hour average ranges against the setup; targets are 2R and 3R in the signal direction. Levels are research scenarios, not orders.`,
+      method: `${direction} scenario: risk is two 14-bar average ranges against the setup, with a 1.25% minimum distance; targets are 2R and 3R in the signal direction. Levels are research scenarios, not orders.`,
     },
     read_only: true,
     order_submission_supported: false,
@@ -652,7 +652,7 @@ async function handle(request, env, ctx) {
     if (url.pathname === "/api/discover") {
       await requireSubscription(request, env);
       await readBody(request);
-      const payload = await fromCache(request, "sp500-discovery-v1", SCAN_CACHE_SECONDS, async () => {
+      const payload = await fromCache(request, "sp500-discovery-v2-5m", SCAN_CACHE_SECONDS, async () => {
         if (!discoveryInFlight) discoveryInFlight = discover().finally(() => { discoveryInFlight = null; });
         return discoveryInFlight;
       }, ctx);
@@ -663,7 +663,7 @@ async function handle(request, env, ctx) {
       const body = await readBody(request);
       const symbol = String(body.symbol || "").trim().toUpperCase();
       if (!/^[A-Z0-9.\-^]{1,12}$/.test(symbol)) throw new Error("Enter a valid ticker symbol");
-      const payload = await fromCache(request, `analysis-${symbol}-v1`, ANALYSIS_CACHE_SECONDS, async () => {
+      const payload = await fromCache(request, `analysis-${symbol}-v2-5m`, ANALYSIS_CACHE_SECONDS, async () => {
         if (!analysisInFlight.has(symbol)) analysisInFlight.set(symbol, analyze(symbol).finally(() => analysisInFlight.delete(symbol)));
         return analysisInFlight.get(symbol);
       }, ctx);

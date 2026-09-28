@@ -5,6 +5,7 @@
 config.json
 outputs/
 work/
+tmp/
 __pycache__/
 *.py[cod]
 *.db
