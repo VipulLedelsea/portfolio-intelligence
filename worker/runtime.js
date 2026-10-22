@@ -6,6 +6,9 @@ const STRIPE_API = "https://api.stripe.com/v1";
 const SUBSCRIPTION_PRICE_CENTS = 1499;
 const SCAN_CACHE_SECONDS = 300;
 const ANALYSIS_CACHE_SECONDS = 90;
+const MAX_ENTRY_AGE_BARS = 1;
+const MAX_ENTRY_EXTENSION_ATR = 0.5;
+const MAX_ADVERSE_EXTENSION_ATR = 0.75;
 let discoveryInFlight = null;
 const analysisInFlight = new Map();
 const memoryCache = new Map();
@@ -253,6 +256,7 @@ function calculateSupertrend(rows, period = 10, multiplier = 3) {
     const atr = atrValues[index];
     if (atr == null) continue;
     const row = rows[index];
+    row.atr = round(atr, 4);
     const midpoint = (row.high + row.low) / 2;
     const basicUpper = midpoint + multiplier * atr;
     const basicLower = midpoint - multiplier * atr;
@@ -280,6 +284,11 @@ function calculateSupertrend(rows, period = 10, multiplier = 3) {
     if (directions[index] && directions[index] !== direction) break;
     if (directions[index]) barsSinceFlip += 1;
   }
+  const flipIndex = Math.max(0, lastIndex - barsSinceFlip);
+  const signalBar = rows[flipIndex];
+  const nextBar = rows[flipIndex + 1] || null;
+  const signalStartedAt = Date.parse(signalBar.date);
+  const signalConfirmedAt = Number.isFinite(signalStartedAt) ? new Date(signalStartedAt + 60 * 60 * 1000).toISOString() : signalBar.date;
   return {
     period,
     multiplier,
@@ -288,6 +297,12 @@ function calculateSupertrend(rows, period = 10, multiplier = 3) {
     distance_pct: round((rows[lastIndex].close / values[lastIndex] - 1) * 100, 3),
     flipped_today: priorDirection !== direction,
     bars_since_flip: barsSinceFlip,
+    signal_bar_started_at: signalBar.date,
+    signal_confirmed_at: signalConfirmedAt,
+    signal_entry_price: round(nextBar?.open || signalBar.close, 4),
+    signal_entry_source: nextBar ? "next_bar_open" : "signal_bar_close",
+    expected_strategy_fill_at: signalConfirmedAt,
+    signal_atr: round(signalBar.atr || atrValues[flipIndex], 4),
     is_confirmed: true,
     bar_status: "confirmed_close",
     as_of: rows[lastIndex].date,
@@ -416,14 +431,33 @@ function scoreCandidate(snapshot, metadata = {}) {
   const volatilityPenalty = clamp((volatility - 35) * 0.25, 0, 20);
   longScore -= volatilityPenalty; shortScore -= volatilityPenalty;
   const age = Number(supertrend.bars_since_flip || 0);
-  const freshness = age <= 6 ? 8 : age <= 18 ? 5 : age <= 36 ? 2 : age <= 60 ? -4 : -8;
+  const entryReference = numeric(supertrend.signal_entry_price) || price;
+  const signalAtr = numeric(supertrend.signal_atr) || snapshot.signal_atr_14 || price * 0.01;
+  const favorableMove = direction === "LONG" ? price - entryReference : entryReference - price;
+  const extensionAtr = signalAtr ? favorableMove / signalAtr : 0;
+  const extensionPct = entryReference ? favorableMove / entryReference * 100 : 0;
+  const isFresh = age <= MAX_ENTRY_AGE_BARS;
+  const isExtended = extensionAtr > MAX_ENTRY_EXTENSION_ATR;
+  const isFailing = extensionAtr < -MAX_ADVERSE_EXTENSION_ATR;
+  const riskDistance = Math.max(2 * signalAtr, entryReference * 0.0125);
+  const target1 = direction === "SHORT" ? Math.max(0.01, entryReference - 2 * riskDistance) : entryReference + 2 * riskDistance;
+  const signalStartedAt = Date.parse(supertrend.signal_bar_started_at);
+  const postSignalBars = snapshot.history.filter(row => !Number.isFinite(signalStartedAt) || Date.parse(row.date) > signalStartedAt);
+  const target1Reached = direction === "SHORT"
+    ? [price, ...postSignalBars.map(row => row.low)].some(value => numeric(value) <= target1)
+    : [price, ...postSignalBars.map(row => row.high)].some(value => numeric(value) >= target1);
+  const entryEligible = isFresh && !isExtended && !isFailing && !target1Reached;
+  const entryStatus = !isFresh ? "LATE_TREND" : target1Reached ? "TARGET_REACHED" : isExtended ? "EXTENDED_DO_NOT_CHASE" : isFailing ? "SIGNAL_WEAKENING" : "ENTRY_WINDOW";
+  const freshness = age === 0 ? 12 : age === 1 ? 8 : -20;
   if (direction === "LONG") longScore += freshness; else shortScore += freshness;
   longScore = round(clamp(longScore, 0, 100), 1); shortScore = round(clamp(shortScore, 0, 100), 1);
   const score = direction === "LONG" ? longScore : shortScore;
   reasons.push(`Confirmed 1H Supertrend (10, 3) is ${direction} at $${numeric(supertrend.value).toFixed(2)}`);
-  if (supertrend.flipped_today) reasons.push(`Fresh ${direction.toLowerCase()} signal on the latest completed one-hour bar`);
-  else if (age <= 36) reasons.push(`Signal has held for ${age + 1} completed hourly bars`);
-  else cautions.push(`Signal is ${age + 1} hourly bars old; a new entry may be late`);
+  if (entryEligible) reasons.push(`Entry window is open: signal is ${age + 1} completed hourly bar${age ? "s" : ""} old and price is ${Math.abs(extensionAtr).toFixed(2)} ATR from the signal entry`);
+  else if (!isFresh) cautions.push(`Late trend: the signal is ${age + 1} completed hourly bars old`);
+  else if (target1Reached) cautions.push("Scenario target 1 was already reached — the original entry window is closed");
+  else if (isExtended) cautions.push(`Extended ${extensionAtr.toFixed(2)} ATR beyond the signal entry — do not chase`);
+  else cautions.push(`Price moved ${Math.abs(extensionAtr).toFixed(2)} ATR against the signal — wait for a new confirmation`);
   if (direction === "LONG") {
     (price > sma20 ? reasons : cautions).push(price > sma20 ? "Price is above its 20-day average" : "Price is below its 20-day average");
     (sma20 > sma50 ? reasons : cautions).push(sma20 > sma50 ? "20-day trend is above the 50-day trend" : "20-day trend is below the 50-day trend");
@@ -436,6 +470,7 @@ function scoreCandidate(snapshot, metadata = {}) {
   if (volumeRatio >= 1.15) reasons.push(`Recent volume is ${volumeRatio.toFixed(2)}× baseline`);
   if (volatility > 55) cautions.push(`Elevated annualized volatility of ${volatility.toFixed(1)}%`);
   const strength = score >= 70 ? "Strong" : score >= 60 ? "Developing" : "Weak";
+  const statusLabel = entryStatus === "ENTRY_WINDOW" ? `Fresh ${direction.toLowerCase()} entry` : entryStatus === "TARGET_REACHED" ? "Target reached — entry closed" : entryStatus === "EXTENDED_DO_NOT_CHASE" ? "Extended — do not chase" : entryStatus === "SIGNAL_WEAKENING" ? "Signal weakening" : "Active trend — entry passed";
   return {
     symbol: snapshot.symbol,
     company: metadata.company || snapshot.symbol,
@@ -444,7 +479,7 @@ function scoreCandidate(snapshot, metadata = {}) {
     long_score: longScore,
     short_score: shortScore,
     direction,
-    label: `${strength} ${direction.toLowerCase()} setup`,
+    label: entryEligible ? `${strength} ${statusLabel.toLowerCase()}` : statusLabel,
     price,
     return_1d_pct: snapshot.return_1d_pct,
     return_20d_pct: r20,
@@ -456,6 +491,15 @@ function scoreCandidate(snapshot, metadata = {}) {
     supertrend_is_confirmed: true,
     supertrend_flipped_today: Boolean(supertrend.flipped_today),
     signal_age_bars: age,
+    signal_confirmed_at: supertrend.signal_confirmed_at,
+    expected_strategy_fill_at: supertrend.expected_strategy_fill_at,
+    signal_entry_price: round(entryReference, 4),
+    signal_atr: round(signalAtr, 4),
+    extension_atr: round(extensionAtr, 3),
+    extension_pct: round(extensionPct, 3),
+    entry_status: entryStatus,
+    entry_eligible: entryEligible,
+    target_1_reached: target1Reached,
     reasons: reasons.slice(0, 4),
     cautions: cautions.slice(0, 3),
     market_time: snapshot.market_time,
@@ -467,7 +511,9 @@ async function discover() {
   const metadata = new Map(records.map(record => [record.symbol, record]));
   const symbols = [...metadata.keys()];
   const { snapshots, errors } = await fetchSnapshots(symbols);
-  const candidates = [...snapshots.entries()].map(([symbol, snapshot]) => scoreCandidate(snapshot, metadata.get(symbol))).sort((a, b) => b.score - a.score || a.symbol.localeCompare(b.symbol));
+  const allCandidates = [...snapshots.entries()].map(([symbol, snapshot]) => scoreCandidate(snapshot, metadata.get(symbol))).sort((a, b) => b.score - a.score || a.symbol.localeCompare(b.symbol));
+  const candidates = allCandidates.filter(candidate => candidate.entry_eligible);
+  const lateCandidates = allCandidates.filter(candidate => !candidate.entry_eligible);
   const longCandidates = candidates.filter(candidate => candidate.direction === "LONG").sort((a, b) => b.long_score - a.long_score || a.symbol.localeCompare(b.symbol));
   const shortCandidates = candidates.filter(candidate => candidate.direction === "SHORT").sort((a, b) => b.short_score - a.short_score || a.symbol.localeCompare(b.symbol));
   return {
@@ -476,14 +522,17 @@ async function discover() {
     universe_source: SP500_SOURCE,
     market_data_source: "Robinhood",
     universe_size: symbols.length,
-    successful: candidates.length,
+    successful: allCandidates.length,
     candidates: candidates.slice(0, 20),
     long_candidates: longCandidates.slice(0, 20),
     short_candidates: shortCandidates.slice(0, 20),
+    late_candidates: lateCandidates.slice(0, 20),
     direction_counts: { LONG: longCandidates.length, SHORT: shortCandidates.length },
+    fresh_entry_count: candidates.length,
+    late_or_extended_count: lateCandidates.length,
     errors,
-    method: "Short-hold pre-screen: confirmed one-hour Supertrend (10, 3) drives entry timing; daily trend, 20/60-day momentum, volume, and volatility provide context.",
-    next_step: "Confirm the completed one-hour signal in TradingView and run the detailed review before making your own decision.",
+    method: "Fresh-entry screen: confirmed one-hour Supertrend (10, 3) flips must be no more than two completed bars old and within 0.50 ATR of the original signal entry.",
+    next_step: "Late, extended, and weakening trends are separated so they cannot rank as new entries. On TradingView, a bar-close indicator alert fires when the flip candle closes; the default strategy order marker and order-fill alert appear at the next bar open. Use 1H regular-session candles, ATR length 10, and factor 3.",
     read_only: true,
     order_submission_supported: false,
   };
@@ -524,17 +573,26 @@ async function analyze(symbol) {
   const bull = makeReport("bull", symbol, direction === "LONG" ? technicalScore : 100 - technicalScore, 0.62, direction === "LONG" ? "Trend, momentum, and Supertrend are aligned for the bullish case." : "A reversal back above the Supertrend line is the main bullish counter-case.", candidate.reasons, candidate.cautions, true);
   const bear = makeReport("bear", symbol, direction === "SHORT" ? technicalScore : 100 - technicalScore, 0.7, direction === "SHORT" ? "Trend, momentum, and Supertrend are aligned for the bearish case." : "Headline risk, volatility, and a close below Supertrend are the main reasons the long setup could fail.", candidate.cautions.length ? candidate.cautions : ["No setup is certain."], ["Risk is defined by the invalidation level."], true);
   const price = snapshot.price;
-  const riskDistance = Math.max(2 * snapshot.signal_atr_14, price * 0.0125);
-  const stop = direction === "SHORT" ? price + riskDistance : Math.max(0.01, price - riskDistance);
-  const target1 = direction === "SHORT" ? Math.max(0.01, price - 2 * riskDistance) : price + 2 * riskDistance;
-  const target2 = direction === "SHORT" ? Math.max(0.01, price - 3 * riskDistance) : price + 3 * riskDistance;
+  const entryReference = candidate.signal_entry_price || price;
+  const riskDistance = Math.max(2 * candidate.signal_atr, entryReference * 0.0125);
+  const stop = direction === "SHORT" ? entryReference + riskDistance : Math.max(0.01, entryReference - riskDistance);
+  const target1 = direction === "SHORT" ? Math.max(0.01, entryReference - 2 * riskDistance) : entryReference + 2 * riskDistance;
+  const target2 = direction === "SHORT" ? Math.max(0.01, entryReference - 3 * riskDistance) : entryReference + 3 * riskDistance;
+  const signalStartedAt = Date.parse(snapshot.supertrend.signal_bar_started_at);
+  const postSignalBars = snapshot.history.filter(row => !Number.isFinite(signalStartedAt) || Date.parse(row.date) > signalStartedAt);
+  const target1Reached = direction === "SHORT"
+    ? [price, ...postSignalBars.map(row => row.low)].some(value => numeric(value) <= target1)
+    : [price, ...postSignalBars.map(row => row.high)].some(value => numeric(value) >= target1);
   const vetoReasons = reports.filter(report => !report.data_complete).map(report => `Incomplete required research: ${report.role}`);
   if (snapshot.annualized_volatility_pct > 85) vetoReasons.push(`Annualized volatility ${snapshot.annualized_volatility_pct.toFixed(1)}% exceeds the 85% review limit`);
-  const approved = vetoReasons.length === 0 && technicalScore >= 65;
-  const action = approved ? "IDEA" : technicalScore >= 55 ? "WATCH" : "PASS";
-  const levels = { reference: round(price, 4), risk: round(stop, 4), target_1: round(target1, 4), target_2: round(target2, 4) };
+  if (!candidate.entry_eligible) vetoReasons.push(candidate.entry_status === "TARGET_REACHED" ? "Scenario target 1 was already reached; the original entry window is closed" : candidate.entry_status === "EXTENDED_DO_NOT_CHASE" ? `Entry is extended ${candidate.extension_atr.toFixed(2)} ATR beyond the original signal price` : candidate.entry_status === "LATE_TREND" ? `Entry window passed ${candidate.signal_age_bars + 1} completed hourly bars ago` : `Signal weakened ${Math.abs(candidate.extension_atr).toFixed(2)} ATR against the intended direction`);
+  if (target1Reached) vetoReasons.push("Scenario target 1 was already reached after the signal; this entry is no longer actionable");
+  const approved = vetoReasons.length === 0 && technicalScore >= 65 && candidate.entry_eligible && !target1Reached;
+  const action = approved ? "IDEA" : candidate.entry_eligible && !target1Reached && technicalScore >= 55 ? "WATCH" : "PASS";
+  const levels = { reference: round(entryReference, 4), current: round(price, 4), risk: round(stop, 4), target_1: round(target1, 4), target_2: round(target2, 4) };
   const chartExplanation = [
-    `1H Supertrend (10, 3) is ${direction} at $${numeric(snapshot.supertrend.value).toFixed(2)} on the latest completed candle.`,
+    `1H Supertrend (10, 3) flipped ${direction} at ${snapshot.supertrend.signal_confirmed_at}; the anchored signal entry is $${entryReference.toFixed(2)}.`,
+    `Current price is ${candidate.extension_atr >= 0 ? "+" : ""}${candidate.extension_atr.toFixed(2)} ATR from that entry; status: ${candidate.entry_status.replaceAll("_", " ")}.`,
     ...candidate.reasons.slice(1, 3),
     ...(approved ? [] : vetoReasons),
   ];
@@ -545,7 +603,15 @@ async function analyze(symbol) {
     action,
     direction,
     approved,
-    entry_price: round(price, 4),
+    entry_price: round(entryReference, 4),
+    current_price: round(price, 4),
+    entry_status: candidate.entry_status,
+    entry_eligible: candidate.entry_eligible,
+    signal_confirmed_at: snapshot.supertrend.signal_confirmed_at,
+    expected_strategy_fill_at: snapshot.supertrend.expected_strategy_fill_at,
+    signal_age_bars: candidate.signal_age_bars,
+    extension_atr: candidate.extension_atr,
+    target_1_reached: target1Reached,
     stop_price: round(stop, 4),
     target_position_pct: 0,
     confidence: synthesis.confidence,
@@ -554,7 +620,7 @@ async function analyze(symbol) {
     market_snapshot: snapshot,
     analyst_reports: reports,
     debate: { bull, bear, synthesis },
-    trade_plan: { action, direction, entry_price: round(price, 4), stop_price: round(stop, 4), target_position_pct: 0, target_1: levels.target_1, target_2: levels.target_2 },
+    trade_plan: { action, direction, entry_price: round(entryReference, 4), current_price: round(price, 4), entry_status: candidate.entry_status, stop_price: round(stop, 4), target_position_pct: 0, target_1: levels.target_1, target_2: levels.target_2 },
     risk_review: { approved, veto_reasons: vetoReasons, reviewed_position_pct: 0, authority: "Risk owns the final veto; no downstream agent may override it." },
     portfolio_review: { approved, reasons: approved ? [] : ["Risk veto is active"], final_position_pct: 0, portfolio_note: approved ? "Cleared as a research idea." : "Not cleared as a research idea." },
     chart: {
@@ -563,11 +629,11 @@ async function analyze(symbol) {
       source_detail: snapshot.data_source_detail,
       supertrend: snapshot.supertrend,
       levels,
-      target_return_pct: { target_1: round((target1 / price - 1) * 100, 2), target_2: round((target2 / price - 1) * 100, 2) },
+      target_return_pct: { target_1: round((target1 / entryReference - 1) * 100, 2), target_2: round((target2 / entryReference - 1) * 100, 2) },
       direction,
       stance: action,
       explanation: chartExplanation,
-      method: `${direction} scenario: risk is two 14-bar average ranges against the setup, with a 1.25% minimum distance; targets are 2R and 3R in the signal direction. Levels are research scenarios, not orders.`,
+      method: `${direction} scenario: entry, risk, and 2R/3R targets stay anchored to the original Supertrend signal price. Signals older than two completed hourly bars, more than 0.50 ATR extended, or already through target 1 are rejected as late entries. Levels are research scenarios, not orders.`,
     },
     read_only: true,
     order_submission_supported: false,
@@ -652,7 +718,7 @@ async function handle(request, env, ctx) {
     if (url.pathname === "/api/discover") {
       await requireSubscription(request, env);
       await readBody(request);
-      const payload = await fromCache(request, "sp500-discovery-v4-1h", SCAN_CACHE_SECONDS, async () => {
+      const payload = await fromCache(request, "sp500-discovery-v5-entry-timing", SCAN_CACHE_SECONDS, async () => {
         if (!discoveryInFlight) discoveryInFlight = discover().finally(() => { discoveryInFlight = null; });
         return discoveryInFlight;
       }, ctx);
@@ -663,7 +729,7 @@ async function handle(request, env, ctx) {
       const body = await readBody(request);
       const symbol = String(body.symbol || "").trim().toUpperCase();
       if (!/^[A-Z0-9.\-^]{1,12}$/.test(symbol)) throw new Error("Enter a valid ticker symbol");
-      const payload = await fromCache(request, `analysis-${symbol}-v4-1h`, ANALYSIS_CACHE_SECONDS, async () => {
+      const payload = await fromCache(request, `analysis-${symbol}-v5-entry-timing`, ANALYSIS_CACHE_SECONDS, async () => {
         if (!analysisInFlight.has(symbol)) analysisInFlight.set(symbol, analyze(symbol).finally(() => analysisInFlight.delete(symbol)));
         return analysisInFlight.get(symbol);
       }, ctx);
