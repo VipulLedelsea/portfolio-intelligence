@@ -325,6 +325,41 @@ function calculateSupertrend(rows, period = 10, multiplier = 3, timeframe = "1h"
   };
 }
 
+function calculateAdx(rows, period = 14) {
+  const values = new Array(rows.length).fill(null);
+  if (rows.length < period * 2) return { value: 0, prior_value: 0, rising: false, period };
+  const trueRange = new Array(rows.length).fill(0);
+  const plusDm = new Array(rows.length).fill(0);
+  const minusDm = new Array(rows.length).fill(0);
+  for (let index = 1; index < rows.length; index += 1) {
+    const upMove = rows[index].high - rows[index - 1].high;
+    const downMove = rows[index - 1].low - rows[index].low;
+    plusDm[index] = upMove > downMove && upMove > 0 ? upMove : 0;
+    minusDm[index] = downMove > upMove && downMove > 0 ? downMove : 0;
+    trueRange[index] = Math.max(rows[index].high - rows[index].low, Math.abs(rows[index].high - rows[index - 1].close), Math.abs(rows[index].low - rows[index - 1].close));
+  }
+  let smoothRange = trueRange.slice(1, period + 1).reduce((sum, value) => sum + value, 0);
+  let smoothPlus = plusDm.slice(1, period + 1).reduce((sum, value) => sum + value, 0);
+  let smoothMinus = minusDm.slice(1, period + 1).reduce((sum, value) => sum + value, 0);
+  const dx = new Array(rows.length).fill(null);
+  for (let index = period; index < rows.length; index += 1) {
+    if (index > period) {
+      smoothRange = smoothRange - smoothRange / period + trueRange[index];
+      smoothPlus = smoothPlus - smoothPlus / period + plusDm[index];
+      smoothMinus = smoothMinus - smoothMinus / period + minusDm[index];
+    }
+    const plusDi = smoothRange ? 100 * smoothPlus / smoothRange : 0;
+    const minusDi = smoothRange ? 100 * smoothMinus / smoothRange : 0;
+    dx[index] = plusDi + minusDi ? 100 * Math.abs(plusDi - minusDi) / (plusDi + minusDi) : 0;
+  }
+  const seedIndex = period * 2 - 1;
+  values[seedIndex] = mean(dx.slice(period, seedIndex + 1));
+  for (let index = seedIndex + 1; index < rows.length; index += 1) values[index] = ((values[index - 1] * (period - 1)) + dx[index]) / period;
+  const value = numeric(values.at(-1));
+  const priorValue = numeric(values.at(-6));
+  return { value: round(value, 3), prior_value: round(priorValue, 3), rising: value > priorValue, period };
+}
+
 function periodReturn(closes, periods) {
   return closes.length > periods ? (closes.at(-1) / closes.at(-periods - 1) - 1) * 100 : 0;
 }
@@ -338,7 +373,7 @@ function standardDeviation(values) {
 function snapshotFromPayload(symbol, dailyItem, signalItem, quote) {
   const daily = normalizeBars(dailyItem, "day");
   const signal = normalizeBars(signalItem, "hour");
-  if (daily.length < 22) throw new Error(`Insufficient daily history for ${symbol}`);
+  if (daily.length < 35) throw new Error(`Insufficient daily history for ${symbol}`);
   if (signal.length < 22) throw new Error(`Insufficient confirmed one-hour history for ${symbol}`);
   const closes = daily.map(row => row.close);
   const highs = daily.map(row => row.high);
@@ -346,6 +381,7 @@ function snapshotFromPayload(symbol, dailyItem, signalItem, quote) {
   const volumes = daily.map(row => row.volume);
   const supertrend = calculateSupertrend(signal);
   const dailySupertrend = calculateSupertrend(daily, 10, 3, "1d");
+  const dailyAdx = calculateAdx(daily, 14);
   const price = numeric(quote?.last_trade_price) || closes.at(-1);
   const logReturns = closes.slice(1).map((close, index) => Math.log(close / closes[index])).filter(Number.isFinite);
   const trueRanges = highs.map((high, index) => index === 0 ? high - lows[index] : Math.max(high - lows[index], Math.abs(high - closes[index - 1]), Math.abs(lows[index] - closes[index - 1])));
@@ -378,6 +414,7 @@ function snapshotFromPayload(symbol, dailyItem, signalItem, quote) {
     data_source_detail: "Robinhood confirmed daily trend with regular-hours one-hour entry candles; only completed bars are used",
     supertrend,
     daily_supertrend: dailySupertrend,
+    daily_adx: dailyAdx,
     data_complete: true,
     history: signal.slice(-120),
   };
@@ -435,6 +472,10 @@ function scoreCandidate(snapshot, metadata = {}) {
   const direction = supertrend.direction || (price >= sma20 ? "LONG" : "SHORT");
   const dailyDirection = dailySupertrend.direction || (sma20 >= sma50 ? "LONG" : "SHORT");
   const dailyAligned = dailyDirection === direction;
+  const dailyAdx = numeric(snapshot.daily_adx?.value);
+  const dailyAdxPrior = numeric(snapshot.daily_adx?.prior_value);
+  const dailyAdxRising = Boolean(snapshot.daily_adx?.rising);
+  const regimeEligible = dailyAdx >= 20 && dailyAdxRising;
   let longScore = 50, shortScore = 50;
   const reasons = [], cautions = [];
   if (price > sma20) { longScore += 8; shortScore -= 8; } else { longScore -= 8; shortScore += 8; }
@@ -462,8 +503,8 @@ function scoreCandidate(snapshot, metadata = {}) {
   const target1Reached = direction === "SHORT"
     ? [price, ...postSignalBars.map(row => row.low)].some(value => numeric(value) <= target1)
     : [price, ...postSignalBars.map(row => row.high)].some(value => numeric(value) >= target1);
-  const entryEligible = dailyAligned && isFresh && !isExtended && !isFailing && !target1Reached;
-  const entryStatus = !dailyAligned ? "DAILY_CONFLICT" : !isFresh ? "LATE_TREND" : target1Reached ? "TARGET_REACHED" : isExtended ? "EXTENDED_DO_NOT_CHASE" : isFailing ? "SIGNAL_WEAKENING" : "ENTRY_WINDOW";
+  const entryEligible = dailyAligned && regimeEligible && isFresh && !isExtended && !isFailing && !target1Reached;
+  const entryStatus = !dailyAligned ? "DAILY_CONFLICT" : !regimeEligible ? "WEAK_TREND_REGIME" : !isFresh ? "LATE_TREND" : target1Reached ? "TARGET_REACHED" : isExtended ? "EXTENDED_DO_NOT_CHASE" : isFailing ? "SIGNAL_WEAKENING" : "ENTRY_WINDOW";
   const freshness = age === 0 ? 12 : age === 1 ? 8 : -20;
   if (direction === "LONG") longScore += freshness; else shortScore += freshness;
   longScore = round(clamp(longScore, 0, 100), 1); shortScore = round(clamp(shortScore, 0, 100), 1);
@@ -471,6 +512,9 @@ function scoreCandidate(snapshot, metadata = {}) {
   (dailyAligned ? reasons : cautions).push(dailyAligned
     ? `Confirmed daily Supertrend agrees: ${dailyDirection} at $${numeric(dailySupertrend.value).toFixed(2)}`
     : `Daily Supertrend is ${dailyDirection} while the 1H trigger is ${direction} — countertrend entry rejected`);
+  (regimeEligible ? reasons : cautions).push(regimeEligible
+    ? `Daily ADX (14) is ${dailyAdx.toFixed(1)} and rising from ${dailyAdxPrior.toFixed(1)} five sessions ago`
+    : `Trend-strength veto: daily ADX (14) is ${dailyAdx.toFixed(1)} and must be at least 20 and rising versus five sessions ago`);
   reasons.push(`Confirmed 1H Supertrend (10, 3) is ${direction} at $${numeric(supertrend.value).toFixed(2)}`);
   if (entryEligible) reasons.push(`Entry window is open: signal is ${age + 1} completed hourly bar${age ? "s" : ""} old and price is ${Math.abs(extensionAtr).toFixed(2)} ATR from the signal entry`);
   else if (!isFresh) cautions.push(`Late trend: the signal is ${age + 1} completed hourly bars old`);
@@ -489,7 +533,7 @@ function scoreCandidate(snapshot, metadata = {}) {
   if (volumeRatio >= 1.15) reasons.push(`Recent volume is ${volumeRatio.toFixed(2)}× baseline`);
   if (volatility > 55) cautions.push(`Elevated annualized volatility of ${volatility.toFixed(1)}%`);
   const strength = score >= 70 ? "Strong" : score >= 60 ? "Developing" : "Weak";
-  const statusLabel = entryStatus === "ENTRY_WINDOW" ? `Fresh ${direction.toLowerCase()} entry` : entryStatus === "DAILY_CONFLICT" ? "Daily trend conflict" : entryStatus === "TARGET_REACHED" ? "Target reached — entry closed" : entryStatus === "EXTENDED_DO_NOT_CHASE" ? "Extended — do not chase" : entryStatus === "SIGNAL_WEAKENING" ? "Signal weakening" : "Active trend — entry passed";
+  const statusLabel = entryStatus === "ENTRY_WINDOW" ? `Fresh ${direction.toLowerCase()} entry` : entryStatus === "DAILY_CONFLICT" ? "Daily trend conflict" : entryStatus === "WEAK_TREND_REGIME" ? "Weak or fading daily trend" : entryStatus === "TARGET_REACHED" ? "Target reached — entry closed" : entryStatus === "EXTENDED_DO_NOT_CHASE" ? "Extended — do not chase" : entryStatus === "SIGNAL_WEAKENING" ? "Signal weakening" : "Active trend — entry passed";
   return {
     symbol: snapshot.symbol,
     company: metadata.company || snapshot.symbol,
@@ -513,6 +557,10 @@ function scoreCandidate(snapshot, metadata = {}) {
     daily_supertrend_value: dailySupertrend.value,
     daily_supertrend_as_of: dailySupertrend.confirmed_as_of,
     daily_aligned: dailyAligned,
+    daily_adx: round(dailyAdx, 3),
+    daily_adx_prior: round(dailyAdxPrior, 3),
+    daily_adx_rising: dailyAdxRising,
+    regime_eligible: regimeEligible,
     signal_age_bars: age,
     signal_confirmed_at: supertrend.signal_confirmed_at,
     expected_strategy_fill_at: supertrend.expected_strategy_fill_at,
@@ -554,9 +602,10 @@ async function discover() {
     fresh_entry_count: candidates.length,
     late_or_extended_count: lateCandidates.length,
     daily_conflict_count: lateCandidates.filter(candidate => candidate.entry_status === "DAILY_CONFLICT").length,
+    regime_filtered_count: lateCandidates.filter(candidate => candidate.entry_status === "WEAK_TREND_REGIME").length,
     errors,
-    method: "Hybrid screen: the confirmed daily Supertrend (10, 3) is a mandatory direction filter, then a confirmed one-hour Supertrend finds the entry. Hourly flips must be no more than two completed bars old and within 0.50 ATR of the original entry.",
-    next_step: "Countertrend, late, extended, and weakening setups cannot rank as new entries. In TradingView, confirm the daily Supertrend direction first, then use the 1H chart with ATR length 10 and factor 3 for timing.",
+    method: "Regime-aware hybrid screen: confirmed daily Supertrend (10, 3) sets direction, daily ADX (14) must be at least 20 and rising versus five sessions ago, then confirmed one-hour Supertrend finds the entry.",
+    next_step: "Countertrend, weak-regime, late, extended, and weakening setups cannot rank as new entries. In TradingView, confirm the daily direction and trend strength first, then use the 1H chart with ATR length 10 and factor 3 for timing.",
     read_only: true,
     order_submission_supported: false,
   };
@@ -609,13 +658,14 @@ async function analyze(symbol) {
     : [price, ...postSignalBars.map(row => row.high)].some(value => numeric(value) >= target1);
   const vetoReasons = reports.filter(report => !report.data_complete).map(report => `Incomplete required research: ${report.role}`);
   if (snapshot.annualized_volatility_pct > 85) vetoReasons.push(`Annualized volatility ${snapshot.annualized_volatility_pct.toFixed(1)}% exceeds the 85% review limit`);
-  if (!candidate.entry_eligible) vetoReasons.push(candidate.entry_status === "DAILY_CONFLICT" ? `Daily Supertrend is ${candidate.daily_supertrend_direction}; it does not confirm the ${direction} one-hour trigger` : candidate.entry_status === "TARGET_REACHED" ? "Scenario target 1 was already reached; the original entry window is closed" : candidate.entry_status === "EXTENDED_DO_NOT_CHASE" ? `Entry is extended ${candidate.extension_atr.toFixed(2)} ATR beyond the original signal price` : candidate.entry_status === "LATE_TREND" ? `Entry window passed ${candidate.signal_age_bars + 1} completed hourly bars ago` : `Signal weakened ${Math.abs(candidate.extension_atr).toFixed(2)} ATR against the intended direction`);
+  if (!candidate.entry_eligible) vetoReasons.push(candidate.entry_status === "DAILY_CONFLICT" ? `Daily Supertrend is ${candidate.daily_supertrend_direction}; it does not confirm the ${direction} one-hour trigger` : candidate.entry_status === "WEAK_TREND_REGIME" ? `Daily ADX is ${candidate.daily_adx.toFixed(1)}; qualifying setups require ADX of at least 20 and rising versus five sessions ago` : candidate.entry_status === "TARGET_REACHED" ? "Scenario target 1 was already reached; the original entry window is closed" : candidate.entry_status === "EXTENDED_DO_NOT_CHASE" ? `Entry is extended ${candidate.extension_atr.toFixed(2)} ATR beyond the original signal price` : candidate.entry_status === "LATE_TREND" ? `Entry window passed ${candidate.signal_age_bars + 1} completed hourly bars ago` : `Signal weakened ${Math.abs(candidate.extension_atr).toFixed(2)} ATR against the intended direction`);
   if (target1Reached) vetoReasons.push("Scenario target 1 was already reached after the signal; this entry is no longer actionable");
   const approved = vetoReasons.length === 0 && technicalScore >= 65 && candidate.entry_eligible && !target1Reached;
   const action = approved ? "IDEA" : candidate.entry_eligible && !target1Reached && technicalScore >= 55 ? "WATCH" : "PASS";
   const levels = { reference: round(entryReference, 4), current: round(price, 4), risk: round(stop, 4), target_1: round(target1, 4), target_2: round(target2, 4) };
   const chartExplanation = [
     `Confirmed daily Supertrend is ${candidate.daily_supertrend_direction}; ${candidate.daily_aligned ? "it agrees with" : "it conflicts with"} the ${direction} one-hour trigger.`,
+    `Daily ADX (14) is ${candidate.daily_adx.toFixed(1)} versus ${candidate.daily_adx_prior.toFixed(1)} five sessions ago; regime gate: ${candidate.regime_eligible ? "PASS" : "VETO"}.`,
     `1H Supertrend (10, 3) flipped ${direction} at ${snapshot.supertrend.signal_confirmed_at}; the anchored signal entry is $${entryReference.toFixed(2)}.`,
     `Current price is ${candidate.extension_atr >= 0 ? "+" : ""}${candidate.extension_atr.toFixed(2)} ATR from that entry; status: ${candidate.entry_status.replaceAll("_", " ")}.`,
     ...candidate.reasons.slice(1, 3),
@@ -635,6 +685,10 @@ async function analyze(symbol) {
     daily_supertrend_direction: candidate.daily_supertrend_direction,
     daily_supertrend_value: candidate.daily_supertrend_value,
     daily_aligned: candidate.daily_aligned,
+    daily_adx: candidate.daily_adx,
+    daily_adx_prior: candidate.daily_adx_prior,
+    daily_adx_rising: candidate.daily_adx_rising,
+    regime_eligible: candidate.regime_eligible,
     signal_confirmed_at: snapshot.supertrend.signal_confirmed_at,
     expected_strategy_fill_at: snapshot.supertrend.expected_strategy_fill_at,
     signal_age_bars: candidate.signal_age_bars,
@@ -657,12 +711,13 @@ async function analyze(symbol) {
       source_detail: snapshot.data_source_detail,
       supertrend: snapshot.supertrend,
       daily_supertrend: snapshot.daily_supertrend,
+      daily_adx: snapshot.daily_adx,
       levels,
       target_return_pct: { target_1: round((target1 / entryReference - 1) * 100, 2), target_2: round((target2 / entryReference - 1) * 100, 2) },
       direction,
       stance: action,
       explanation: chartExplanation,
-      method: `${direction} scenario: the confirmed daily Supertrend must agree before the 1H trigger can qualify. Entry, risk, and 2R/3R targets stay anchored to the original hourly signal price. Signals older than two completed hourly bars, more than 0.50 ATR extended, or already through target 1 are rejected. Levels are research scenarios, not orders.`,
+      method: `${direction} scenario: confirmed daily Supertrend must agree and daily ADX (14) must be at least 20 and rising before the 1H trigger can qualify. Entry, risk, and 2R/3R targets stay anchored to the original hourly signal price. Late, extended, or already-targeted signals are rejected. Levels are research scenarios, not orders.`,
     },
     read_only: true,
     order_submission_supported: false,
@@ -747,7 +802,7 @@ async function handle(request, env, ctx) {
     if (url.pathname === "/api/discover") {
       await requireSubscription(request, env);
       await readBody(request);
-      const payload = await fromCache(request, "sp500-discovery-v6-daily-filter", SCAN_CACHE_SECONDS, async () => {
+      const payload = await fromCache(request, "sp500-discovery-v7-regime-filter", SCAN_CACHE_SECONDS, async () => {
         if (!discoveryInFlight) discoveryInFlight = discover().finally(() => { discoveryInFlight = null; });
         return discoveryInFlight;
       }, ctx);
@@ -758,7 +813,7 @@ async function handle(request, env, ctx) {
       const body = await readBody(request);
       const symbol = String(body.symbol || "").trim().toUpperCase();
       if (!/^[A-Z0-9.\-^]{1,12}$/.test(symbol)) throw new Error("Enter a valid ticker symbol");
-      const payload = await fromCache(request, `analysis-${symbol}-v6-daily-filter`, ANALYSIS_CACHE_SECONDS, async () => {
+      const payload = await fromCache(request, `analysis-${symbol}-v7-regime-filter`, ANALYSIS_CACHE_SECONDS, async () => {
         if (!analysisInFlight.has(symbol)) analysisInFlight.set(symbol, analyze(symbol).finally(() => analysisInFlight.delete(symbol)));
         return analysisInFlight.get(symbol);
       }, ctx);
