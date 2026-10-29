@@ -23,6 +23,10 @@ assert.match(source, /dailyAdx >= 20 && dailyAdxRising/, "Daily ADX must be stro
 assert.match(source, /WEAK_TREND_REGIME/, "Weak trend regimes must have an explicit status");
 assert.match(html, /Daily trend filter/, "The dashboard must show the daily filter result");
 assert.match(html, /ADX \(14\)/, "The dashboard must explain the ADX regime gate");
+assert.match(html, /Interactive trade desk/, "The dashboard must include the interactive analysis desk");
+assert.match(html, /ANNOTATED SIGNAL/, "The chart must expose real signal annotations");
+assert.match(html, /Analysis only · orders are never placed/, "The analysis desk must remain explicitly read-only");
+assert.doesNotMatch(html, /Open Long|Open Short|Auto-execute/i, "The read-only interface must not expose execution controls");
 const accessResponse = await workerModule.default.fetch(new Request("https://example.test/api/access"), {}, { waitUntil() {} });
 const access = await accessResponse.json();
 assert.equal(access.paywall_enabled, false);
