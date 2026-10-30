@@ -641,8 +641,11 @@ async function analyze(symbol) {
     makeReport("price_action", symbol, technicalScore, 0.78, `${direction} on confirmed one-hour Supertrend, with a ${candidate.label.toLowerCase()}.`, candidate.reasons, candidate.cautions, true),
   ];
   const averageScore = mean(reports.map(report => report.score));
-  const complete = reports.every(report => report.data_complete);
-  const synthesis = makeReport("synthesis", symbol, averageScore, complete ? 0.68 : 0.48, `${direction} technical setup on completed one-hour candles${complete ? "." : ", but missing verified news or fundamental context keeps the research gate from clearing."}`, candidate.reasons, reports.flatMap(report => report.risks).slice(0, 5), complete);
+  const coreComplete = reports.filter(report => report.role === "price_action").every(report => report.data_complete);
+  const contextWarnings = reports.filter(report => !report.data_complete).map(report => report.role === "news"
+    ? "No live news feed is connected; check earnings, filings, and breaking headlines before acting."
+    : `${report.role.replaceAll("_", " ")} context is incomplete and should be verified independently.`);
+  const synthesis = makeReport("synthesis", symbol, averageScore, coreComplete ? 0.68 : 0.48, `${direction} technical setup on completed one-hour candles. Core price data is complete; unavailable news or fundamental context is a caution, not an automatic veto.`, candidate.reasons, [...reports.flatMap(report => report.risks).slice(0, 4), ...contextWarnings].slice(0, 6), coreComplete);
   const bull = makeReport("bull", symbol, direction === "LONG" ? technicalScore : 100 - technicalScore, 0.62, direction === "LONG" ? "Trend, momentum, and Supertrend are aligned for the bullish case." : "A reversal back above the Supertrend line is the main bullish counter-case.", candidate.reasons, candidate.cautions, true);
   const bear = makeReport("bear", symbol, direction === "SHORT" ? technicalScore : 100 - technicalScore, 0.7, direction === "SHORT" ? "Trend, momentum, and Supertrend are aligned for the bearish case." : "Headline risk, volatility, and a close below Supertrend are the main reasons the long setup could fail.", candidate.cautions.length ? candidate.cautions : ["No setup is certain."], ["Risk is defined by the invalidation level."], true);
   const price = snapshot.price;
@@ -656,7 +659,7 @@ async function analyze(symbol) {
   const target1Reached = direction === "SHORT"
     ? [price, ...postSignalBars.map(row => row.low)].some(value => numeric(value) <= target1)
     : [price, ...postSignalBars.map(row => row.high)].some(value => numeric(value) >= target1);
-  const vetoReasons = reports.filter(report => !report.data_complete).map(report => `Incomplete required research: ${report.role}`);
+  const vetoReasons = [];
   if (snapshot.annualized_volatility_pct > 85) vetoReasons.push(`Annualized volatility ${snapshot.annualized_volatility_pct.toFixed(1)}% exceeds the 85% review limit`);
   if (!candidate.entry_eligible) vetoReasons.push(candidate.entry_status === "DAILY_CONFLICT" ? `Daily Supertrend is ${candidate.daily_supertrend_direction}; it does not confirm the ${direction} one-hour trigger` : candidate.entry_status === "WEAK_TREND_REGIME" ? `Daily ADX is ${candidate.daily_adx.toFixed(1)}; qualifying setups require ADX of at least 20 and rising versus five sessions ago` : candidate.entry_status === "TARGET_REACHED" ? "Scenario target 1 was already reached; the original entry window is closed" : candidate.entry_status === "EXTENDED_DO_NOT_CHASE" ? `Entry is extended ${candidate.extension_atr.toFixed(2)} ATR beyond the original signal price` : candidate.entry_status === "LATE_TREND" ? `Entry window passed ${candidate.signal_age_bars + 1} completed hourly bars ago` : `Signal weakened ${Math.abs(candidate.extension_atr).toFixed(2)} ATR against the intended direction`);
   if (target1Reached) vetoReasons.push("Scenario target 1 was already reached after the signal; this entry is no longer actionable");
@@ -669,7 +672,8 @@ async function analyze(symbol) {
     `1H Supertrend (10, 3) flipped ${direction} at ${snapshot.supertrend.signal_confirmed_at}; the anchored signal entry is $${entryReference.toFixed(2)}.`,
     `Current price is ${candidate.extension_atr >= 0 ? "+" : ""}${candidate.extension_atr.toFixed(2)} ATR from that entry; status: ${candidate.entry_status.replaceAll("_", " ")}.`,
     ...candidate.reasons.slice(1, 3),
-    ...(approved ? [] : vetoReasons),
+    ...vetoReasons,
+    ...contextWarnings,
   ];
   return {
     run_id: crypto.randomUUID(),
@@ -699,11 +703,12 @@ async function analyze(symbol) {
     confidence: synthesis.confidence,
     thesis: synthesis.thesis,
     veto_reasons: vetoReasons,
+    context_warnings: contextWarnings,
     market_snapshot: snapshot,
     analyst_reports: reports,
     debate: { bull, bear, synthesis },
     trade_plan: { action, direction, entry_price: round(entryReference, 4), current_price: round(price, 4), entry_status: candidate.entry_status, stop_price: round(stop, 4), target_position_pct: 0, target_1: levels.target_1, target_2: levels.target_2 },
-    risk_review: { approved, veto_reasons: vetoReasons, reviewed_position_pct: 0, authority: "Risk owns the final veto; no downstream agent may override it." },
+    risk_review: { approved, veto_reasons: vetoReasons, context_warnings: contextWarnings, reviewed_position_pct: 0, authority: "Risk owns the final veto; no downstream agent may override it. Missing news is disclosed as context risk but does not override complete market-data gates." },
     portfolio_review: { approved, reasons: approved ? [] : ["Risk veto is active"], final_position_pct: 0, portfolio_note: approved ? "Cleared as a research idea." : "Not cleared as a research idea." },
     chart: {
       series: snapshot.history,

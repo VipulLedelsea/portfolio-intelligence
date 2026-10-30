@@ -21,6 +21,8 @@ assert.match(source, /dailyAligned && regimeEligible && isFresh/, "Daily Supertr
 assert.match(source, /DAILY_CONFLICT/, "Daily trend conflicts must have an explicit status");
 assert.match(source, /dailyAdx >= 20 && dailyAdxRising/, "Daily ADX must be strong and rising before an entry can qualify");
 assert.match(source, /WEAK_TREND_REGIME/, "Weak trend regimes must have an explicit status");
+assert.match(source, /const contextWarnings = reports\.filter\(report => !report\.data_complete\)/, "Unavailable news and fundamentals must be disclosed as context warnings");
+assert.doesNotMatch(source, /const vetoReasons = reports\.filter\(report => !report\.data_complete\)/, "Unavailable news must not automatically veto a technical setup");
 assert.match(html, /Daily trend filter/, "The dashboard must show the daily filter result");
 assert.match(html, /ADX \(14\)/, "The dashboard must explain the ADX regime gate");
 assert.match(html, /Interactive trade desk/, "The dashboard must include the interactive analysis desk");
