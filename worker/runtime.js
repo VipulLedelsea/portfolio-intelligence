@@ -766,8 +766,153 @@ async function fromCache(request, cacheName, maxAge, producer, ctx) {
   return payload;
 }
 
+async function rememberRecommendation(db, userId, report) {
+  if (!db || !userId || !report?.symbol) return false;
+  const generatedAt = report.market_snapshot?.fetched_at || new Date().toISOString();
+  const plan = report.trade_plan || {};
+  const result = await db.prepare(`INSERT OR IGNORE INTO recommendations (
+    id, user_id, symbol, action, direction, generated_at, signal_confirmed_at,
+    entry_price, current_price, stop_price, target_1, target_2, confidence,
+    entry_status, daily_adx, horizon_trading_days, status
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 5, 'PENDING')`).bind(
+    crypto.randomUUID(), userId, report.symbol, report.action, report.direction, generatedAt,
+    report.signal_confirmed_at, numeric(report.entry_price), numeric(report.current_price),
+    numeric(report.stop_price), numeric(plan.target_1), numeric(plan.target_2),
+    numeric(report.confidence), report.entry_status, numeric(report.daily_adx),
+  ).run();
+  return Boolean(result?.success);
+}
+
+async function fetchDailySettlementBars(symbols) {
+  const bars = new Map();
+  for (let index = 0; index < symbols.length; index += 20) {
+    const batch = symbols.slice(index, index + 20);
+    const encoded = encodeURIComponent(batch.join(",")).replaceAll("%2C", ",");
+    const payload = await fetchJson(`${ROBINHOOD_HISTORICALS}?symbols=${encoded}&bounds=regular&interval=day&span=year`);
+    for (const item of payload.results || []) {
+      if (!item?.symbol) continue;
+      bars.set(String(item.symbol).toUpperCase(), normalizeBars(item, "day"));
+    }
+  }
+  return bars;
+}
+
+function gradeRecommendation(recommendation, path) {
+  const entry = numeric(recommendation.current_price);
+  const direction = recommendation.direction;
+  const exitBar = path.at(-1);
+  const exit = numeric(exitBar.close);
+  const rawReturnPct = entry ? (exit / entry - 1) * 100 : 0;
+  const strategyReturnPct = direction === "SHORT" ? -rawReturnPct : rawReturnPct;
+  const maximumHigh = Math.max(...path.map(bar => numeric(bar.high)));
+  const minimumLow = Math.min(...path.map(bar => numeric(bar.low)));
+  const maxFavorablePct = entry ? (direction === "SHORT" ? (entry - minimumLow) / entry : (maximumHigh - entry) / entry) * 100 : 0;
+  const maxAdversePct = entry ? (direction === "SHORT" ? (maximumHigh - entry) / entry : (entry - minimumLow) / entry) * 100 : 0;
+  let firstEvent = null;
+  let targetHit = false;
+  let stopHit = false;
+  for (const bar of path) {
+    const hitTarget = direction === "SHORT" ? numeric(bar.low) <= numeric(recommendation.target_1) : numeric(bar.high) >= numeric(recommendation.target_1);
+    const hitStop = direction === "SHORT" ? numeric(bar.high) >= numeric(recommendation.stop_price) : numeric(bar.low) <= numeric(recommendation.stop_price);
+    targetHit ||= hitTarget;
+    stopHit ||= hitStop;
+    if (!firstEvent && hitTarget && hitStop) firstEvent = "AMBIGUOUS";
+    else if (!firstEvent && hitTarget) firstEvent = "TARGET";
+    else if (!firstEvent && hitStop) firstEvent = "STOP";
+  }
+  let grade;
+  if (recommendation.action === "PASS") grade = strategyReturnPct > 0.5 ? "MISSED_MOVE" : strategyReturnPct < -0.5 ? "CORRECT_PASS" : "FLAT_PASS";
+  else grade = firstEvent || (strategyReturnPct > 0.1 ? "WIN" : strategyReturnPct < -0.1 ? "LOSS" : "FLAT");
+  return {
+    settledAt: exitBar.date,
+    exitPrice: round(exit, 4),
+    rawReturnPct: round(rawReturnPct, 3),
+    strategyReturnPct: round(strategyReturnPct, 3),
+    maxFavorablePct: round(maxFavorablePct, 3),
+    maxAdversePct: round(maxAdversePct, 3),
+    grade,
+    targetHit,
+    stopHit,
+  };
+}
+
+async function settlePendingRecommendations(db, userId) {
+  const pendingResult = await db.prepare(`SELECT id, symbol, action, direction, generated_at, current_price, stop_price, target_1, horizon_trading_days
+    FROM recommendations WHERE user_id = ? AND status = 'PENDING' ORDER BY generated_at ASC LIMIT 60`).bind(userId).all();
+  const pending = pendingResult?.results || [];
+  if (!pending.length) return 0;
+  const histories = await fetchDailySettlementBars([...new Set(pending.map(row => row.symbol))]);
+  const updates = [];
+  for (const recommendation of pending) {
+    const generatedDate = String(recommendation.generated_at).slice(0, 10);
+    const horizon = Math.max(1, Number(recommendation.horizon_trading_days) || 5);
+    const path = (histories.get(recommendation.symbol) || []).filter(bar => bar.date.slice(0, 10) > generatedDate).slice(0, horizon);
+    if (path.length < horizon) continue;
+    const grade = gradeRecommendation(recommendation, path);
+    updates.push(db.prepare(`UPDATE recommendations SET status = 'SETTLED', settled_at = ?, exit_price = ?, raw_return_pct = ?,
+      strategy_return_pct = ?, max_favorable_pct = ?, max_adverse_pct = ?, grade = ?, target_hit = ?, stop_hit = ?
+      WHERE id = ? AND user_id = ? AND status = 'PENDING'`).bind(
+      grade.settledAt, grade.exitPrice, grade.rawReturnPct, grade.strategyReturnPct,
+      grade.maxFavorablePct, grade.maxAdversePct, grade.grade, grade.targetHit ? 1 : 0,
+      grade.stopHit ? 1 : 0, recommendation.id, userId,
+    ));
+  }
+  if (updates.length) await db.batch(updates);
+  return updates.length;
+}
+
+async function recommendationMemory(db, userId) {
+  if (!db) return { available: false, reason: "Persistent memory is not configured." };
+  let newlySettled = 0;
+  let settlementWarning = null;
+  try { newlySettled = await settlePendingRecommendations(db, userId); }
+  catch (error) { settlementWarning = `Existing grades are available, but new settlement was delayed: ${cleanError(error)}`; }
+  const summary = await db.prepare(`SELECT
+      COUNT(*) AS total_calls,
+      SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) AS pending_calls,
+      SUM(CASE WHEN status = 'SETTLED' THEN 1 ELSE 0 END) AS settled_calls,
+      SUM(CASE WHEN status = 'SETTLED' AND action != 'PASS' THEN 1 ELSE 0 END) AS scored_setups,
+      AVG(CASE WHEN status = 'SETTLED' AND action != 'PASS' THEN strategy_return_pct END) AS average_return_pct,
+      AVG(CASE WHEN status = 'SETTLED' AND action != 'PASS' THEN CASE WHEN strategy_return_pct > 0 THEN 1.0 ELSE 0.0 END END) AS win_rate,
+      SUM(CASE WHEN status = 'SETTLED' AND action != 'PASS' AND strategy_return_pct > 0 THEN strategy_return_pct ELSE 0 END) AS gross_wins,
+      ABS(SUM(CASE WHEN status = 'SETTLED' AND action != 'PASS' AND strategy_return_pct < 0 THEN strategy_return_pct ELSE 0 END)) AS gross_losses
+    FROM recommendations WHERE user_id = ?`).bind(userId).first();
+  const recentResult = await db.prepare(`SELECT symbol, action, direction, generated_at, status, settled_at, strategy_return_pct,
+      max_favorable_pct, max_adverse_pct, grade, entry_status
+    FROM recommendations WHERE user_id = ? ORDER BY generated_at DESC LIMIT 12`).bind(userId).all();
+  const directionResult = await db.prepare(`SELECT direction, COUNT(*) AS samples, AVG(strategy_return_pct) AS average_return_pct
+    FROM recommendations WHERE user_id = ? AND status = 'SETTLED' AND action != 'PASS'
+    GROUP BY direction ORDER BY average_return_pct DESC`).bind(userId).all();
+  const grossWins = numeric(summary?.gross_wins);
+  const grossLosses = numeric(summary?.gross_losses);
+  const scored = Number(summary?.scored_setups || 0);
+  const bestDirection = directionResult?.results?.[0] || null;
+  const learningNote = scored < 10
+    ? `Collecting evidence: ${scored}/10 settled IDEA or WATCH setups before drawing an early conclusion.`
+    : bestDirection
+      ? `${bestDirection.direction} setups currently lead with an average directional return of ${numeric(bestDirection.average_return_pct).toFixed(2)}% across ${bestDirection.samples} samples.`
+      : "No directional conclusion is available yet.";
+  return {
+    available: true,
+    newly_settled: newlySettled,
+    settlement_warning: settlementWarning,
+    horizon_trading_days: 5,
+    summary: {
+      total_calls: Number(summary?.total_calls || 0),
+      pending_calls: Number(summary?.pending_calls || 0),
+      settled_calls: Number(summary?.settled_calls || 0),
+      scored_setups: scored,
+      average_return_pct: round(numeric(summary?.average_return_pct), 3),
+      win_rate_pct: round(numeric(summary?.win_rate) * 100, 1),
+      profit_factor: grossLosses > 0 ? round(grossWins / grossLosses, 3) : grossWins > 0 ? null : 0,
+    },
+    learning_note: learningNote,
+    recent: recentResult?.results || [],
+    methodology: "Each call is stored once per user, ticker, signal close, and action. IDEA and WATCH results are graded from the actual price available when the report was generated to the fifth subsequent completed daily close. PASS calls are retained to measure missed moves. No orders or portfolio holdings are stored.",
+  };
+}
+
 async function handle(request, env, ctx) {
-  void env;
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/") {
     return new Response(PAGE, {
@@ -793,7 +938,6 @@ async function handle(request, env, ctx) {
       return json(access);
     } catch (error) { return json({ error: cleanError(error) }, 502); }
   }
-  if (request.method === "GET" && url.pathname === "/api/history") return json([]);
   if (request.method !== "POST") return json({ error: "Not found" }, 404);
   try {
     if (url.pathname === "/api/billing/checkout") {
@@ -813,6 +957,13 @@ async function handle(request, env, ctx) {
       }, ctx);
       return json(payload);
     }
+    if (url.pathname === "/api/memory") {
+      await requireSubscription(request, env);
+      await readBody(request);
+      const user = authenticatedUser(request);
+      if (!user) throw Object.assign(new Error("Sign in with ChatGPT to use persistent recommendation memory"), { status: 401 });
+      return json(await recommendationMemory(env.DB, user.id));
+    }
     if (url.pathname === "/api/analyze") {
       await requireSubscription(request, env);
       const body = await readBody(request);
@@ -822,7 +973,13 @@ async function handle(request, env, ctx) {
         if (!analysisInFlight.has(symbol)) analysisInFlight.set(symbol, analyze(symbol).finally(() => analysisInFlight.delete(symbol)));
         return analysisInFlight.get(symbol);
       }, ctx);
-      return json(payload);
+      const user = authenticatedUser(request);
+      let memoryLogged = false;
+      if (user && env.DB) {
+        try { memoryLogged = await rememberRecommendation(env.DB, user.id, payload); }
+        catch { memoryLogged = false; }
+      }
+      return json({ ...payload, memory_logged: memoryLogged, memory_horizon_trading_days: 5 });
     }
     if (url.pathname === "/api/grade") return json({ error: "Public grading is disabled; this deployment stores no visitor portfolio data." }, 405);
     return json({ error: "Not found" }, 404);
