@@ -9,6 +9,8 @@ const ANALYSIS_CACHE_SECONDS = 90;
 const MAX_ENTRY_AGE_BARS = 1;
 const MAX_ENTRY_EXTENSION_ATR = 0.5;
 const MAX_ADVERSE_EXTENSION_ATR = 0.75;
+const MOBILE_PAIRING_MINUTES = 10;
+const MOBILE_SESSION_DAYS = 90;
 let discoveryInFlight = null;
 const analysisInFlight = new Map();
 const memoryCache = new Map();
@@ -40,6 +42,41 @@ function authenticatedUser(request) {
   const id = request.headers.get("oai-authenticated-user-id");
   const email = request.headers.get("oai-authenticated-user-email");
   return id && email ? { id, email } : null;
+}
+
+function randomBase64Url(byteLength = 32) {
+  const bytes = crypto.getRandomValues(new Uint8Array(byteLength));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function randomPairingCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  return [...bytes].map(byte => alphabet[byte % alphabet.length]).join("");
+}
+
+async function sha256(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function mobileBearer(request) {
+  const match = request.headers.get("authorization")?.match(/^Bearer ([A-Za-z0-9_-]{40,})$/);
+  return match?.[1] || null;
+}
+
+async function requestUser(request, env) {
+  const browserUser = authenticatedUser(request);
+  if (browserUser) return { ...browserUser, auth_type: "chatgpt" };
+  const token = mobileBearer(request);
+  if (!token || !env.DB) return null;
+  const tokenHash = await sha256(token);
+  const session = await env.DB.prepare(`SELECT user_id, expires_at FROM mobile_sessions
+    WHERE token_hash = ? AND revoked_at IS NULL LIMIT 1`).bind(tokenHash).first();
+  if (!session || Date.parse(session.expires_at) <= Date.now()) return null;
+  return { id: session.user_id, email: null, auth_type: "mobile" };
 }
 
 async function stripeRequest(env, path, { method = "GET", params = null } = {}) {
@@ -79,11 +116,12 @@ async function activeStripeSubscription(env, customerId) {
 
 async function subscriptionAccess(request, env, { force = false } = {}) {
   const enabled = env.PAYWALL_ENABLED === "true";
-  if (!enabled) return { paywall_enabled: false, configured: Boolean(env.STRIPE_SECRET_KEY), signed_in: Boolean(authenticatedUser(request)), subscribed: true };
-  if (!env.STRIPE_SECRET_KEY) return { paywall_enabled: true, configured: false, signed_in: Boolean(authenticatedUser(request)), subscribed: false };
-  const user = authenticatedUser(request);
+  const user = await requestUser(request, env);
+  if (!enabled) return { paywall_enabled: false, configured: Boolean(env.STRIPE_SECRET_KEY), signed_in: Boolean(user), subscribed: true, auth_type: user?.auth_type || null };
+  if (!env.STRIPE_SECRET_KEY) return { paywall_enabled: true, configured: false, signed_in: Boolean(user), subscribed: false, auth_type: user?.auth_type || null };
   if (!user) return { paywall_enabled: true, configured: true, signed_in: false, subscribed: false };
-  const cached = accessCache.get(user.id);
+  const accessCacheKey = `${user.id}:${user.auth_type}`;
+  const cached = accessCache.get(accessCacheKey);
   if (!force && cached && cached.expiresAt > Date.now()) return cached.value;
   const customer = await findStripeCustomer(env, user.id);
   const subscription = customer ? await activeStripeSubscription(env, customer.id) : null;
@@ -96,8 +134,9 @@ async function subscriptionAccess(request, env, { force = false } = {}) {
     customer_id: customer?.id || null,
     subscription_status: subscription?.status || null,
     renews_at: subscription?.current_period_end ? new Date(subscription.current_period_end * 1000).toISOString() : null,
+    auth_type: user.auth_type,
   };
-  accessCache.set(user.id, { value, expiresAt: Date.now() + 2 * 60 * 1000 });
+  accessCache.set(accessCacheKey, { value, expiresAt: Date.now() + 2 * 60 * 1000 });
   return value;
 }
 
@@ -120,8 +159,9 @@ async function subscriptionAccessFromCheckout(request, env, sessionId) {
     customer_id: typeof session.customer === "string" ? session.customer : session.customer?.id,
     subscription_status: subscription.status,
     renews_at: subscription.current_period_end ? new Date(subscription.current_period_end * 1000).toISOString() : null,
+    auth_type: "chatgpt",
   };
-  accessCache.set(user.id, { value, expiresAt: Date.now() + 2 * 60 * 1000 });
+  accessCache.set(`${user.id}:chatgpt`, { value, expiresAt: Date.now() + 2 * 60 * 1000 });
   return value;
 }
 
@@ -166,6 +206,78 @@ async function createBillingPortal(request, env) {
     method: "POST",
     params: { customer: access.customer_id, return_url: new URL(request.url).origin },
   });
+}
+
+function cleanDeviceName(value) {
+  return String(value || "iPhone").replace(/[^A-Za-z0-9 ._'-]/g, "").trim().slice(0, 60) || "iPhone";
+}
+
+async function startMobilePairing(env, body) {
+  if (!env.DB) throw new Error("Mobile pairing is not configured yet");
+  const code = randomPairingCode();
+  const pairingSecret = randomBase64Url();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + MOBILE_PAIRING_MINUTES * 60 * 1000);
+  await env.DB.prepare("DELETE FROM mobile_pairings WHERE expires_at <= ?").bind(now.toISOString()).run();
+  await env.DB.prepare(`INSERT INTO mobile_pairings
+    (code_hash, secret_hash, device_name, created_at, expires_at)
+    VALUES (?, ?, ?, ?, ?)`).bind(
+    await sha256(code), await sha256(pairingSecret), cleanDeviceName(body.device_name), now.toISOString(), expiresAt.toISOString(),
+  ).run();
+  return { code, pairing_secret: pairingSecret, expires_at: expiresAt.toISOString(), poll_after_seconds: 2 };
+}
+
+async function approveMobilePairing(request, env, body) {
+  const user = authenticatedUser(request);
+  if (!user) throw Object.assign(new Error("Sign in with ChatGPT to pair an iPhone"), { status: 401 });
+  await requireSubscription(request, env);
+  const code = String(body.code || "").trim().toUpperCase();
+  if (!/^[A-HJ-NP-Z2-9]{8}$/.test(code)) throw Object.assign(new Error("Enter the 8-character code shown on the iPhone"), { status: 400 });
+  const now = new Date().toISOString();
+  const codeHash = await sha256(code);
+  const pairing = await env.DB.prepare(`SELECT expires_at, user_id, claimed_at FROM mobile_pairings
+    WHERE code_hash = ? LIMIT 1`).bind(codeHash).first();
+  if (!pairing || Date.parse(pairing.expires_at) <= Date.now()) throw Object.assign(new Error("That pairing code expired. Start again from the iPhone app."), { status: 410 });
+  if (pairing.claimed_at) throw Object.assign(new Error("That pairing code has already been used"), { status: 409 });
+  if (pairing.user_id && pairing.user_id !== user.id) throw Object.assign(new Error("That pairing code belongs to another account"), { status: 409 });
+  await env.DB.prepare(`UPDATE mobile_pairings SET user_id = ?, approved_at = ?
+    WHERE code_hash = ? AND user_id IS NULL`).bind(user.id, now, codeHash).run();
+  return { approved: true, expires_at: pairing.expires_at };
+}
+
+async function mobilePairingStatus(env, body) {
+  if (!env.DB) throw new Error("Mobile pairing is not configured yet");
+  const code = String(body.code || "").trim().toUpperCase();
+  const pairingSecret = String(body.pairing_secret || "");
+  if (!/^[A-HJ-NP-Z2-9]{8}$/.test(code) || !/^[A-Za-z0-9_-]{40,}$/.test(pairingSecret)) {
+    throw Object.assign(new Error("Invalid pairing request"), { status: 400 });
+  }
+  const codeHash = await sha256(code);
+  const pairing = await env.DB.prepare(`SELECT secret_hash, device_name, expires_at, user_id, approved_at, claimed_at
+    FROM mobile_pairings WHERE code_hash = ? LIMIT 1`).bind(codeHash).first();
+  if (!pairing || pairing.secret_hash !== await sha256(pairingSecret)) throw Object.assign(new Error("Pairing request not found"), { status: 404 });
+  if (Date.parse(pairing.expires_at) <= Date.now()) throw Object.assign(new Error("Pairing code expired"), { status: 410 });
+  if (!pairing.user_id || !pairing.approved_at) return { approved: false, expires_at: pairing.expires_at };
+  if (pairing.claimed_at) throw Object.assign(new Error("Pairing code has already been claimed"), { status: 409 });
+  const token = randomBase64Url(36);
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + MOBILE_SESSION_DAYS * 24 * 60 * 60 * 1000);
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO mobile_sessions
+      (token_hash, user_id, device_name, created_at, expires_at) VALUES (?, ?, ?, ?, ?)`).bind(
+      await sha256(token), pairing.user_id, pairing.device_name, now.toISOString(), expiresAt.toISOString(),
+    ),
+    env.DB.prepare("UPDATE mobile_pairings SET claimed_at = ? WHERE code_hash = ? AND claimed_at IS NULL").bind(now.toISOString(), codeHash),
+  ]);
+  return { approved: true, token, expires_at: expiresAt.toISOString() };
+}
+
+async function revokeMobileSession(request, env) {
+  const token = mobileBearer(request);
+  if (!token || !env.DB) throw Object.assign(new Error("Mobile session not found"), { status: 401 });
+  await env.DB.prepare("UPDATE mobile_sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL")
+    .bind(new Date().toISOString(), await sha256(token)).run();
+  return { revoked: true };
 }
 
 async function fetchJson(url) {
@@ -940,6 +1052,18 @@ async function handle(request, env, ctx) {
   }
   if (request.method !== "POST") return json({ error: "Not found" }, 404);
   try {
+    if (url.pathname === "/api/mobile/pair/start") {
+      return json(await startMobilePairing(env, await readBody(request)));
+    }
+    if (url.pathname === "/api/mobile/pair/status") {
+      return json(await mobilePairingStatus(env, await readBody(request)));
+    }
+    if (url.pathname === "/api/mobile/pair/approve") {
+      return json(await approveMobilePairing(request, env, await readBody(request)));
+    }
+    if (url.pathname === "/api/mobile/session/revoke") {
+      return json(await revokeMobileSession(request, env));
+    }
     if (url.pathname === "/api/billing/checkout") {
       const session = await createCheckout(request, env);
       return json({ url: session.url });
@@ -960,7 +1084,7 @@ async function handle(request, env, ctx) {
     if (url.pathname === "/api/memory") {
       await requireSubscription(request, env);
       await readBody(request);
-      const user = authenticatedUser(request);
+      const user = await requestUser(request, env);
       if (!user) throw Object.assign(new Error("Sign in with ChatGPT to use persistent recommendation memory"), { status: 401 });
       return json(await recommendationMemory(env.DB, user.id));
     }
@@ -973,7 +1097,7 @@ async function handle(request, env, ctx) {
         if (!analysisInFlight.has(symbol)) analysisInFlight.set(symbol, analyze(symbol).finally(() => analysisInFlight.delete(symbol)));
         return analysisInFlight.get(symbol);
       }, ctx);
-      const user = authenticatedUser(request);
+      const user = await requestUser(request, env);
       let memoryLogged = false;
       if (user && env.DB) {
         try { memoryLogged = await rememberRecommendation(env.DB, user.id, payload); }

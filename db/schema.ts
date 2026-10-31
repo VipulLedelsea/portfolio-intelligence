@@ -31,3 +31,27 @@ export const recommendations = sqliteTable("recommendations", {
   uniqueIndex("recommendations_user_signal_unique").on(table.userId, table.symbol, table.signalConfirmedAt, table.action),
   index("recommendations_user_status_idx").on(table.userId, table.status, table.generatedAt),
 ]);
+
+export const mobilePairings = sqliteTable("mobile_pairings", {
+  codeHash: text("code_hash").primaryKey(),
+  secretHash: text("secret_hash").notNull(),
+  deviceName: text("device_name").notNull(),
+  createdAt: text("created_at").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  userId: text("user_id"),
+  approvedAt: text("approved_at"),
+  claimedAt: text("claimed_at"),
+}, table => [
+  index("mobile_pairings_expires_idx").on(table.expiresAt),
+]);
+
+export const mobileSessions = sqliteTable("mobile_sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  userId: text("user_id").notNull(),
+  deviceName: text("device_name").notNull(),
+  createdAt: text("created_at").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  revokedAt: text("revoked_at"),
+}, table => [
+  index("mobile_sessions_user_expiry_idx").on(table.userId, table.expiresAt),
+]);
