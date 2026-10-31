@@ -63,7 +63,7 @@ struct AnalysisView: View {
 
         VStack(spacing: 0) {
             gate("Daily structure", value: analysis.dailyAligned ? "ALIGNED" : "CONFLICT", pass: analysis.dailyAligned)
-            gate("Trend strength", value: "ADX \(analysis.dailyAdx, specifier: "%.1f")", pass: analysis.regimeEligible)
+            gate("Trend strength", value: String(format: "ADX %.1f", analysis.dailyAdx), pass: analysis.regimeEligible)
             gate("Entry timing", value: analysis.entryStatus.replacingOccurrences(of: "_", with: " "), pass: analysis.entryStatus == "ENTRY_WINDOW")
             gate("Risk review", value: analysis.approved ? "CLEARED" : "VETO", pass: analysis.approved)
         }

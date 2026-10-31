@@ -11,11 +11,17 @@ This is the native, read-only SwiftUI client for IntelligentPortfolio. It uses t
 
 ## Open locally
 
-1. Install Xcode from the Mac App Store.
-2. Install XcodeGen with `brew install xcodegen`.
-3. From this `ios` directory, run `xcodegen generate`.
-4. Open `IntelligentPortfolio.xcodeproj` in Xcode.
-5. Select your Apple development team, choose an iPhone or simulator, and press Run.
+The generated Xcode project is included in this repository and has been build-checked with Xcode 27.2.
+
+1. Open `IntelligentPortfolio.xcodeproj` in Xcode.
+2. Choose an iPhone simulator, such as iPhone Duo, from the run-destination menu.
+3. Press Run.
+
+An Apple development team is only required when installing on a physical iPhone. If you change `project.yml`, install XcodeGen with `brew install xcodegen` and run `xcodegen generate` from this directory.
+
+### iPhone Duo runtime note
+
+If iPhone Duo remains on the Apple logo or Xcode reports `Data Migration Failed`, the installed Duo simulator runtime did not complete Apple's first-boot setup. Update or reinstall the iPhone Duo runtime from Xcode's Components settings, then erase and restart that simulator. This is a simulator-runtime failure; the IntelligentPortfolio app still compiles for the Duo's iOS simulator architecture.
 
 The production API origin is configured in `APIClient.swift`.
 
