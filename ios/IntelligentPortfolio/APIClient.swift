@@ -3,7 +3,7 @@ import Foundation
 actor APIClient {
     static let shared = APIClient()
     /// The only place the server address is set. Change it when the site moves.
-    static let productionOrigin = URL(string: "https://intelligent-portfolio.vipulsvdhotre.chatgpt.site")!
+    static let productionOrigin = URL(string: "https://intelligent-portfolio.portfolio-intelligence-site.workers.dev")!
 
     private let origin: URL
     private let session: URLSession
