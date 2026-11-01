@@ -35,3 +35,27 @@ struct ReadOnlyBadge: View {
     }
 }
 
+
+/// Layout thresholds for the resizable iPhone Duo scene. The scene can be a
+/// narrow portrait phone, a wide unfolded canvas, or landscape, so layout
+/// decisions follow the width actually offered rather than the device model.
+enum AdaptiveLayout {
+    static let splitThreshold: CGFloat = 620
+    static let listPaneWidth: CGFloat = 400
+    static let readableWidth: CGFloat = 760
+
+    static func isWide(_ width: CGFloat) -> Bool { width >= splitThreshold }
+}
+
+private struct ReadableWidthModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: AdaptiveLayout.readableWidth)
+            .frame(maxWidth: .infinity)
+    }
+}
+
+extension View {
+    /// Keeps long-form content to a comfortable measure on wide scenes.
+    func readableWidth() -> some View { modifier(ReadableWidthModifier()) }
+}

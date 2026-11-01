@@ -1,34 +1,54 @@
 import SwiftUI
 
+/// Full-screen analysis presented as a sheet on narrow scenes.
 struct AnalysisView: View {
-    @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
     let candidate: Candidate
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if model.isAnalyzing {
-                        ProgressView("Running analyst committee…")
-                            .tint(AppTheme.amber)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 80)
-                    } else if let analysis = model.analysis, analysis.symbol == candidate.symbol {
-                        analysisBody(analysis)
-                    }
+            AnalysisContent(candidate: candidate)
+                .navigationTitle(candidate.symbol)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) { Button("Close") { dismiss() } }
+                    ToolbarItem(placement: .topBarTrailing) { ReadOnlyBadge() }
                 }
-                .padding(16)
-            }
-            .background(AppTheme.background)
-            .navigationTitle(candidate.symbol)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button("Close") { dismiss() } }
-                ToolbarItem(placement: .topBarTrailing) { ReadOnlyBadge() }
-            }
-            .task { await model.analyze(symbol: candidate.symbol) }
         }
+    }
+}
+
+/// Analysis body shared by the sheet and the inline detail pane on wide scenes.
+struct AnalysisContent: View {
+    private enum ChartMode: String, CaseIterable, Identifiable {
+        case signal = "Signal"
+        case hourly = "TV 1H"
+        case daily = "TV Daily"
+        var id: String { rawValue }
+    }
+
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.openURL) private var openURL
+    @State private var chartMode = ChartMode.signal
+    let candidate: Candidate
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if model.isAnalyzing {
+                    ProgressView("Running analyst committee…")
+                        .tint(AppTheme.amber)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 80)
+                } else if let analysis = model.analysis, analysis.symbol == candidate.symbol {
+                    analysisBody(analysis)
+                }
+            }
+            .padding(16)
+            .readableWidth()
+        }
+        .background(AppTheme.background)
+        .task(id: candidate.symbol) { await model.analyze(symbol: candidate.symbol) }
     }
 
     @ViewBuilder
@@ -43,9 +63,32 @@ struct AnalysisView: View {
         }
 
         if let chart = analysis.chart {
-            CandlestickChart(series: chart.series, levels: chart.levels)
-                .frame(height: 280)
-                .panel()
+            Picker("Chart", selection: $chartMode) {
+                ForEach(ChartMode.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            switch chartMode {
+            case .signal:
+                CandlestickChart(series: chart.series, levels: chart.levels)
+                    .aspectRatio(1.5, contentMode: .fit)
+                    .frame(minHeight: 240, maxHeight: 440)
+                    .panel()
+            case .hourly, .daily:
+                let interval = chartMode == .daily ? "D" : "60"
+                TradingViewChart(symbol: analysis.symbol, interval: interval)
+                    .frame(height: 420)
+                    .overlay(Rectangle().stroke(AppTheme.line, lineWidth: 1))
+                Text("Chart by TradingView. Supertrend (10, 3) and DMI/ADX (14) are drawn by TradingView and can differ slightly from the engine's signal values. Entry, risk, and targets appear on the Signal chart.")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.muted)
+                if let url = TradingViewLink.url(symbol: analysis.symbol, interval: chartMode == .daily ? "D" : "60") {
+                    Button { openURL(url) } label: {
+                        Label("Open in TradingView", systemImage: "arrow.up.right.square")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(AppTheme.amber)
+                }
+            }
             levels(chart.levels)
         }
 
@@ -71,7 +114,7 @@ struct AnalysisView: View {
     }
 
     private func levels(_ levels: ScenarioLevels) -> some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
             level("Signal entry", levels.reference)
             level("Current", levels.current)
             level("Invalidation", levels.risk)

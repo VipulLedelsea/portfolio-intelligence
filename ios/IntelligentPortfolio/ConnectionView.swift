@@ -57,6 +57,7 @@ struct ConnectionView: View {
                     .foregroundStyle(AppTheme.muted)
             }
             .padding(24)
+            .readableWidth()
         }
     }
 }

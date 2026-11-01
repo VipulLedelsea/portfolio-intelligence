@@ -5,43 +5,84 @@ struct ScannerView: View {
     @State private var selected: Candidate?
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    header
-                    if let discovery = model.discovery {
-                        HStack {
-                            Label("\(discovery.successful)/\(discovery.universeSize) scanned", systemImage: "checkmark.circle")
-                            Spacer()
-                            Text("\(discovery.freshEntryCount) fresh")
-                        }
-                        .font(.caption.monospaced())
-                        .foregroundStyle(AppTheme.muted)
-
-                        ForEach(discovery.candidates) { candidate in
-                            Button { selected = candidate } label: {
-                                CandidateCard(candidate: candidate)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    } else if model.isScanning {
-                        ProgressView("Scanning the S&P 500…")
-                            .tint(AppTheme.amber)
-                            .padding(.top, 50)
-                    }
-                }
-                .padding(16)
-            }
-            .background(AppTheme.background)
-            .navigationTitle("Top setups")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { ReadOnlyBadge() }
-            }
-            .refreshable { await model.refreshScanner() }
-            .sheet(item: $selected) { candidate in
-                AnalysisView(candidate: candidate)
+        GeometryReader { proxy in
+            if AdaptiveLayout.isWide(proxy.size.width) {
+                splitLayout
+            } else {
+                compactLayout
             }
         }
+    }
+
+    /// Narrow scene: one column, analysis opens as a sheet.
+    private var compactLayout: some View {
+        NavigationStack {
+            scannerList(selectable: false)
+                .navigationTitle("Top setups")
+                .toolbar { ToolbarItem(placement: .topBarTrailing) { ReadOnlyBadge() } }
+                .sheet(item: $selected) { candidate in
+                    AnalysisView(candidate: candidate)
+                }
+        }
+    }
+
+    /// Wide scene (unfolded Duo or landscape): ranked list beside a live analysis pane.
+    private var splitLayout: some View {
+        NavigationStack {
+            HStack(spacing: 0) {
+                scannerList(selectable: true)
+                    .frame(width: AdaptiveLayout.listPaneWidth)
+                Rectangle().fill(AppTheme.line).frame(width: 1)
+                Group {
+                    if let candidate = selected {
+                        AnalysisContent(candidate: candidate)
+                    } else {
+                        ContentUnavailableView(
+                            "Select a setup",
+                            systemImage: "chart.xyaxis.line",
+                            description: Text("Choose a ranked setup to see its chart, gates, and scenario levels here.")
+                        )
+                        .foregroundStyle(AppTheme.muted)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(AppTheme.background)
+            }
+            .navigationTitle(selected?.symbol ?? "Top setups")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { ReadOnlyBadge() } }
+        }
+    }
+
+    private func scannerList(selectable: Bool) -> some View {
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                header
+                if let discovery = model.discovery {
+                    HStack {
+                        Label("\(discovery.successful)/\(discovery.universeSize) scanned", systemImage: "checkmark.circle")
+                        Spacer()
+                        Text("\(discovery.freshEntryCount) fresh")
+                    }
+                    .font(.caption.monospaced())
+                    .foregroundStyle(AppTheme.muted)
+
+                    ForEach(discovery.candidates) { candidate in
+                        Button { selected = candidate } label: {
+                            CandidateCard(candidate: candidate, isSelected: selectable && selected == candidate)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } else if model.isScanning {
+                    ProgressView("Scanning the S&P 500…")
+                        .tint(AppTheme.amber)
+                        .padding(.top, 50)
+                }
+            }
+            .padding(16)
+        }
+        .background(AppTheme.background)
+        .refreshable { await model.refreshScanner() }
     }
 
     private var header: some View {
@@ -66,6 +107,7 @@ struct ScannerView: View {
 
 private struct CandidateCard: View {
     let candidate: Candidate
+    var isSelected = false
     private var directionColor: Color { candidate.direction == "SHORT" ? AppTheme.red : AppTheme.mint }
 
     var body: some View {
@@ -96,6 +138,7 @@ private struct CandidateCard: View {
                 .foregroundStyle(AppTheme.muted)
         }
         .panel()
+        .overlay(Rectangle().stroke(AppTheme.amber, lineWidth: isSelected ? 2 : 0))
     }
 }
 

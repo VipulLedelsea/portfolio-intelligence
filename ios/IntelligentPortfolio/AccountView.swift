@@ -14,14 +14,15 @@ struct AccountView: View {
                     .panel()
                 Button("Manage subscription on the web") { openURL(webURL) }
                     .buttonStyle(.bordered)
-                Button("Disconnect this iPhone", role: .destructive) {
+                Button("Disconnect this device", role: .destructive) {
                     Task { await model.disconnect() }
                 }
                 .buttonStyle(.bordered)
                 Spacer()
             }
             .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .readableWidth()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(AppTheme.background)
             .navigationTitle("Account")
         }

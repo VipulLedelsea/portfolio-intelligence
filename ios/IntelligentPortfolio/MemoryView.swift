@@ -10,7 +10,7 @@ struct MemoryView: View {
                     Text("The system grades every research call after five completed market sessions.")
                         .foregroundStyle(AppTheme.muted)
                     if let memory = model.memory, let summary = memory.summary {
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
                             metric("Tracked", "\(summary.totalCalls)")
                             metric("Pending", "\(summary.pendingCalls)")
                             metric("Win rate", summary.scoredSetups > 0 ? String(format: "%.1f%%", summary.winRatePct) : "-")
@@ -27,6 +27,7 @@ struct MemoryView: View {
                     }
                 }
                 .padding(16)
+                .readableWidth()
             }
             .background(AppTheme.background)
             .navigationTitle("Learning memory")
