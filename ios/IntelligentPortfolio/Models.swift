@@ -150,8 +150,33 @@ struct AnalysisResponse: Decodable, Sendable {
     let chart: ChartPayload?
 }
 
+struct StrategyTrade: Decodable, Sendable {
+    let side: String
+    let entryDate: String
+    let entryPrice: Double
+    let exitDate: String
+    let exitPrice: Double
+    let pnlPct: Double
+}
+
+struct StrategyOpen: Decodable, Sendable {
+    let side: String
+    let entryDate: String
+    let entryPrice: Double
+    let pnlPct: Double
+}
+
+/// A replay of the 1H Supertrend (10, 3) as a strategy over the charted bars. Research only.
+struct StrategyPayload: Decodable, Sendable {
+    let name: String
+    let trades: [StrategyTrade]
+    let open: StrategyOpen?
+    let closedPnlPct: Double
+}
+
 struct ChartPayload: Decodable, Sendable {
     let source: String?
+    let strategy: StrategyPayload?
     let series: [Candle]
     let levels: ScenarioLevels
     let explanation: [String]?

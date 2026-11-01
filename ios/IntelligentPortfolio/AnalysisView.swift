@@ -187,7 +187,7 @@ struct AnalysisContent: View {
                 Group {
                     switch chartMode {
                     case .signal:
-                        CandlestickChart(series: chart.series, levels: chart.levels)
+                        CandlestickChart(series: chart.series, levels: chart.levels, strategy: chart.strategy)
                             .aspectRatio(1.5, contentMode: .fit)
                             .frame(minHeight: 240, maxHeight: 440)
                             .panel()
@@ -272,26 +272,56 @@ struct AnalysisContent: View {
 private struct CandlestickChart: View {
     let series: [Candle]
     let levels: ScenarioLevels
+    var strategy: StrategyPayload?
+
+    private static let longColor = Color(red: 0.36, green: 0.55, blue: 1.0)
+    private static let shortColor = Color(red: 1.0, green: 0.30, blue: 0.43)
 
     var body: some View {
         Canvas { context, size in
             guard series.count > 1 else { return }
-            let allPrices = series.flatMap { [$0.low, $0.high] } + [levels.risk, levels.reference, levels.target1, levels.target2]
+            let topInset: CGFloat = strategy == nil ? 0 : 16
+            let supertrendValues = series.compactMap(\.supertrend)
+            let allPrices = series.flatMap { [$0.low, $0.high] } + supertrendValues + [levels.risk, levels.reference, levels.target1, levels.target2]
             guard let low = allPrices.min(), let high = allPrices.max(), high > low else { return }
             let range = high - low
+            let plotHeight = size.height - topInset
             let xStep = size.width / CGFloat(series.count - 1)
-            let y: (Double) -> CGFloat = { value in size.height - CGFloat((value - low) / range) * size.height }
+            let x: (Int) -> CGFloat = { CGFloat($0) * xStep }
+            let y: (Double) -> CGFloat = { value in topInset + plotHeight - CGFloat((value - low) / range) * plotHeight }
+            let indexByDate = Dictionary(series.enumerated().map { ($0.element.date, $0.offset) }, uniquingKeysWith: { first, _ in first })
+
+            // Position box for the open strategy trade: green toward the target, red toward the risk level.
+            if let open = strategy?.open, let start = indexByDate[open.entryDate] {
+                let left = max(0, x(start) - xStep / 2)
+                let entry = y(levels.reference)
+                context.fill(Path(CGRect(x: left, y: min(entry, y(levels.target1)), width: size.width - left, height: abs(entry - y(levels.target1)))), with: .color(AppTheme.mint.opacity(0.10)))
+                context.fill(Path(CGRect(x: left, y: min(entry, y(levels.risk)), width: size.width - left, height: abs(entry - y(levels.risk)))), with: .color(AppTheme.red.opacity(0.12)))
+            }
 
             for (index, candle) in series.enumerated() {
-                let x = CGFloat(index) * xStep
+                let cx = x(index)
                 let color = candle.close >= candle.open ? AppTheme.mint : AppTheme.red
                 var wick = Path()
-                wick.move(to: CGPoint(x: x, y: y(candle.high)))
-                wick.addLine(to: CGPoint(x: x, y: y(candle.low)))
+                wick.move(to: CGPoint(x: cx, y: y(candle.high)))
+                wick.addLine(to: CGPoint(x: cx, y: y(candle.low)))
                 context.stroke(wick, with: .color(color), lineWidth: 1)
                 let top = min(y(candle.open), y(candle.close))
                 let height = max(1, abs(y(candle.open) - y(candle.close)))
-                context.fill(Path(CGRect(x: x - max(1, xStep * 0.28), y: top, width: max(2, xStep * 0.56), height: height)), with: .color(color))
+                context.fill(Path(CGRect(x: cx - max(1, xStep * 0.28), y: top, width: max(2, xStep * 0.56), height: height)), with: .color(color))
+            }
+
+            // Supertrend (10, 3), green while long and red while short.
+            for direction in ["LONG", "SHORT"] {
+                var line = Path()
+                var active = false
+                for (index, candle) in series.enumerated() {
+                    if candle.supertrendDirection == direction, let value = candle.supertrend {
+                        let point = CGPoint(x: x(index), y: y(value))
+                        if active { line.addLine(to: point) } else { line.move(to: point); active = true }
+                    } else { active = false }
+                }
+                context.stroke(line, with: .color(direction == "LONG" ? AppTheme.mint : AppTheme.red), lineWidth: 2)
             }
 
             for (value, color) in [(levels.reference, AppTheme.amber), (levels.risk, AppTheme.red), (levels.target1, AppTheme.mint), (levels.target2, AppTheme.mint)] {
@@ -300,11 +330,41 @@ private struct CandlestickChart: View {
                 line.addLine(to: CGPoint(x: size.width, y: y(value)))
                 context.stroke(line, with: .color(color.opacity(0.8)), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
             }
+
+            // Strategy markers: entry arrows with Long/Short labels, and P&L where each trade closed.
+            func arrow(at date: String, side: String) {
+                guard let index = indexByDate[date] else { return }
+                let long = side == "LONG"
+                let color = long ? Self.longColor : Self.shortColor
+                let base = long ? y(series[index].low) + 6 : y(series[index].high) - 6
+                let direction: CGFloat = long ? 1 : -1
+                var triangle = Path()
+                triangle.move(to: CGPoint(x: x(index), y: base))
+                triangle.addLine(to: CGPoint(x: x(index) - 5, y: base + 10 * direction))
+                triangle.addLine(to: CGPoint(x: x(index) + 5, y: base + 10 * direction))
+                triangle.closeSubpath()
+                context.fill(triangle, with: .color(color))
+                context.draw(Text(long ? "Long" : "Short").font(.system(size: 9, weight: .bold)).foregroundColor(color),
+                             at: CGPoint(x: min(max(x(index), 14), size.width - 14), y: base + 21 * direction))
+            }
+            for trade in strategy?.trades ?? [] {
+                arrow(at: trade.entryDate, side: trade.side)
+                if let index = indexByDate[trade.exitDate] {
+                    let label = String(format: "%+.1f%%", trade.pnlPct)
+                    context.draw(Text(label).font(.system(size: 10, weight: .bold)).foregroundColor(trade.pnlPct >= 0 ? AppTheme.mint : AppTheme.red),
+                                 at: CGPoint(x: min(max(x(index), 18), size.width - 18), y: max(8, y(series[index].high) - 14)))
+                }
+            }
+            if let open = strategy?.open { arrow(at: open.entryDate, side: open.side) }
+            if let strategy, !(strategy.trades.isEmpty && strategy.open == nil) {
+                var summary = "\(strategy.name) replay · \(strategy.trades.count) closed, net \(String(format: "%+.1f%%", strategy.closedPnlPct))"
+                if let open = strategy.open { summary += " · open \(open.side.lowercased()) \(String(format: "%+.1f%%", open.pnlPct))" }
+                context.draw(Text(summary).font(.system(size: 9)).foregroundColor(AppTheme.muted), at: CGPoint(x: size.width - 4, y: 6), anchor: .trailing)
+            }
         }
-        .accessibilityLabel("Candlestick chart with entry, invalidation, and target levels")
+        .accessibilityLabel("Candlestick chart with Supertrend, strategy entries, and scenario levels")
     }
 }
-
 
 private struct TrailingInsetKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
