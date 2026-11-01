@@ -19,6 +19,7 @@
 		90A7FFB74939CC6D288CD4A6 /* ConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3EE5F377CF667D867689F77 /* ConnectionView.swift */; };
 		A8BB3C6A84BBCF64CDC774D2 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2437AB8CD6E22EE81276F8E4 /* Theme.swift */; };
 		C3789F7C125CE60F596828CD /* MemoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13E0F1D83D6D06F0BB49BE1B /* MemoryView.swift */; };
+		C3A6960A0C261A28A7101A2B /* TradingStyleChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3802395FB052B74D365544A6 /* TradingStyleChart.swift */; };
 		CF0D8EFA107F571DFBA8A69B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 747B55681A69FDBE29EA853F /* Assets.xcassets */; };
 		ECB6681D71B3AAED6CCC4E9D /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A02CDFD9316DBDABC405649 /* Models.swift */; };
 		EEFF886EACA47E567C69A669 /* AnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7526A067DDFBBC1A80176FF /* AnalysisView.swift */; };
@@ -38,6 +39,7 @@
 		0C9E1313DAB4D0807C19A165 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		13E0F1D83D6D06F0BB49BE1B /* MemoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryView.swift; sourceTree = "<group>"; };
 		2437AB8CD6E22EE81276F8E4 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		3802395FB052B74D365544A6 /* TradingStyleChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradingStyleChart.swift; sourceTree = "<group>"; };
 		452CFA140E206E7A51EF83F6 /* TradingViewChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradingViewChart.swift; sourceTree = "<group>"; };
 		6208CB62921B3D75477D4E23 /* IntelligentPortfolioTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = IntelligentPortfolioTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		747B55681A69FDBE29EA853F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -80,6 +82,7 @@
 				9A02CDFD9316DBDABC405649 /* Models.swift */,
 				A4C0C449AFD0F3B8BAD73333 /* ScannerView.swift */,
 				2437AB8CD6E22EE81276F8E4 /* Theme.swift */,
+				3802395FB052B74D365544A6 /* TradingStyleChart.swift */,
 				452CFA140E206E7A51EF83F6 /* TradingViewChart.swift */,
 			);
 			path = IntelligentPortfolio;
@@ -214,6 +217,7 @@
 				ECB6681D71B3AAED6CCC4E9D /* Models.swift in Sources */,
 				743E0F730295058EA7A30E40 /* ScannerView.swift in Sources */,
 				A8BB3C6A84BBCF64CDC774D2 /* Theme.swift in Sources */,
+				C3A6960A0C261A28A7101A2B /* TradingStyleChart.swift in Sources */,
 				5EA65D37BF6094C4E9F09CB7 /* TradingViewChart.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
