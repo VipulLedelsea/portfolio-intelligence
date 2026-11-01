@@ -18,7 +18,8 @@ enum TradingViewLink {
     }
 }
 
-/// TradingView's free Advanced Chart widget with Supertrend (10, 3) and DMI/ADX (14).
+/// TradingView's free Advanced Chart widget with Volume, Supertrend (10, 3) and an SMA (the free
+/// widget cannot change the SMA length, so it keeps TradingView's default of 9).
 /// The widget draws no entry, stop, or target levels; those stay on the native chart.
 struct TradingViewChart: UIViewRepresentable {
     let symbol: String
@@ -54,7 +55,7 @@ struct TradingViewChart: UIViewRepresentable {
                 "autosize": true, "symbol": symbol, "interval": interval,
                 "timezone": "America/New_York", "theme": "dark", "style": "1", "locale": "en",
                 "hide_side_toolbar": true, "allow_symbol_change": false,
-                "studies": ["STD;Supertrend", "STD;DMI"],
+                "studies": ["STD;Supertrend", "STD;SMA"],
                 "backgroundColor": "#090c0b", "support_host": "https://www.tradingview.com"
             ]
             guard let data = try? JSONSerialization.data(withJSONObject: config),

@@ -201,7 +201,7 @@ struct AnalysisContent: View {
                 if !railInInset { chartRail }
             }
             if chartMode != .signal {
-                Text("Chart by TradingView. Supertrend (10, 3) and DMI/ADX (14) are drawn by TradingView and can differ slightly from the engine's signal values. Entry, risk, and targets appear on the Signal chart.")
+                Text("Chart by TradingView: Volume, Supertrend (10, 3), and a 9-period SMA. Supertrend can differ slightly from the engine's signal. Entry, risk, and targets appear on the Signal chart.")
                     .font(.caption)
                     .foregroundStyle(AppTheme.muted)
                 if let url = TradingViewLink.url(symbol: (Market(rawValue: analysis.market ?? "US") ?? .us).tradingViewSymbol(analysis.symbol), interval: chartMode == .daily ? "D" : "60") {
