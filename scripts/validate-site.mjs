@@ -62,7 +62,7 @@ const memoryResponse = await workerModule.default.fetch(new Request("https://exa
   method: "POST",
   headers: { "content-type": "application/json", "oai-authenticated-user-id": "test-user", "oai-authenticated-user-email": "test@example.com" },
   body: "{}",
-}), { DB: fakeDb }, { waitUntil() {} });
+}), { DB: fakeDb, AUTH_MODE: "oai" }, { waitUntil() {} });
 assert.equal(memoryResponse.status, 200);
 const memory = await memoryResponse.json();
 assert.equal(memory.available, true);
@@ -117,7 +117,7 @@ const pairingApproveResponse = await workerModule.default.fetch(new Request("htt
   method: "POST",
   headers: { "content-type": "application/json", "oai-authenticated-user-id": "mobile-test-user", "oai-authenticated-user-email": "mobile@example.com" },
   body: JSON.stringify({ code: pairingStart.code }),
-}), { DB: mobileDb }, { waitUntil() {} });
+}), { DB: mobileDb, AUTH_MODE: "oai" }, { waitUntil() {} });
 assert.equal(pairingApproveResponse.status, 200);
 
 const pairingStatusResponse = await workerModule.default.fetch(new Request("https://example.test/api/mobile/pair/status", {
@@ -141,6 +141,21 @@ const revokeResponse = await workerModule.default.fetch(new Request("https://exa
 }), { DB: mobileDb }, { waitUntil() {} });
 assert.equal(revokeResponse.status, 200);
 
+
+// Identity headers are forgeable outside OpenAI Sites, so they must be ignored unless AUTH_MODE is "oai".
+{
+  const forged = { "oai-authenticated-user-id": "attacker", "oai-authenticated-user-email": "victim@example.com" };
+  const ask = env => workerModule.default.fetch(new Request("https://example.test/api/access", { headers: forged }), env, { waitUntil() {} }).then(response => response.json());
+  assert.equal((await ask({})).signed_in, false, "Forged identity headers must not sign anyone in by default");
+  assert.equal((await ask({ AUTH_MODE: "oai" })).signed_in, true, "Sites mode must still honor platform identity headers");
+  const crossSite = await workerModule.default.fetch(new Request("https://example.test/api/billing/portal", { method: "POST", headers: { origin: "https://evil.example", cookie: "ip_session=" + "a".repeat(48) }, body: "{}" }), {}, { waitUntil() {} });
+  assert.equal(crossSite.status, 403, "Cross-site POSTs carrying a session cookie must be rejected");
+  const signin = await workerModule.default.fetch(new Request("https://example.test/auth/google/start"), { GOOGLE_CLIENT_ID: "id.apps.googleusercontent.com", GOOGLE_CLIENT_SECRET: "secret" }, { waitUntil() {} });
+  assert.equal(signin.status, 302);
+  assert.match(signin.headers.get("location"), /^https:\/\/accounts\.google\.com\//);
+  assert.match(signin.headers.get("set-cookie"), /ip_oauth_state=.+HttpOnly/);
+  assert.equal((await workerModule.default.fetch(new Request("https://example.test/auth/dev"), { DB: {} }, { waitUntil() {} })).status, 404, "The development sign-in must be off by default");
+}
 
 // Multi-market: BSE and forex scans refresh automatically and are served from storage.
 const realFetch = globalThis.fetch;

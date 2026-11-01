@@ -11,6 +11,9 @@ const MAX_ENTRY_EXTENSION_ATR = 0.5;
 const MAX_ADVERSE_EXTENSION_ATR = 0.75;
 const MOBILE_PAIRING_MINUTES = 10;
 const MOBILE_SESSION_DAYS = 90;
+const WEB_SESSION_DAYS = 30;
+const SESSION_COOKIE = "ip_session";
+const OAUTH_STATE_COOKIE = "ip_oauth_state";
 const AUTO_REFRESH_OPEN_SECONDS = 55 * 60;
 const AUTO_REFRESH_CLOSED_SECONDS = 6 * 60 * 60;
 const AUTO_REFRESH_LOCK_SECONDS = 4 * 60;
@@ -32,7 +35,7 @@ const SENSEX_30 = [
   ["NESTLEIND", "Nestle India", "Consumer Staples"], ["NTPC", "NTPC", "Utilities"],
   ["ONGC", "Oil & Natural Gas Corp", "Energy"], ["POWERGRID", "Power Grid Corp", "Utilities"],
   ["RELIANCE", "Reliance Industries", "Energy"], ["SBIN", "State Bank of India", "Financials"],
-  ["SUNPHARMA", "Sun Pharmaceutical", "Health Care"], ["TATAMOTORS", "Tata Motors", "Consumer Discretionary"],
+  ["SUNPHARMA", "Sun Pharmaceutical", "Health Care"], ["TMPV", "Tata Motors Passenger Vehicles", "Consumer Discretionary"],
   ["TATASTEEL", "Tata Steel", "Materials"], ["TCS", "Tata Consultancy Services", "Information Technology"],
   ["TECHM", "Tech Mahindra", "Information Technology"], ["TITAN", "Titan Company", "Consumer Discretionary"],
 ].map(([symbol, company, sector]) => ({ symbol, company, sector }));
@@ -44,7 +47,7 @@ const FOREX_PAIRS = [
 
 const MARKETS = {
   US: { id: "US", name: "S&P 500", label: "US stocks", provider: "robinhood", auto: false, tz: "America/New_York", dailyCloseMinutes: 16 * 60, currency: "USD", symbolPrefix: "$", decimals: () => 2 },
-  IN: { id: "IN", name: "Sensex 30", label: "India (BSE)", provider: "external", auto: true, tz: "Asia/Kolkata", dailyCloseMinutes: 15 * 60 + 35, currency: "INR", symbolPrefix: "₹", decimals: () => 2, universe: SENSEX_30, yahoo: symbol => `${symbol}.BO`, twelve: symbol => symbol, twelveExchange: "BSE", tradingView: symbol => `BSE:${symbol.replace(/[^A-Z0-9_-]/g, "_")}` },
+  IN: { id: "IN", name: "Sensex 30", label: "India (BSE)", provider: "external", auto: true, tz: "Asia/Kolkata", dailyCloseMinutes: 15 * 60 + 35, currency: "INR", symbolPrefix: "₹", decimals: () => 2, universe: SENSEX_30, yahoo: symbol => `${symbol}.BO`, yahooDailyFallback: symbol => `${symbol}.NS`, twelve: symbol => symbol, twelveExchange: "BSE", tradingView: symbol => `BSE:${symbol.replace(/[^A-Z0-9_-]/g, "_")}` },
   FX: { id: "FX", name: "Major forex pairs", label: "Forex", provider: "external", auto: true, tz: "UTC", dailyCloseMinutes: Infinity, currency: "", symbolPrefix: "", decimals: value => value >= 20 ? 3 : 5, universe: FOREX_PAIRS, yahoo: symbol => `${symbol}=X`, twelve: symbol => `${symbol.slice(0, 3)}/${symbol.slice(3)}`, tradingView: symbol => `FX:${symbol}` },
 };
 
@@ -101,10 +104,99 @@ function cleanError(error) {
   return message.replace(/https?:\/\/[^\s]+/g, "market-data service").slice(0, 300);
 }
 
-function authenticatedUser(request) {
-  const id = request.headers.get("oai-authenticated-user-id");
-  const email = request.headers.get("oai-authenticated-user-email");
-  return id && email ? { id, email } : null;
+function parseCookies(request) {
+  const cookies = new Map();
+  for (const part of (request.headers.get("cookie") || "").split(";")) {
+    const index = part.indexOf("=");
+    if (index > 0) cookies.set(part.slice(0, index).trim(), part.slice(index + 1).trim());
+  }
+  return cookies;
+}
+
+function cookieHeader(request, name, value, { path = "/", maxAge } = {}) {
+  const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
+  return `${name}=${value}; Path=${path}; HttpOnly; SameSite=Lax${secure}${maxAge === undefined ? "" : `; Max-Age=${maxAge}`}`;
+}
+
+// Browser identity. Behind OpenAI Sites the platform injects trusted headers; anywhere else
+// those headers can be forged by any client, so they are only honored when AUTH_MODE is "oai".
+async function authenticatedUser(request, env) {
+  if (env?.AUTH_MODE === "oai") {
+    const id = request.headers.get("oai-authenticated-user-id");
+    const email = request.headers.get("oai-authenticated-user-email");
+    return id && email ? { id, email } : null;
+  }
+  const token = parseCookies(request).get(SESSION_COOKIE);
+  if (!token || !env?.DB || !/^[A-Za-z0-9_-]{40,}$/.test(token)) return null;
+  const row = await env.DB.prepare("SELECT user_id, email, expires_at FROM web_sessions WHERE token_hash = ? LIMIT 1").bind(await sha256(token)).first();
+  if (!row || Date.parse(row.expires_at) <= Date.now()) return null;
+  return { id: row.user_id, email: row.email };
+}
+
+function redirect(location, headers = []) {
+  const response = new Response(null, { status: 302, headers: { location, "cache-control": "no-store" } });
+  for (const value of headers) response.headers.append("set-cookie", value);
+  return response;
+}
+
+async function createWebSession(request, env, user) {
+  const token = randomBase64Url(36);
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + WEB_SESSION_DAYS * 24 * 60 * 60 * 1000);
+  await env.DB.prepare("DELETE FROM web_sessions WHERE expires_at <= ?").bind(now.toISOString()).run();
+  await env.DB.prepare("INSERT INTO web_sessions (token_hash, user_id, email, created_at, expires_at) VALUES (?, ?, ?, ?, ?)")
+    .bind(await sha256(token), user.id, user.email, now.toISOString(), expiresAt.toISOString()).run();
+  return cookieHeader(request, SESSION_COOKIE, token, { maxAge: WEB_SESSION_DAYS * 24 * 60 * 60 });
+}
+
+function googleRedirectUri(request) { return `${new URL(request.url).origin}/auth/google/callback`; }
+
+async function startGoogleSignIn(request, env) {
+  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) throw Object.assign(new Error("Sign-in is not configured yet"), { status: 503 });
+  const state = randomBase64Url(24);
+  const params = new URLSearchParams({
+    client_id: env.GOOGLE_CLIENT_ID, redirect_uri: googleRedirectUri(request), response_type: "code",
+    scope: "openid email", state, prompt: "select_account",
+  });
+  return redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`, [cookieHeader(request, OAUTH_STATE_COOKIE, state, { path: "/auth", maxAge: 600 })]);
+}
+
+async function finishGoogleSignIn(request, env) {
+  const url = new URL(request.url);
+  const state = url.searchParams.get("state") || "";
+  const expected = parseCookies(request).get(OAUTH_STATE_COOKIE) || "";
+  const clearState = cookieHeader(request, OAUTH_STATE_COOKIE, "", { path: "/auth", maxAge: 0 });
+  if (!state || state !== expected) return redirect("/?signin=failed", [clearState]);
+  const code = url.searchParams.get("code");
+  if (!code) return redirect("/?signin=cancelled", [clearState]);
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ code, client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, redirect_uri: googleRedirectUri(request), grant_type: "authorization_code" }),
+    signal: AbortSignal.timeout(15000),
+  });
+  const tokens = await response.json().catch(() => ({}));
+  if (!response.ok || !tokens.id_token) return redirect("/?signin=failed", [clearState]);
+  // The ID token came straight from Google's token endpoint over TLS, so its claims are trusted after these checks.
+  const claims = JSON.parse(atob(tokens.id_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+  const issuerOk = ["https://accounts.google.com", "accounts.google.com"].includes(claims.iss);
+  if (!issuerOk || claims.aud !== env.GOOGLE_CLIENT_ID || Number(claims.exp) * 1000 <= Date.now() || !claims.sub || !claims.email || claims.email_verified !== true) {
+    return redirect("/?signin=failed", [clearState]);
+  }
+  const sessionCookie = await createWebSession(request, env, { id: `google:${claims.sub}`, email: String(claims.email).toLowerCase() });
+  return redirect("/", [clearState, sessionCookie]);
+}
+
+async function devSignIn(request, env) {
+  if (env.AUTH_MODE !== "dev" || !env.DB) return json({ error: "Not found" }, 404);
+  const sessionCookie = await createWebSession(request, env, { id: "dev-user", email: "dev@example.test" });
+  return redirect("/", [sessionCookie]);
+}
+
+async function signOut(request, env) {
+  const token = parseCookies(request).get(SESSION_COOKIE);
+  if (token && env.DB) await env.DB.prepare("DELETE FROM web_sessions WHERE token_hash = ?").bind(await sha256(token)).run().catch(() => {});
+  return json({ signed_out: true }, 200, { "set-cookie": cookieHeader(request, SESSION_COOKIE, "", { maxAge: 0 }) });
 }
 
 function randomBase64Url(byteLength = 32) {
@@ -131,8 +223,8 @@ function mobileBearer(request) {
 }
 
 async function requestUser(request, env) {
-  const browserUser = authenticatedUser(request);
-  if (browserUser) return { ...browserUser, auth_type: "chatgpt" };
+  const browserUser = await authenticatedUser(request, env);
+  if (browserUser) return { ...browserUser, auth_type: "web" };
   const token = mobileBearer(request);
   if (!token || !env.DB) return null;
   const tokenHash = await sha256(token);
@@ -165,6 +257,15 @@ async function findStripeCustomer(env, userId) {
   return payload.data?.[0] || null;
 }
 
+async function findStripeCustomerForUser(env, user) {
+  const byId = await findStripeCustomer(env, user.id);
+  if (byId || !user.email) return byId;
+  // Subscriptions created under a previous sign-in provider are matched by verified email.
+  const safeEmail = user.email.replace(/[\\']/g, "");
+  const payload = await stripeRequest(env, `/customers/search?query=${encodeURIComponent(`email:'${safeEmail}'`)}&limit=1`);
+  return payload.data?.[0] || null;
+}
+
 async function createStripeCustomer(env, user) {
   return stripeRequest(env, "/customers", {
     method: "POST",
@@ -186,7 +287,7 @@ async function subscriptionAccess(request, env, { force = false } = {}) {
   const accessCacheKey = `${user.id}:${user.auth_type}`;
   const cached = accessCache.get(accessCacheKey);
   if (!force && cached && cached.expiresAt > Date.now()) return cached.value;
-  const customer = await findStripeCustomer(env, user.id);
+  const customer = await findStripeCustomerForUser(env, user);
   const subscription = customer ? await activeStripeSubscription(env, customer.id) : null;
   const value = {
     paywall_enabled: true,
@@ -204,8 +305,8 @@ async function subscriptionAccess(request, env, { force = false } = {}) {
 }
 
 async function subscriptionAccessFromCheckout(request, env, sessionId) {
-  const user = authenticatedUser(request);
-  if (!user) throw Object.assign(new Error("Sign in with ChatGPT to verify checkout"), { status: 401 });
+  const user = await authenticatedUser(request, env);
+  if (!user) throw Object.assign(new Error("Sign in to verify checkout"), { status: 401 });
   if (!/^cs_(test|live)_[A-Za-z0-9]+$/.test(sessionId)) throw Object.assign(new Error("Invalid Stripe checkout session"), { status: 400 });
   const session = await stripeRequest(env, `/checkout/sessions/${encodeURIComponent(sessionId)}`);
   if (session.client_reference_id !== user.id) throw Object.assign(new Error("This checkout belongs to another account"), { status: 403 });
@@ -222,26 +323,26 @@ async function subscriptionAccessFromCheckout(request, env, sessionId) {
     customer_id: typeof session.customer === "string" ? session.customer : session.customer?.id,
     subscription_status: subscription.status,
     renews_at: subscription.current_period_end ? new Date(subscription.current_period_end * 1000).toISOString() : null,
-    auth_type: "chatgpt",
+    auth_type: "web",
   };
-  accessCache.set(`${user.id}:chatgpt`, { value, expiresAt: Date.now() + 2 * 60 * 1000 });
+  accessCache.set(`${user.id}:web`, { value, expiresAt: Date.now() + 2 * 60 * 1000 });
   return value;
 }
 
 async function requireSubscription(request, env) {
   const access = await subscriptionAccess(request, env);
   if (!access.paywall_enabled || access.subscribed) return access;
-  const message = access.signed_in ? "An active IntelligentPortfolio subscription is required" : "Sign in with ChatGPT to continue";
+  const message = access.signed_in ? "An active IntelligentPortfolio subscription is required" : "Sign in to continue";
   throw Object.assign(new Error(message), { status: 402 });
 }
 
 async function createCheckout(request, env) {
   if (env.PAYWALL_ENABLED !== "true") throw new Error("The subscription paywall is not enabled yet");
-  const user = authenticatedUser(request);
-  if (!user) throw Object.assign(new Error("Sign in with ChatGPT before subscribing"), { status: 401 });
+  const user = await authenticatedUser(request, env);
+  if (!user) throw Object.assign(new Error("Sign in before subscribing"), { status: 401 });
   const current = await subscriptionAccess(request, env, { force: true });
   if (current.subscribed) throw new Error("This account already has an active subscription");
-  const customer = await findStripeCustomer(env, user.id) || await createStripeCustomer(env, user);
+  const customer = await findStripeCustomerForUser(env, user) || await createStripeCustomer(env, user);
   const origin = new URL(request.url).origin;
   return stripeRequest(env, "/checkout/sessions", {
     method: "POST",
@@ -291,8 +392,8 @@ async function startMobilePairing(env, body) {
 }
 
 async function approveMobilePairing(request, env, body) {
-  const user = authenticatedUser(request);
-  if (!user) throw Object.assign(new Error("Sign in with ChatGPT to pair an iPhone"), { status: 401 });
+  const user = await authenticatedUser(request, env);
+  if (!user) throw Object.assign(new Error("Sign in to pair an iPhone"), { status: 401 });
   await requireSubscription(request, env);
   const code = String(body.code || "").trim().toUpperCase();
   if (!/^[A-HJ-NP-Z2-9]{8}$/.test(code)) throw Object.assign(new Error("Enter the 8-character code shown on the iPhone"), { status: 400 });
@@ -642,8 +743,8 @@ function localDate(epochSeconds, timeZone) {
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(epochSeconds * 1000));
 }
 
-async function yahooChart(market, symbol, interval, range) {
-  const url = `${YAHOO_CHART}${encodeURIComponent(market.yahoo(symbol))}?interval=${interval}&range=${range}&includePrePost=false`;
+async function yahooChart(market, symbol, interval, range, yahooSymbol = market.yahoo(symbol)) {
+  const url = `${YAHOO_CHART}${encodeURIComponent(yahooSymbol)}?interval=${interval}&range=${range}&includePrePost=false`;
   const response = await fetch(url, {
     headers: { accept: "application/json", "user-agent": "Mozilla/5.0 (compatible; PortfolioIntelligence/1.0)" },
     signal: AbortSignal.timeout(20000),
@@ -668,8 +769,14 @@ async function loadYahooSeries(symbols, market) {
     if (index) await new Promise(resolve => setTimeout(resolve, 300));
     await Promise.all(symbols.slice(index, index + 3).map(async symbol => {
       try {
-        const [daily, signal] = await Promise.all([yahooChart(market, symbol, "1d", "6mo"), yahooChart(market, symbol, "60m", "1mo")]);
-        series.set(symbol, { daily, signal });
+        let [daily, signal] = await Promise.all([yahooChart(market, symbol, "1d", "6mo"), yahooChart(market, symbol, "60m", "1mo")]);
+        let dailyFallback = false;
+        // Yahoo's daily history for many BSE tickers is truncated to a single bar; use the same company's other listing for the daily trend only.
+        if (daily.historicals.length < 40 && market.yahooDailyFallback) {
+          daily = await yahooChart(market, symbol, "1d", "6mo", market.yahooDailyFallback(symbol));
+          dailyFallback = true;
+        }
+        series.set(symbol, { daily, signal, dailyFallback });
       } catch (error) { errors.push({ symbol, error: cleanError(error) }); }
     }));
   }
@@ -724,7 +831,9 @@ async function fetchExternalSnapshots(symbols, market, env) {
       const closes = normalizeBars(item.daily, "day", market).map(bar => bar.close);
       const hourly = item.signal.historicals;
       const quote = { last_trade_price: hourly.at(-1)?.close_price, adjusted_previous_close: closes.at(-2), venue_last_trade_time: hourly.at(-1)?.begins_at };
-      snapshots.set(symbol, snapshotFromPayload(symbol, item.daily, item.signal, quote, market));
+      const snapshot = snapshotFromPayload(symbol, item.daily, item.signal, quote, market);
+      if (item.dailyFallback) snapshot.data_source_detail += "; the daily trend filter uses the NSE listing of the same company because the provider's BSE daily history is incomplete";
+      snapshots.set(symbol, snapshot);
     } catch (error) { errors.push({ symbol, error: cleanError(error) }); }
   }
   return { snapshots, errors };
@@ -1314,6 +1423,13 @@ async function handle(request, env, ctx) {
       },
     });
   }
+  if (request.method === "GET" && url.pathname === "/auth/google/start") {
+    try { return await startGoogleSignIn(request, env); } catch (error) { return json({ error: cleanError(error) }, Number(error?.status) || 502); }
+  }
+  if (request.method === "GET" && url.pathname === "/auth/google/callback") {
+    try { return await finishGoogleSignIn(request, env); } catch { return redirect("/?signin=failed"); }
+  }
+  if (request.method === "GET" && url.pathname === "/auth/dev") return devSignIn(request, env);
   if (request.method === "GET" && url.pathname === "/health") return json({ status: "ok", read_only: true, order_submission_supported: false, data_source: "Robinhood" });
   if (request.method === "GET" && url.pathname === "/api/access") {
     try {
@@ -1326,7 +1442,10 @@ async function handle(request, env, ctx) {
     } catch (error) { return json({ error: cleanError(error) }, 502); }
   }
   if (request.method !== "POST") return json({ error: "Not found" }, 404);
+  const origin = request.headers.get("origin");
+  if (origin && origin !== url.origin && parseCookies(request).has(SESSION_COOKIE)) return json({ error: "Cross-site requests are not allowed" }, 403);
   try {
+    if (url.pathname === "/auth/logout") return await signOut(request, env);
     if (url.pathname === "/api/mobile/pair/start") {
       return json(await startMobilePairing(env, await readBody(request)));
     }
@@ -1361,7 +1480,7 @@ async function handle(request, env, ctx) {
       await requireSubscription(request, env);
       await readBody(request);
       const user = await requestUser(request, env);
-      if (!user) throw Object.assign(new Error("Sign in with ChatGPT to use persistent recommendation memory"), { status: 401 });
+      if (!user) throw Object.assign(new Error("Sign in to use persistent recommendation memory"), { status: 401 });
       return json(await recommendationMemory(env.DB, user.id, env));
     }
     if (url.pathname === "/api/analyze") {

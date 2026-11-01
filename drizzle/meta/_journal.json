@@ -22,6 +22,13 @@
       "when": 1793555396524,
       "tag": "0002_multi_market",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793556378230,
+      "tag": "0003_web_sessions",
+      "breakpoints": true
     }
   ]
 }

@@ -63,3 +63,13 @@ export const scanCache = sqliteTable("scan_cache", {
   generatedAt: text("generated_at").notNull(),
   refreshingUntil: text("refreshing_until"),
 });
+
+export const webSessions = sqliteTable("web_sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  userId: text("user_id").notNull(),
+  email: text("email").notNull(),
+  createdAt: text("created_at").notNull(),
+  expiresAt: text("expires_at").notNull(),
+}, table => [
+  index("web_sessions_expires_idx").on(table.expiresAt),
+]);

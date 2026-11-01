@@ -3,7 +3,7 @@ import SwiftUI
 struct AccountView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.openURL) private var openURL
-    private let webURL = URL(string: "https://intelligent-portfolio.vipulsvdhotre.chatgpt.site")!
+    private let webURL = APIClient.productionOrigin
 
     var body: some View {
         NavigationStack {

@@ -19,3 +19,6 @@ ios/.build/
 *.xcuserdata/
 xcuserdata/
 *.xcuserstate
+.wrangler/
+.dev.vars
+.dev.vars.*
