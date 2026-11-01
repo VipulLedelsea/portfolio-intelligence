@@ -88,7 +88,7 @@ struct ScannerView: View {
             .padding(16)
         }
         .background(AppTheme.background)
-        .refreshableIf(!model.market.isAutomatic) { await model.refreshScanner() }
+        .refreshableIf(!model.market.isAutomatic) { await model.refreshScanner(manual: true) }
     }
 
     private var marketMenu: some View {
@@ -139,7 +139,7 @@ struct ScannerView: View {
                     .foregroundStyle(AppTheme.muted)
             } else {
                 Button {
-                    Task { await model.refreshScanner() }
+                    Task { await model.refreshScanner(manual: true) }
                 } label: {
                     Label(model.isScanning ? "Scanning…" : "Refresh scan", systemImage: "arrow.clockwise")
                 }

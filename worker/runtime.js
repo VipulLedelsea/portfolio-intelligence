@@ -15,6 +15,7 @@ const WEB_SESSION_DAYS = 30;
 const SESSION_COOKIE = "ip_session";
 const OAUTH_STATE_COOKIE = "ip_oauth_state";
 const AUTO_REFRESH_OPEN_SECONDS = 55 * 60;
+const US_REFRESH_OPEN_SECONDS = 5 * 60;
 const AUTO_REFRESH_CLOSED_SECONDS = 6 * 60 * 60;
 const AUTO_REFRESH_LOCK_SECONDS = 4 * 60;
 const AUTO_REFRESH_BACKOFF_SECONDS = 15 * 60;
@@ -47,7 +48,7 @@ const FOREX_PAIRS = [
 
 const MARKETS = {
   US: { id: "US", name: "S&P 500", label: "US stocks", provider: "robinhood", auto: false, tz: "America/New_York", dailyCloseMinutes: 16 * 60, currency: "USD", symbolPrefix: "$", decimals: () => 2 },
-  IN: { id: "IN", name: "Sensex 30", label: "India (BSE)", provider: "external", auto: true, tz: "Asia/Kolkata", dailyCloseMinutes: 15 * 60 + 35, currency: "INR", symbolPrefix: "₹", decimals: () => 2, universe: SENSEX_30, yahoo: symbol => `${symbol}.BO`, yahooDailyFallback: symbol => `${symbol}.NS`, twelve: symbol => symbol, twelveExchange: "BSE", tradingView: symbol => `BSE:${symbol.replace(/[^A-Z0-9_-]/g, "_")}` },
+  IN: { id: "IN", name: "Sensex 30", label: "India (BSE)", provider: "external", auto: true, tz: "Asia/Kolkata", dailyCloseMinutes: 15 * 60 + 35, currency: "INR", symbolPrefix: "₹", decimals: () => 2, universe: SENSEX_30, yahoo: symbol => `${symbol}.BO`, twelve: symbol => symbol, twelveExchange: "BSE", tradingView: symbol => `BSE:${symbol.replace(/[^A-Z0-9_-]/g, "_")}` },
   FX: { id: "FX", name: "Major forex pairs", label: "Forex", provider: "external", auto: true, tz: "UTC", dailyCloseMinutes: Infinity, currency: "", symbolPrefix: "", decimals: value => value >= 20 ? 3 : 5, universe: FOREX_PAIRS, yahoo: symbol => `${symbol}=X`, twelve: symbol => `${symbol.slice(0, 3)}/${symbol.slice(3)}`, tradingView: symbol => `FX:${symbol}` },
 };
 
@@ -700,41 +701,37 @@ function snapshotFromPayload(symbol, dailyItem, signalItem, quote, market = MARK
   };
 }
 
-async function fetchBatch(symbols) {
-  const encoded = encodeURIComponent(symbols.join(",")).replaceAll("%2C", ",");
-  const [dailyPayload, signalPayload, quotePayload] = await Promise.all([
-    fetchJson(`${ROBINHOOD_HISTORICALS}?symbols=${encoded}&bounds=regular&interval=day&span=6month`),
-    fetchJson(`${ROBINHOOD_HISTORICALS}?symbols=${encoded}&bounds=regular&interval=hour&span=month`),
-    fetchJson(`${ROBINHOOD_QUOTES}?symbols=${encoded}`),
-  ]);
-  const daily = new Map((dailyPayload.results || []).filter(Boolean).map(item => [String(item.symbol || "").toUpperCase(), item]));
-  const signal = new Map((signalPayload.results || []).filter(Boolean).map(item => [String(item.symbol || "").toUpperCase(), item]));
-  const quotes = new Map((quotePayload.results || []).filter(Boolean).map(item => [String(item.symbol || "").toUpperCase(), item]));
+const chunk = (list, size) => Array.from({ length: Math.ceil(list.length / size) }, (_, index) => list.slice(index * size, (index + 1) * size));
+const bySymbol = payload => new Map((payload?.results || []).filter(Boolean).map(item => [String(item.symbol || "").toUpperCase(), item]));
+
+// Robinhood accepts 75 symbols per history call and more per quote call. Large batches keep a full
+// S&P 500 scan near 20 outgoing requests, inside Cloudflare's 50-per-invocation free-plan limit.
+async function fetchRobinhoodSnapshots(symbols) {
+  const daily = new Map(), signal = new Map(), quotes = new Map(), failed = new Map();
+  const jobs = [
+    ...chunk(symbols, 75).flatMap(batch => {
+      const encoded = encodeURIComponent(batch.join(",")).replaceAll("%2C", ",");
+      return [
+        { batch, run: async () => bySymbol(await fetchJson(`${ROBINHOOD_HISTORICALS}?symbols=${encoded}&bounds=regular&interval=day&span=6month`)).forEach((value, key) => daily.set(key, value)) },
+        { batch, run: async () => bySymbol(await fetchJson(`${ROBINHOOD_HISTORICALS}?symbols=${encoded}&bounds=regular&interval=hour&span=month`)).forEach((value, key) => signal.set(key, value)) },
+      ];
+    }),
+    ...chunk(symbols, 150).map(batch => ({ batch, run: async () => bySymbol(await fetchJson(`${ROBINHOOD_QUOTES}?symbols=${encodeURIComponent(batch.join(",")).replaceAll("%2C", ",")}`)).forEach((value, key) => quotes.set(key, value)) })),
+  ];
+  for (let index = 0; index < jobs.length; index += 6) {
+    const group = jobs.slice(index, index + 6);
+    const results = await Promise.allSettled(group.map(job => job.run()));
+    results.forEach((result, position) => {
+      if (result.status === "rejected") group[position].batch.forEach(symbol => failed.set(symbol, cleanError(result.reason)));
+    });
+  }
   const snapshots = new Map(), errors = [];
   for (const symbol of symbols) {
     try {
+      if (failed.has(symbol)) throw new Error(failed.get(symbol));
       if (!daily.has(symbol) || !signal.has(symbol)) throw new Error("Robinhood returned no history");
       snapshots.set(symbol, snapshotFromPayload(symbol, daily.get(symbol), signal.get(symbol), quotes.get(symbol)));
     } catch (error) { errors.push({ symbol, error: cleanError(error) }); }
-  }
-  return { snapshots, errors };
-}
-
-async function fetchRobinhoodSnapshots(symbols) {
-  const batches = [];
-  for (let index = 0; index < symbols.length; index += 20) batches.push(symbols.slice(index, index + 20));
-  const snapshots = new Map(), errors = [];
-  for (let index = 0; index < batches.length; index += 5) {
-    const results = await Promise.allSettled(batches.slice(index, index + 5).map(fetchBatch));
-    results.forEach((result, resultIndex) => {
-      if (result.status === "fulfilled") {
-        result.value.snapshots.forEach((value, key) => snapshots.set(key, value));
-        errors.push(...result.value.errors);
-      } else {
-        const reason = cleanError(result.reason);
-        errors.push(...batches[index + resultIndex].map(symbol => ({ symbol, error: reason })));
-      }
-    });
   }
   return { snapshots, errors };
 }
@@ -743,8 +740,8 @@ function localDate(epochSeconds, timeZone) {
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(epochSeconds * 1000));
 }
 
-async function yahooChart(market, symbol, interval, range, yahooSymbol = market.yahoo(symbol)) {
-  const url = `${YAHOO_CHART}${encodeURIComponent(yahooSymbol)}?interval=${interval}&range=${range}&includePrePost=false`;
+async function yahooChart(market, symbol, interval, range) {
+  const url = `${YAHOO_CHART}${encodeURIComponent(market.yahoo(symbol))}?interval=${interval}&range=${range}&includePrePost=false`;
   const response = await fetch(url, {
     headers: { accept: "application/json", "user-agent": "Mozilla/5.0 (compatible; PortfolioIntelligence/1.0)" },
     signal: AbortSignal.timeout(20000),
@@ -754,13 +751,30 @@ async function yahooChart(market, symbol, interval, range, yahooSymbol = market.
   const result = (await response.json())?.chart?.result?.[0];
   if (!result?.timestamp?.length) throw new Error("Market data returned no history");
   const quote = result.indicators?.quote?.[0] || {};
-  const daily = interval === "1d";
-  const historicals = result.timestamp.map((time, index) => ({
-    begins_at: daily ? `${localDate(time, market.tz)}T00:00:00Z` : new Date(time * 1000).toISOString(),
+  return result.timestamp.map((time, index) => ({
+    time, begins_at: new Date(time * 1000).toISOString(),
     open_price: quote.open?.[index], high_price: quote.high?.[index], low_price: quote.low?.[index],
     close_price: quote.close?.[index], volume: quote.volume?.[index],
   })).filter(bar => bar.close_price != null);
-  return { symbol, historicals };
+}
+
+// Yahoo's own daily history is truncated for many BSE tickers, so daily bars are built from the
+// hourly bars. One request per symbol also keeps a scan inside the free plan's request limit.
+function aggregateDaily(hourly, market) {
+  const days = new Map();
+  for (const bar of hourly) {
+    const date = localDate(bar.time, market.tz);
+    const open = numeric(bar.open_price) || numeric(bar.close_price);
+    const day = days.get(date);
+    if (!day) days.set(date, { begins_at: `${date}T00:00:00Z`, open_price: open, high_price: numeric(bar.high_price), low_price: numeric(bar.low_price), close_price: numeric(bar.close_price), volume: numeric(bar.volume) });
+    else {
+      day.high_price = Math.max(day.high_price, numeric(bar.high_price));
+      day.low_price = Math.min(day.low_price, numeric(bar.low_price));
+      day.close_price = numeric(bar.close_price);
+      day.volume += numeric(bar.volume);
+    }
+  }
+  return [...days.values()];
 }
 
 async function loadYahooSeries(symbols, market) {
@@ -769,14 +783,8 @@ async function loadYahooSeries(symbols, market) {
     if (index) await new Promise(resolve => setTimeout(resolve, 300));
     await Promise.all(symbols.slice(index, index + 3).map(async symbol => {
       try {
-        let [daily, signal] = await Promise.all([yahooChart(market, symbol, "1d", "6mo"), yahooChart(market, symbol, "60m", "1mo")]);
-        let dailyFallback = false;
-        // Yahoo's daily history for many BSE tickers is truncated to a single bar; use the same company's other listing for the daily trend only.
-        if (daily.historicals.length < 40 && market.yahooDailyFallback) {
-          daily = await yahooChart(market, symbol, "1d", "6mo", market.yahooDailyFallback(symbol));
-          dailyFallback = true;
-        }
-        series.set(symbol, { daily, signal, dailyFallback });
+        const hourly = await yahooChart(market, symbol, "60m", "6mo");
+        series.set(symbol, { daily: { symbol, historicals: aggregateDaily(hourly, market) }, signal: { symbol, historicals: hourly } });
       } catch (error) { errors.push({ symbol, error: cleanError(error) }); }
     }));
   }
@@ -831,9 +839,7 @@ async function fetchExternalSnapshots(symbols, market, env) {
       const closes = normalizeBars(item.daily, "day", market).map(bar => bar.close);
       const hourly = item.signal.historicals;
       const quote = { last_trade_price: hourly.at(-1)?.close_price, adjusted_previous_close: closes.at(-2), venue_last_trade_time: hourly.at(-1)?.begins_at };
-      const snapshot = snapshotFromPayload(symbol, item.daily, item.signal, quote, market);
-      if (item.dailyFallback) snapshot.data_source_detail += "; the daily trend filter uses the NSE listing of the same company because the provider's BSE daily history is incomplete";
-      snapshots.set(symbol, snapshot);
+      snapshots.set(symbol, snapshotFromPayload(symbol, item.daily, item.signal, quote, market));
     } catch (error) { errors.push({ symbol, error: cleanError(error) }); }
   }
   return { snapshots, errors };
@@ -1332,12 +1338,13 @@ async function recommendationMemory(db, userId, env = {}) {
 const scanMemory = new Map();
 
 function refreshInterval(market, now = new Date()) {
-  return marketIsOpen(market, now) ? AUTO_REFRESH_OPEN_SECONDS : AUTO_REFRESH_CLOSED_SECONDS;
+  if (!marketIsOpen(market, now)) return AUTO_REFRESH_CLOSED_SECONDS;
+  return market.auto ? AUTO_REFRESH_OPEN_SECONDS : US_REFRESH_OPEN_SECONDS;
 }
 
 function withRefreshInfo(payload, generatedAt, market) {
   const nextAt = new Date(Date.parse(generatedAt) + refreshInterval(market) * 1000).toISOString();
-  return { ...payload, refreshed_at: generatedAt, next_refresh_at: nextAt, auto_refresh: true };
+  return { ...payload, refreshed_at: generatedAt, next_refresh_at: nextAt, auto_refresh: market.auto, refresh_interval_seconds: refreshInterval(market) };
 }
 
 async function readStoredScan(env, market) {
@@ -1371,6 +1378,7 @@ async function refreshScan(env, market) {
   const generatedAt = new Date().toISOString();
   if (payload.successful === 0) throw new Error(payload.errors?.[0]?.error || "No market data was returned");
   scanMemory.set(market.id, { payload, generatedAt });
+  scanMemory.delete(`${market.id}:lock`);
   if (env.DB) {
     try {
       await env.DB.prepare("UPDATE scan_cache SET payload = ?, generated_at = ?, refreshing_until = NULL WHERE market = ?").bind(JSON.stringify(payload), generatedAt, market.id).run();
@@ -1387,7 +1395,7 @@ async function backOffScan(env, market) {
   }
 }
 
-async function refreshScanIfDue(env, market, ctx, { force = false } = {}) {
+async function refreshScanIfDue(env, market, ctx, { force = false, wait = false } = {}) {
   const stored = await readStoredScan(env, market);
   const age = stored ? (Date.now() - Date.parse(stored.generatedAt)) / 1000 : Infinity;
   if (!force && age < refreshInterval(market)) return stored;
@@ -1395,15 +1403,15 @@ async function refreshScanIfDue(env, market, ctx, { force = false } = {}) {
   if (await claimScanRefresh(env, market)) {
     const work = refreshScan(env, market).catch(() => backOffScan(env, market));
     ctx.waitUntil(work);
-    if (!stored) await work;
+    if (!stored || wait) await work;
   }
   return await readStoredScan(env, market);
 }
 
-async function autoScanResponse(env, market, ctx) {
-  const stored = await refreshScanIfDue(env, market, ctx);
+async function autoScanResponse(env, market, ctx, { wait = false, force = false } = {}) {
+  const stored = await refreshScanIfDue(env, market, ctx, { wait, force });
   if (!stored) {
-    return { market: market.id, market_label: market.label, auto_refresh: true, warming_up: true, candidates: [], long_candidates: [], short_candidates: [], late_candidates: [], direction_counts: { LONG: 0, SHORT: 0 }, errors: [], successful: 0, universe_size: market.universe.length, fresh_entry_count: 0, method: "", next_step: "", message: "The first scan for this market is being prepared automatically. It will appear shortly.", read_only: true, order_submission_supported: false };
+    return { market: market.id, market_label: market.label, auto_refresh: market.auto, warming_up: true, candidates: [], long_candidates: [], short_candidates: [], late_candidates: [], direction_counts: { LONG: 0, SHORT: 0 }, errors: [], successful: 0, universe_size: market.universe?.length ?? 0, fresh_entry_count: 0, method: "", next_step: "", message: "The first scan for this market is being prepared automatically. It will appear shortly.", read_only: true, order_submission_supported: false };
   }
   return withRefreshInfo(stored.payload, stored.generatedAt, market);
 }
@@ -1468,13 +1476,13 @@ async function handle(request, env, ctx) {
     }
     if (url.pathname === "/api/discover") {
       await requireSubscription(request, env);
-      const market = marketFrom(await readBody(request));
-      if (market.auto) return json(await autoScanResponse(env, market, ctx));
-      const payload = await fromCache(request, "sp500-discovery-v7-regime-filter", SCAN_CACHE_SECONDS, async () => {
-        if (!discoveryInFlight) discoveryInFlight = discover().finally(() => { discoveryInFlight = null; });
-        return discoveryInFlight;
-      }, ctx);
-      return json(payload);
+      const body = await readBody(request);
+      const market = marketFrom(body);
+      // Every market is served from the shared stored scan, so repeated requests never multiply upstream calls.
+      // A US manual refresh always rescans and waits for new data (there is no cooldown); simultaneous
+      // refreshes share one scan through the lock, so extra clicks never multiply upstream calls.
+      const manual = !market.auto && body.refresh === true;
+      return json(await autoScanResponse(env, market, ctx, { wait: manual, force: manual }));
     }
     if (url.pathname === "/api/memory") {
       await requireSubscription(request, env);
@@ -1516,7 +1524,10 @@ async function handle(request, env, ctx) {
 
 export default {
   fetch: handle,
-  async scheduled(_event, env, ctx) {
-    for (const market of Object.values(MARKETS).filter(item => item.auto)) ctx.waitUntil(refreshScanIfDue(env, market, ctx));
+  // One market per cron trigger, so each job has its own outgoing-request budget.
+  async scheduled(event, env, ctx) {
+    const byCron = { "5 * * * *": "IN", "10 * * * *": "FX", "*/15 13-21 * * 1-5": "US" };
+    const market = MARKETS[byCron[event.cron]];
+    if (market) ctx.waitUntil(refreshScanIfDue(env, market, ctx));
   },
 };

@@ -28,8 +28,8 @@ actor APIClient {
         try await request(path: "/api/mobile/pair/status", body: ["code": code, "pairing_secret": secret])
     }
 
-    func discover(market: Market, token: String) async throws -> DiscoveryResponse {
-        try await request(path: "/api/discover", token: token, body: DiscoverBody(limit: 20, market: market.rawValue))
+    func discover(market: Market, token: String, refresh: Bool = false) async throws -> DiscoveryResponse {
+        try await request(path: "/api/discover", token: token, body: DiscoverBody(limit: 20, market: market.rawValue, refresh: refresh))
     }
 
     func analyze(symbol: String, market: Market, token: String) async throws -> AnalysisResponse {
@@ -69,6 +69,6 @@ actor APIClient {
 }
 
 private struct RevokeResponse: Decodable { let revoked: Bool }
-private struct DiscoverBody: Encodable { let limit: Int; let market: String }
+private struct DiscoverBody: Encodable { let limit: Int; let market: String; let refresh: Bool }
 private struct AnalyzeBody: Encodable { let symbol: String; let market: String }
 

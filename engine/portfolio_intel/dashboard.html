@@ -49,12 +49,12 @@ function renderCandidates(list,filter='all'){
   document.getElementById('list-title').textContent=titles[filter];
   document.getElementById('timestamp').textContent=`${list.length} shown · ${discoveryData.successful}/${discoveryData.universe_size} constituents scanned`;
 }
-async function scan(){
+async function scan(manual=false){
   const requested=market,auto=MARKETS[market].auto;
   scanButton.disabled=true;
   if(!auto)scanStatus.textContent='Loading the shared S&P 500 scan. A fresh market refresh can take 15–45 seconds…';
   try{
-    const response=await fetch('/api/discover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({limit:20,market})});
+    const response=await fetch('/api/discover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({limit:20,market,refresh:manual&&!MARKETS[market].auto})});
     const d=await response.json();
     if(requested!==market)return;
     if(!response.ok)throw new Error(d.error||'Discovery failed');
@@ -93,7 +93,7 @@ function setMarket(id){
 document.getElementById('market-select').addEventListener('change',e=>setMarket(e.target.value));
 candidates.addEventListener('click',e=>{const target=e.target.closest('[data-symbol]');if(!target)return;document.getElementById('symbol').value=target.dataset.symbol;form.requestSubmit();document.getElementById('run').scrollIntoView({behavior:'smooth',block:'center'})});
 document.querySelectorAll('[data-filter]').forEach(filterButton=>filterButton.addEventListener('click',()=>{if(!discoveryData)return;document.querySelectorAll('[data-filter]').forEach(item=>item.classList.toggle('active',item===filterButton));const filter=filterButton.dataset.filter,lists={all:discoveryData.candidates,long:discoveryData.long_candidates,short:discoveryData.short_candidates,late:discoveryData.late_candidates};renderCandidates(lists[filter]||[],filter)}));
-scanButton.addEventListener('click',scan);
+scanButton.addEventListener('click',()=>scan(true));
 async function loadMemory(){
   memoryRefresh.disabled=true;
   memoryStatus.textContent='Checking for recommendations with five completed market closes…';

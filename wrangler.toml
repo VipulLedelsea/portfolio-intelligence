@@ -9,9 +9,10 @@ database_name = "intelligent-portfolio"
 database_id = "4153c2d1-f4bf-4a3c-be38-f7e26b0426cd"
 migrations_dir = "drizzle"
 
-# Refreshes the BSE and forex scans at five past each hour.
+# One scan per market, each in its own invocation (the free plan allows 50 outgoing requests per run):
+# BSE at :05 and forex at :10 every hour, US every 15 minutes during US trading hours (UTC).
 [triggers]
-crons = ["5 * * * *"]
+crons = ["5 * * * *", "10 * * * *", "*/15 13-21 * * 1-5"]
 
 # Secrets (never commit these); set each with `npx wrangler secret put NAME`:
 #   STRIPE_SECRET_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, PAYWALL_ENABLED ("true" to enable the paywall)

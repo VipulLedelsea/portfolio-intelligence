@@ -103,14 +103,14 @@ final class AppModel: ObservableObject {
 
     /// Reads the latest scan. BSE and forex scans are produced by the server on its own
     /// schedule, so this only reads the stored result and re-checks every few minutes.
-    func refreshScanner() async {
+    func refreshScanner(manual: Bool = false) async {
         guard let token else { return }
         autoRefreshTask?.cancel()
         let requested = market
         isScanning = true
         defer { isScanning = false }
         do {
-            let result = try await api.discover(market: requested, token: token)
+            let result = try await api.discover(market: requested, token: token, refresh: manual && !requested.isAutomatic)
             guard requested == market else { return }
             discovery = result
             errorMessage = nil

@@ -173,9 +173,20 @@ globalThis.fetch = async input => {
   const url = new URL(String(input));
   fetchLog.push(url.hostname);
   if (url.hostname.includes("yahoo")) {
-    const daily = url.searchParams.get("interval") === "1d";
-    const rows = daily ? series(130, 86400, nowSeconds - 2 * 86400, 1.08) : series(300, 3600, nowSeconds - 4 * 3600, 1.08);
+    const rows = series(3000, 3600, nowSeconds - 4 * 3600, 1.08);
     return new Response(JSON.stringify({ chart: { result: [{ timestamp: rows.map(row => row.time), indicators: { quote: [{ open: rows.map(r => r.open), high: rows.map(r => r.high), low: rows.map(r => r.low), close: rows.map(r => r.close), volume: rows.map(r => r.volume) }] } }] } }), { status: 200 });
+  }
+  if (url.hostname === "raw.githubusercontent.com") {
+    return new Response(["Symbol,Security,GICS Sector", ...Array.from({ length: 503 }, (_, index) => `S${String(index).padStart(3, "0")},Company ${index},Technology`)].join("\n"), { status: 200 });
+  }
+  if (url.hostname === "api.robinhood.com") {
+    const symbols = url.searchParams.get("symbols").split(",");
+    const isHistory = url.pathname.includes("historicals");
+    if (isHistory && symbols.length > 75) return new Response("{}", { status: 400 });
+    if (!isHistory) return new Response(JSON.stringify({ results: symbols.map(symbol => ({ symbol, last_trade_price: "100", adjusted_previous_close: "99" })) }), { status: 200 });
+    const daily = url.searchParams.get("interval") === "day";
+    const rows = daily ? series(130, 86400, nowSeconds - 2 * 86400, 100) : series(300, 3600, nowSeconds - 4 * 3600, 100);
+    return new Response(JSON.stringify({ results: symbols.map(symbol => ({ symbol, historicals: rows.map(r => ({ begins_at: new Date(r.time * 1000).toISOString(), open_price: String(r.open), high_price: String(r.high), low_price: String(r.low), close_price: String(r.close), volume: r.volume })) })) }), { status: 200 });
   }
   if (url.hostname.includes("twelvedata")) {
     const daily = url.searchParams.get("interval") === "1day";
@@ -196,9 +207,21 @@ const fxCandidate = [...fxScan.candidates, ...fxScan.late_candidates][0];
 assert.equal(fxCandidate.price_decimals, 5, "Forex prices need five decimals");
 assert.equal(fxCandidate.currency_symbol, "");
 const callsAfterFirstScan = fetchLog.length;
-assert.ok(callsAfterFirstScan >= 26, "The first scan must fetch daily and hourly bars for each pair");
+assert.equal(callsAfterFirstScan, 13, "A forex scan must use one request per pair");
 for (let index = 0; index < 5; index += 1) await post("/api/discover", { market: "FX" });
 assert.equal(fetchLog.length, callsAfterFirstScan, "Repeated requests must be served from storage with no upstream calls");
+
+fetchLog.length = 0;
+const usScan = await (await post("/api/discover", { market: "US" })).json();
+assert.equal(usScan.successful, 503, "Every S&P 500 symbol must be scanned");
+assert.ok(fetchLog.length <= 30, `A full US scan must stay far below the free plan's 50-request limit (used ${fetchLog.length})`);
+const usCalls = fetchLog.length;
+await post("/api/discover", { market: "US", refresh: true });
+const callsPerUsScan = fetchLog.length - usCalls;
+assert.ok(callsPerUsScan > 0 && callsPerUsScan <= usCalls, "A US manual refresh must always rescan, with no cooldown");
+await Promise.all([post("/api/discover", { market: "US", refresh: true }), post("/api/discover", { market: "US", refresh: true }), post("/api/discover", { market: "US", refresh: true })]);
+assert.ok(fetchLog.length - usCalls - callsPerUsScan <= callsPerUsScan * 2, "Simultaneous manual refreshes must share a scan instead of each making their own");
+assert.equal(usScan.auto_refresh, false, "US keeps a manual refresh control");
 
 const inScan = await (await post("/api/discover", { market: "IN" }, { TWELVE_DATA_API_KEY: "test-key" })).json();
 assert.equal(inScan.market, "IN");
