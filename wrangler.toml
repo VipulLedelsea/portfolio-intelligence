@@ -3,11 +3,10 @@ main = "dist/server/index.js"
 compatibility_date = "2026-10-01"
 workers_dev = true
 
-# Run `npx wrangler d1 create intelligent-portfolio`, then paste the printed database_id here.
 [[d1_databases]]
 binding = "DB"
 database_name = "intelligent-portfolio"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "4153c2d1-f4bf-4a3c-be38-f7e26b0426cd"
 migrations_dir = "drizzle"
 
 # Refreshes the BSE and forex scans at five past each hour.
