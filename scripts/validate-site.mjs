@@ -234,8 +234,6 @@ const fxAnalysis = await (await post("/api/analyze", { market: "FX", symbol: "EU
 assert.equal(fxAnalysis.market, "FX");
 assert.equal(fxAnalysis.price_decimals, 5);
 assert.ok(fxAnalysis.stop_price > 0 && fxAnalysis.chart.levels.target_1 > 0);
-assert.ok(Array.isArray(fxAnalysis.chart.strategy?.trades), "The chart must include the Supertrend strategy replay");
-assert.ok(fxAnalysis.chart.strategy.trades.every(trade => ["LONG", "SHORT"].includes(trade.side) && Number.isFinite(trade.pnl_pct) && trade.entry_date && trade.exit_date), "Every strategy trade needs a side, dates, and P&L");
 assert.equal((await post("/api/analyze", { market: "FX", symbol: "AAPL" })).status, 502, "Forex analysis is limited to the pair list");
 assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unknown markets must be rejected");
 

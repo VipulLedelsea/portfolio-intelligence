@@ -1020,34 +1020,6 @@ function makeReport(role, symbol, score, confidence, thesis, evidence, risks, co
   return { role, symbol, score: round(clamp(score, 0, 100), 1), confidence, thesis, evidence, risks, sources: complete ? ["Robinhood"] : [], as_of: new Date().toISOString(), data_complete: complete };
 }
 
-// Replays the 1H Supertrend (10, 3) as a trading strategy, the way TradingView's "Supertrend Strategy" does:
-// every confirmed direction flip closes the open position and opens the opposite one at the next bar's open.
-// This is a research replay of the signal over the charted bars only; no orders exist anywhere in this app.
-function supertrendStrategy(rows) {
-  const trades = [];
-  let open = null;
-  const close = (exitIndex, exitPrice) => {
-    const move = open.side === "LONG" ? exitPrice / open.entry_price - 1 : 1 - exitPrice / open.entry_price;
-    trades.push({ ...open, exit_date: rows[exitIndex].date, exit_price: round(exitPrice, 4), pnl_pct: round(move * 100, 2) });
-  };
-  for (let index = 1; index < rows.length; index += 1) {
-    const previous = rows[index - 1].supertrend_direction, current = rows[index].supertrend_direction;
-    if (!previous || !current || previous === current) continue;
-    const entryIndex = rows[index + 1] ? index + 1 : index;
-    const entryPrice = rows[index + 1] ? numeric(rows[index + 1].open) : numeric(rows[index].close);
-    if (open) close(entryIndex, entryPrice);
-    open = { side: current, entry_date: rows[entryIndex].date, entry_price: round(entryPrice, 4) };
-  }
-  const last = rows.at(-1);
-  const openMove = open && last ? (open.side === "LONG" ? numeric(last.close) / open.entry_price - 1 : 1 - numeric(last.close) / open.entry_price) : 0;
-  return {
-    name: "Supertrend strategy (10, 3)",
-    trades,
-    open: open ? { ...open, pnl_pct: round(openMove * 100, 2) } : null,
-    closed_pnl_pct: round(trades.reduce((total, trade) => total + trade.pnl_pct, 0), 2),
-  };
-}
-
 async function analyze(symbol, market = MARKETS.US, env = {}) {
   const [{ snapshots }, fundamentals] = await Promise.all([fetchSnapshots([symbol], market, env), market.provider === "robinhood" ? fetchFundamentals(symbol) : Promise.resolve(null)]);
   const snapshot = snapshots.get(symbol);
@@ -1142,7 +1114,6 @@ async function analyze(symbol, market = MARKETS.US, env = {}) {
     portfolio_review: { approved, reasons: approved ? [] : ["Risk veto is active"], final_position_pct: 0, portfolio_note: approved ? "Cleared as a research idea." : "Not cleared as a research idea." },
     chart: {
       series: snapshot.history,
-      strategy: supertrendStrategy(snapshot.history),
       source: snapshot.data_source,
       source_detail: snapshot.data_source_detail,
       supertrend: snapshot.supertrend,
