@@ -36,8 +36,9 @@ assert.match(html, /Interactive trade desk/, "The dashboard must include the int
 assert.match(html, /ANNOTATED SIGNAL/, "The chart must expose real signal annotations");
 assert.match(html, /Analysis only · orders are never placed/, "The analysis desk must remain explicitly read-only");
 assert.doesNotMatch(html, /Open Long|Open Short|Auto-execute/i, "The read-only interface must not expose execution controls");
-assert.match(html, /TradingView 1H/, "The dashboard must offer an embedded TradingView chart");
-assert.match(source, /frame-src https:\/\/www\.tradingview-widget\.com/, "The CSP must allow only the TradingView widget frame");
+assert.match(html, /1H strategy/, "The dashboard must offer the 1H strategy chart");
+assert.match(html, /Supertrend strategy/, "The dashboard must label the Supertrend strategy replay");
+assert.doesNotMatch(source, /frame-src|tradingview\.com;/, "The CSP must not allow third-party frames or scripts");
 assert.doesNotMatch(source, /script-src[^;]*\*/, "The CSP must not allow wildcard script sources");
 assert.match(html, /Learning memory/, "The dashboard must show persistent recommendation learning");
 const accessResponse = await workerModule.default.fetch(new Request("https://example.test/api/access"), {}, { waitUntil() {} });
