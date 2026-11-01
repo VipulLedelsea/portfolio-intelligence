@@ -44,6 +44,7 @@ struct AnalysisContent: View {
     @Environment(\.openURL) private var openURL
     @State private var chartMode = ChartMode.signal
     @State private var trailingInset: CGFloat = 0
+    @Namespace private var railNamespace
     let candidate: Candidate
     /// When set, a glass back button sits beside the chart controls (sheet presentation).
     var onBack: (() -> Void)?
@@ -106,29 +107,59 @@ struct AnalysisContent: View {
                     .glass(Circle())
                     .accessibilityLabel("Back to scanner")
                 }
-                VStack(spacing: 4) {
-                    ForEach(ChartMode.allCases) { mode in
-                        let selected = chartMode == mode
-                        Button { chartMode = mode } label: {
-                            VStack(spacing: 3) {
-                                Image(systemName: mode.icon).font(.title3)
-                                Text(mode.railLabel).font(.caption2.weight(selected ? .semibold : .regular))
-                            }
-                            .frame(width: 52, height: 58)
-                            .foregroundStyle(selected ? AppTheme.amber : Color.white.opacity(0.85))
-                            .background(selected ? Color.white.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: 26))
-                            .contentShape(RoundedRectangle(cornerRadius: 26))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(mode.rawValue)
-                        .accessibilityAddTraits(selected ? .isSelected : [])
-                    }
-                }
-                .padding(4)
-                .glass(RoundedRectangle(cornerRadius: 30))
+                modeBar
             }
         }
         .frame(width: 56)
+    }
+
+    private static let itemHeight: CGFloat = 58
+    private static let itemSpacing: CGFloat = 4
+    private static let barPadding: CGFloat = 4
+
+    /// Tab-bar style selector: a highlight glides between items with a springy overshoot,
+    /// and a finger dragged along the bar switches modes as it passes each item.
+    private var modeBar: some View {
+        VStack(spacing: Self.itemSpacing) {
+            ForEach(ChartMode.allCases) { mode in
+                let selected = chartMode == mode
+                VStack(spacing: 3) {
+                    Image(systemName: mode.icon).font(.title3)
+                    Text(mode.railLabel).font(.caption2.weight(selected ? .semibold : .regular))
+                }
+                .frame(width: 52, height: Self.itemHeight)
+                .foregroundStyle(selected ? AppTheme.amber : Color.white.opacity(0.85))
+                .background {
+                    if selected {
+                        RoundedRectangle(cornerRadius: 26)
+                            .fill(Color.white.opacity(0.18))
+                            .matchedGeometryEffect(id: "railHighlight", in: railNamespace)
+                    }
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 26))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(mode.rawValue)
+                .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+                .accessibilityAction { select(mode) }
+            }
+        }
+        .padding(Self.barPadding)
+        .glass(RoundedRectangle(cornerRadius: 30))
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    let step = Self.itemHeight + Self.itemSpacing
+                    let index = Int(((value.location.y - Self.barPadding) / step).rounded(.down))
+                    let modes = ChartMode.allCases
+                    select(modes[min(max(index, 0), modes.count - 1)])
+                }
+        )
+    }
+
+    private func select(_ mode: ChartMode) {
+        guard mode != chartMode else { return }
+        UISelectionFeedbackGenerator().selectionChanged()
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.7)) { chartMode = mode }
     }
 
     @ViewBuilder
