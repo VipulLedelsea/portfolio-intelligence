@@ -50,6 +50,13 @@ enum Market: String, CaseIterable, Identifiable, Sendable {
         case .forex: "Forex"
         }
     }
+    var fullLabel: String {
+        switch self {
+        case .us: "US stocks"
+        case .india: "India (BSE)"
+        case .forex: "Forex"
+        }
+    }
     /// BSE and forex scans refresh on the server schedule and cannot be refreshed by hand.
     var isAutomatic: Bool { self != .us }
     var scanTitle: String {

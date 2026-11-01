@@ -91,6 +91,34 @@ struct ScannerView: View {
         .refreshableIf(!model.market.isAutomatic) { await model.refreshScanner() }
     }
 
+    private var marketMenu: some View {
+        Menu {
+            ForEach(Market.allCases) { market in
+                Button {
+                    Task { await model.selectMarket(market) }
+                } label: {
+                    if market == model.market {
+                        Label(market.fullLabel, systemImage: "checkmark")
+                    } else {
+                        Text(market.fullLabel)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "globe")
+                Text(model.market.fullLabel).fontWeight(.semibold)
+                Image(systemName: "chevron.up.chevron.down").font(.caption)
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 44)
+            .foregroundStyle(.white)
+            .contentShape(Capsule())
+        }
+        .glass(Capsule())
+        .accessibilityLabel("Market: \(model.market.fullLabel)")
+    }
+
     private var autoRefreshText: String {
         guard let stamp = model.discovery?.refreshedAt, let date = PairingExpiryParser.date(from: stamp) else {
             return "Updates automatically. There is no manual refresh."
@@ -102,10 +130,7 @@ struct ScannerView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Daily direction.\nOne-hour timing.")
                 .font(.system(size: 34, weight: .medium, design: .serif))
-            Picker("Market", selection: Binding(get: { model.market }, set: { newValue in Task { await model.selectMarket(newValue) } })) {
-                ForEach(Market.allCases) { Text($0.label).tag($0) }
-            }
-            .pickerStyle(.segmented)
+            marketMenu
             Text("Confirmed daily and hourly Supertrend, strengthening ADX, and entry-extension controls rank the \(model.market.scanTitle).")
                 .foregroundStyle(AppTheme.muted)
             if model.market.isAutomatic {
