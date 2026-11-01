@@ -106,21 +106,26 @@ struct AnalysisContent: View {
                     .glass(Circle())
                     .accessibilityLabel("Back to scanner")
                 }
-                ForEach(ChartMode.allCases) { mode in
-                    Button { chartMode = mode } label: {
-                        VStack(spacing: 2) {
-                            Image(systemName: mode.icon).font(.headline)
-                            Text(mode.railLabel).font(.caption2.weight(.semibold))
+                VStack(spacing: 4) {
+                    ForEach(ChartMode.allCases) { mode in
+                        let selected = chartMode == mode
+                        Button { chartMode = mode } label: {
+                            VStack(spacing: 3) {
+                                Image(systemName: mode.icon).font(.title3)
+                                Text(mode.railLabel).font(.caption2.weight(selected ? .semibold : .regular))
+                            }
+                            .frame(width: 52, height: 58)
+                            .foregroundStyle(selected ? AppTheme.amber : Color.white.opacity(0.85))
+                            .background(selected ? Color.white.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: 26))
+                            .contentShape(RoundedRectangle(cornerRadius: 26))
                         }
-                        .frame(width: 52, height: 58)
-                        .foregroundStyle(.white)
-                        .contentShape(RoundedRectangle(cornerRadius: 26))
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(mode.rawValue)
+                        .accessibilityAddTraits(selected ? .isSelected : [])
                     }
-                    .buttonStyle(.plain)
-                    .glass(RoundedRectangle(cornerRadius: 26), tint: chartMode == mode ? AppTheme.amber : nil)
-                    .accessibilityLabel(mode.rawValue)
-                    .accessibilityAddTraits(chartMode == mode ? .isSelected : [])
                 }
+                .padding(4)
+                .glass(RoundedRectangle(cornerRadius: 30))
             }
         }
         .frame(width: 56)
