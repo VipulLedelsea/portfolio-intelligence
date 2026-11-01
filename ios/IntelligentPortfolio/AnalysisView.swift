@@ -24,6 +24,20 @@ struct AnalysisContent: View {
         case hourly = "TV 1H"
         case daily = "TV Daily"
         var id: String { rawValue }
+        var icon: String {
+            switch self {
+            case .signal: "waveform.path.ecg"
+            case .hourly: "clock"
+            case .daily: "calendar"
+            }
+        }
+        var railLabel: String {
+            switch self {
+            case .signal: "Signal"
+            case .hourly: "1H"
+            case .daily: "1D"
+            }
+        }
     }
 
     @EnvironmentObject private var model: AppModel
@@ -52,38 +66,52 @@ struct AnalysisContent: View {
         .task(id: candidate.symbol) { await model.analyze(symbol: candidate.symbol) }
     }
 
-    private var chartControls: some View {
-        HStack(spacing: 10) {
-            if let onBack {
-                Button(action: onBack) {
-                    Image(systemName: "chevron.left")
-                        .font(.headline)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.white)
-                .glass(Circle())
-                .accessibilityLabel("Back to scanner")
-            }
-            HStack(spacing: 4) {
-                ForEach(ChartMode.allCases) { mode in
-                    Button { chartMode = mode } label: {
-                        Text(mode.rawValue)
-                            .font(.footnote.weight(.semibold))
-                            .padding(.horizontal, 12)
-                            .frame(height: 36)
-                            .foregroundStyle(chartMode == mode ? Color.black : Color.white)
-                            .background(chartMode == mode ? AppTheme.amber : Color.clear, in: Capsule())
-                            .contentShape(Capsule())
+    /// Vertical glass rail to the right of the chart: back button on top, chart modes below.
+    private var chartRail: some View {
+        railContainer {
+            VStack(spacing: 10) {
+                if let onBack {
+                    Button(action: onBack) {
+                        Image(systemName: "chevron.left")
+                            .font(.headline)
+                            .frame(width: 48, height: 48)
+                            .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityAddTraits(chartMode == mode ? .isSelected : [])
+                    .foregroundStyle(.white)
+                    .glass(Circle())
+                    .accessibilityLabel("Back to scanner")
                 }
+                VStack(spacing: 4) {
+                    ForEach(ChartMode.allCases) { mode in
+                        Button { chartMode = mode } label: {
+                            VStack(spacing: 2) {
+                                Image(systemName: mode.icon).font(.headline)
+                                Text(mode.railLabel).font(.caption2.weight(.semibold))
+                            }
+                            .frame(width: 48, height: 54)
+                            .foregroundStyle(chartMode == mode ? Color.black : Color.white)
+                            .background(chartMode == mode ? AppTheme.amber : Color.clear, in: RoundedRectangle(cornerRadius: 24))
+                            .contentShape(RoundedRectangle(cornerRadius: 24))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(mode.rawValue)
+                        .accessibilityAddTraits(chartMode == mode ? .isSelected : [])
+                    }
+                }
+                .padding(4)
+                .glass(RoundedRectangle(cornerRadius: 28))
             }
-            .padding(4)
-            .glass(Capsule())
-            Spacer(minLength: 0)
+        }
+        .frame(width: 56)
+    }
+
+    @ViewBuilder
+    private func railContainer<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: 12) { content() }
+        } else {
+            content()
         }
     }
 
@@ -99,18 +127,24 @@ struct AnalysisContent: View {
         }
 
         if let chart = analysis.chart {
-            chartControls
-            switch chartMode {
-            case .signal:
-                CandlestickChart(series: chart.series, levels: chart.levels)
-                    .aspectRatio(1.5, contentMode: .fit)
-                    .frame(minHeight: 240, maxHeight: 440)
-                    .panel()
-            case .hourly, .daily:
-                let interval = chartMode == .daily ? "D" : "60"
-                TradingViewChart(symbol: analysis.symbol, interval: interval)
-                    .frame(height: 420)
-                    .overlay(Rectangle().stroke(AppTheme.line, lineWidth: 1))
+            HStack(alignment: .top, spacing: 10) {
+                Group {
+                    switch chartMode {
+                    case .signal:
+                        CandlestickChart(series: chart.series, levels: chart.levels)
+                            .aspectRatio(1.5, contentMode: .fit)
+                            .frame(minHeight: 240, maxHeight: 440)
+                            .panel()
+                    case .hourly, .daily:
+                        TradingViewChart(symbol: analysis.symbol, interval: chartMode == .daily ? "D" : "60")
+                            .frame(height: 420)
+                            .overlay(Rectangle().stroke(AppTheme.line, lineWidth: 1))
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                chartRail
+            }
+            if chartMode != .signal {
                 Text("Chart by TradingView. Supertrend (10, 3) and DMI/ADX (14) are drawn by TradingView and can differ slightly from the engine's signal values. Entry, risk, and targets appear on the Signal chart.")
                     .font(.caption)
                     .foregroundStyle(AppTheme.muted)
