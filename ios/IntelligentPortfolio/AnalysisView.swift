@@ -98,7 +98,7 @@ struct AnalysisContent: View {
                     Button(action: onBack) {
                         Image(systemName: "chevron.left")
                             .font(.headline)
-                            .frame(width: 48, height: 48)
+                            .frame(width: 52, height: 52)
                             .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
@@ -106,25 +106,21 @@ struct AnalysisContent: View {
                     .glass(Circle())
                     .accessibilityLabel("Back to scanner")
                 }
-                VStack(spacing: 4) {
-                    ForEach(ChartMode.allCases) { mode in
-                        Button { chartMode = mode } label: {
-                            VStack(spacing: 2) {
-                                Image(systemName: mode.icon).font(.headline)
-                                Text(mode.railLabel).font(.caption2.weight(.semibold))
-                            }
-                            .frame(width: 48, height: 54)
-                            .foregroundStyle(chartMode == mode ? Color.black : Color.white)
-                            .background(chartMode == mode ? AppTheme.amber : Color.clear, in: RoundedRectangle(cornerRadius: 24))
-                            .contentShape(RoundedRectangle(cornerRadius: 24))
+                ForEach(ChartMode.allCases) { mode in
+                    Button { chartMode = mode } label: {
+                        VStack(spacing: 2) {
+                            Image(systemName: mode.icon).font(.headline)
+                            Text(mode.railLabel).font(.caption2.weight(.semibold))
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(mode.rawValue)
-                        .accessibilityAddTraits(chartMode == mode ? .isSelected : [])
+                        .frame(width: 52, height: 58)
+                        .foregroundStyle(.white)
+                        .contentShape(RoundedRectangle(cornerRadius: 26))
                     }
+                    .buttonStyle(.plain)
+                    .glass(RoundedRectangle(cornerRadius: 26), tint: chartMode == mode ? AppTheme.amber : nil)
+                    .accessibilityLabel(mode.rawValue)
+                    .accessibilityAddTraits(chartMode == mode ? .isSelected : [])
                 }
-                .padding(4)
-                .glass(RoundedRectangle(cornerRadius: 28))
             }
         }
         .frame(width: 56)

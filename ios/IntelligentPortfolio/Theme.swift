@@ -68,11 +68,16 @@ extension View {
 extension View {
     /// Liquid Glass on iOS 26 and later, a material with a hairline edge before that.
     @ViewBuilder
-    func glass<S: Shape>(_ shape: S) -> some View {
+    func glass<S: Shape>(_ shape: S, tint: Color? = nil) -> some View {
         if #available(iOS 26.0, *) {
-            self.glassEffect(.regular.interactive(), in: shape)
+            if let tint {
+                self.glassEffect(.regular.tint(tint.opacity(0.75)).interactive(), in: shape)
+            } else {
+                self.glassEffect(.regular.interactive(), in: shape)
+            }
         } else {
             self.background(.ultraThinMaterial, in: shape)
+                .background(tint?.opacity(0.55) ?? Color.clear, in: shape)
                 .overlay(shape.stroke(AppTheme.line, lineWidth: 1))
         }
     }
