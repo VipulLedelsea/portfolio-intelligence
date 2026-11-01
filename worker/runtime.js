@@ -698,6 +698,7 @@ function snapshotFromPayload(symbol, dailyItem, signalItem, quote, market = MARK
     daily_adx: dailyAdx,
     data_complete: true,
     history: signal.slice(-120),
+    daily_history: daily.slice(-200).map(row => ({ date: row.date, open: row.open, high: row.high, low: row.low, close: row.close, volume: row.volume, supertrend: row.supertrend, supertrend_direction: row.supertrend_direction })),
   };
 }
 
@@ -1143,6 +1144,7 @@ async function analyze(symbol, market = MARKETS.US, env = {}) {
     chart: {
       series: snapshot.history,
       strategy: supertrendStrategy(snapshot.history),
+      daily: { series: snapshot.daily_history, strategy: supertrendStrategy(snapshot.daily_history) },
       source: snapshot.data_source,
       source_detail: snapshot.data_source_detail,
       supertrend: snapshot.supertrend,
