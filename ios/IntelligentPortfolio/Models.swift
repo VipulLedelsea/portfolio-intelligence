@@ -174,15 +174,9 @@ struct StrategyPayload: Decodable, Sendable {
     let closedPnlPct: Double
 }
 
-struct DailyChartPayload: Decodable, Sendable {
-    let series: [Candle]
-    let strategy: StrategyPayload?
-}
-
 struct ChartPayload: Decodable, Sendable {
     let source: String?
     let strategy: StrategyPayload?
-    let daily: DailyChartPayload?
     let series: [Candle]
     let levels: ScenarioLevels
     let explanation: [String]?
@@ -203,7 +197,6 @@ struct Candle: Decodable, Identifiable, Sendable {
     let high: Double
     let low: Double
     let close: Double
-    let volume: Double?
     let supertrend: Double?
     let supertrendDirection: String?
     let barStatus: String?
