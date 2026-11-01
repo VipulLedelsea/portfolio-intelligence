@@ -18,23 +18,28 @@ enum TradingViewLink {
     }
 }
 
-/// TradingView's free Advanced Chart widget with Volume, Supertrend (10, 3) and an SMA (the free
-/// widget cannot change the SMA length, so it keeps TradingView's default of 9).
-/// The widget draws no entry, stop, or target levels; those stay on the native chart.
-struct TradingViewChart: UIViewRepresentable {
+/// The real TradingView chart page, loaded inside the app. Signing in to TradingView once here keeps
+/// the session, so the user's saved layout (for example Supertrend Strategy, SMA, and Volume) loads on the
+/// symbol being viewed. Nothing is recreated: this is TradingView itself.
+struct TradingViewSite: UIViewRepresentable {
     let symbol: String
     let interval: String
+
+    private static let desktopAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
+        configuration.websiteDataStore = .default()
+        let preferences = WKWebpagePreferences()
+        preferences.preferredContentMode = .desktop
+        configuration.defaultWebpagePreferences = preferences
         let web = WKWebView(frame: .zero, configuration: configuration)
+        web.customUserAgent = Self.desktopAgent
         web.isOpaque = false
-        web.backgroundColor = .clear
-        web.scrollView.backgroundColor = .clear
-        web.scrollView.isScrollEnabled = false
+        web.backgroundColor = UIColor(red: 0.035, green: 0.047, blue: 0.043, alpha: 1)
+        web.scrollView.backgroundColor = web.backgroundColor
         web.navigationDelegate = context.coordinator
         context.coordinator.load(symbol: symbol, interval: interval, into: web)
         return web
@@ -49,36 +54,20 @@ struct TradingViewChart: UIViewRepresentable {
 
         func load(symbol: String, interval: String, into web: WKWebView) {
             let key = "\(symbol)|\(interval)"
-            guard key != loaded, TradingViewLink.isValid(symbol: symbol) else { return }
+            guard key != loaded, TradingViewLink.isValid(symbol: symbol),
+                  let url = TradingViewLink.url(symbol: symbol, interval: interval) else { return }
             loaded = key
-            let config: [String: Any] = [
-                "autosize": true, "symbol": symbol, "interval": interval,
-                "timezone": "America/New_York", "theme": "dark", "style": "1", "locale": "en",
-                "hide_side_toolbar": true, "allow_symbol_change": false,
-                "studies": ["STD;Supertrend", "STD;SMA"],
-                "backgroundColor": "#090c0b", "support_host": "https://www.tradingview.com"
-            ]
-            guard let data = try? JSONSerialization.data(withJSONObject: config),
-                  let json = String(data: data, encoding: .utf8) else { return }
-            let html = """
-            <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-            <style>html,body{margin:0;height:100%;background:#090c0b}</style></head><body>
-            <div class="tradingview-widget-container" style="height:100%;width:100%">
-            <div class="tradingview-widget-container__widget" style="height:100%;width:100%"></div>
-            <script src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>\(json)</script>
-            </div></body></html>
-            """
-            web.loadHTMLString(html, baseURL: URL(string: "https://www.tradingview.com"))
+            web.load(URLRequest(url: url))
         }
 
         func webView(
             _ webView: WKWebView,
-            decidePolicyFor navigationAction: WKNavigationAction,
+            decidePolicy navigationAction: WKNavigationAction,
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
-            // Links inside the widget leave the app for the system browser (or the TradingView app).
+            // Stay inside TradingView; send links to any other site to the system browser.
             if navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url,
-               url.scheme == "https" {
+               url.scheme == "https", !(url.host ?? "").hasSuffix("tradingview.com") {
                 UIApplication.shared.open(url)
                 decisionHandler(.cancel)
                 return

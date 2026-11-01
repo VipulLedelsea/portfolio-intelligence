@@ -191,26 +191,22 @@ struct AnalysisContent: View {
                             .aspectRatio(1.5, contentMode: .fit)
                             .frame(minHeight: 240, maxHeight: 440)
                             .panel()
-                    case .hourly:
-                        TradingStyleChart(series: chart.series, strategy: chart.strategy, decimals: analysis.priceDecimals ?? 2, prefix: analysis.currencySymbol ?? "$")
-                            .frame(minHeight: 340, idealHeight: 400)
-                            .aspectRatio(1.5, contentMode: .fit)
-                    case .daily:
-                        TradingStyleChart(series: chart.daily?.series ?? [], strategy: chart.daily?.strategy, decimals: analysis.priceDecimals ?? 2, prefix: analysis.currencySymbol ?? "$")
-                            .frame(minHeight: 340, idealHeight: 400)
-                            .aspectRatio(1.5, contentMode: .fit)
+                    case .hourly, .daily:
+                        TradingViewSite(symbol: (Market(rawValue: analysis.market ?? "US") ?? .us).tradingViewSymbol(analysis.symbol), interval: chartMode == .daily ? "D" : "60")
+                            .frame(height: 560)
+                            .overlay(Rectangle().stroke(AppTheme.line, lineWidth: 1))
                     }
                 }
                 .frame(maxWidth: .infinity)
                 if !railInInset { chartRail }
             }
             if chartMode != .signal {
-                Text("Drawn from \(chart.source ?? "market") data: Volume, Supertrend strategy (10, 3), and SMA 9, with Long and Short entries and P&L from replaying the signal. Entry, risk, and targets appear on the Signal chart. Research replay only; no orders are placed.")
+                Text("This is TradingView itself. Sign in to TradingView once here and your saved layout, with Supertrend Strategy, SMA, and Volume, loads on this symbol. Entry, risk, and targets appear on the Signal chart. Research only; no orders are placed.")
                     .font(.caption)
                     .foregroundStyle(AppTheme.muted)
                 if let url = TradingViewLink.url(symbol: (Market(rawValue: analysis.market ?? "US") ?? .us).tradingViewSymbol(analysis.symbol), interval: chartMode == .daily ? "D" : "60") {
                     Button { openURL(url) } label: {
-                        Label("Open this symbol in TradingView", systemImage: "arrow.up.right.square")
+                        Label("Open in the TradingView app or browser", systemImage: "arrow.up.right.square")
                     }
                     .buttonStyle(.bordered)
                     .tint(AppTheme.amber)
