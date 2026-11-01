@@ -198,6 +198,20 @@ assert.equal(fxAnalysis.price_decimals, 5);
 assert.ok(fxAnalysis.stop_price > 0 && fxAnalysis.chart.levels.target_1 > 0);
 assert.equal((await post("/api/analyze", { market: "FX", symbol: "AAPL" })).status, 502, "Forex analysis is limited to the pair list");
 assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unknown markets must be rejected");
+
+// A rate-limited provider must trigger a backoff, not a retry on every request.
+{
+  const freshModule = await import(`data:text/javascript;base64,${Buffer.from(`${source}\n//rate-limit-test`).toString("base64")}`);
+  const upstream = [];
+  globalThis.fetch = async input => { upstream.push(String(input)); return new Response("Too Many Requests", { status: 429 }); };
+  const ask = () => freshModule.default.fetch(new Request("https://example.test/api/discover", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ market: "FX" }) }), {}, { waitUntil() {} });
+  const first = await (await ask()).json();
+  assert.equal(first.warming_up, true, "A failed first scan must report that it is warming up");
+  const callsAfterFailure = upstream.length;
+  assert.ok(callsAfterFailure > 0 && callsAfterFailure <= 26, "A failed scan must make only one bounded round of requests");
+  for (let index = 0; index < 5; index += 1) await ask();
+  assert.equal(upstream.length, callsAfterFailure, "After a provider rate limit, no further upstream calls may be made until the backoff ends");
+}
 globalThis.fetch = realFetch;
 
 console.log("Artifact is valid ESM; read-only, subscription, persistent-memory, and iPhone pairing gates passed");

@@ -14,6 +14,7 @@ const MOBILE_SESSION_DAYS = 90;
 const AUTO_REFRESH_OPEN_SECONDS = 55 * 60;
 const AUTO_REFRESH_CLOSED_SECONDS = 6 * 60 * 60;
 const AUTO_REFRESH_LOCK_SECONDS = 4 * 60;
+const AUTO_REFRESH_BACKOFF_SECONDS = 15 * 60;
 const EXTERNAL_ANALYSIS_CACHE_SECONDS = 15 * 60;
 const YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/";
 const TWELVE_DATA = "https://api.twelvedata.com/time_series";
@@ -663,8 +664,9 @@ async function yahooChart(market, symbol, interval, range) {
 
 async function loadYahooSeries(symbols, market) {
   const series = new Map(), errors = [];
-  for (let index = 0; index < symbols.length; index += 4) {
-    await Promise.all(symbols.slice(index, index + 4).map(async symbol => {
+  for (let index = 0; index < symbols.length; index += 3) {
+    if (index) await new Promise(resolve => setTimeout(resolve, 300));
+    await Promise.all(symbols.slice(index, index + 3).map(async symbol => {
       try {
         const [daily, signal] = await Promise.all([yahooChart(market, symbol, "1d", "6mo"), yahooChart(market, symbol, "60m", "1mo")]);
         series.set(symbol, { daily, signal });
@@ -1267,16 +1269,22 @@ async function refreshScan(env, market) {
   }
 }
 
+async function backOffScan(env, market) {
+  // A failed refresh (for example a provider rate limit) pauses further attempts instead of retrying on the next request.
+  const until = Date.now() + AUTO_REFRESH_BACKOFF_SECONDS * 1000;
+  scanMemory.set(`${market.id}:lock`, until);
+  if (env.DB) {
+    await env.DB.prepare("UPDATE scan_cache SET refreshing_until = ? WHERE market = ?").bind(new Date(until).toISOString(), market.id).run().catch(() => {});
+  }
+}
+
 async function refreshScanIfDue(env, market, ctx, { force = false } = {}) {
   const stored = await readStoredScan(env, market);
   const age = stored ? (Date.now() - Date.parse(stored.generatedAt)) / 1000 : Infinity;
   if (!force && age < refreshInterval(market)) return stored;
   if (!force && !marketIsOpen(market) && stored && age < AUTO_REFRESH_CLOSED_SECONDS) return stored;
   if (await claimScanRefresh(env, market)) {
-    const work = refreshScan(env, market).catch(() => {
-      scanMemory.delete(`${market.id}:lock`);
-      if (env.DB) return env.DB.prepare("UPDATE scan_cache SET refreshing_until = NULL WHERE market = ?").bind(market.id).run().catch(() => {});
-    });
+    const work = refreshScan(env, market).catch(() => backOffScan(env, market));
     ctx.waitUntil(work);
     if (!stored) await work;
   }
