@@ -56,7 +56,14 @@ final class AppModel: ObservableObject {
     }
 
     private func pollPairing(_ request: PairingStart) async {
-        while !Task.isCancelled, ISO8601DateFormatter().date(from: request.expiresAt) ?? .distantPast > Date() {
+        // Cloudflare returns fractional ISO-8601 timestamps. If a future server
+        // format cannot be parsed, keep the screen available for the documented
+        // ten-minute pairing window instead of dismissing it immediately.
+        let expirationDate = PairingExpiryParser.date(from: request.expiresAt)
+            ?? Date().addingTimeInterval(10 * 60)
+        let pollingInterval = max(request.pollAfterSeconds, 2)
+
+        while !Task.isCancelled, expirationDate > Date() {
             do {
                 let status = try await api.pairingStatus(code: request.code, secret: request.pairingSecret)
                 if status.approved, let newToken = status.token {
@@ -72,7 +79,7 @@ final class AppModel: ObservableObject {
             } catch {
                 // Transient polling failures are retried until the one-time code expires.
             }
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: .seconds(pollingInterval))
         }
         pairing = nil
         connectionState = .disconnected

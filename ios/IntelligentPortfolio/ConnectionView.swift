@@ -33,6 +33,9 @@ struct ConnectionView: View {
                             .textSelection(.enabled)
                         Text("Open the website, tap Pair iPhone, and enter this code. This screen will connect automatically after approval.")
                             .foregroundStyle(AppTheme.muted)
+                        Label("Code stays valid for up to 10 minutes", systemImage: "clock")
+                            .font(.footnote)
+                            .foregroundStyle(AppTheme.muted)
                         Button("Open website to approve") { openURL(webURL) }
                             .buttonStyle(.borderedProminent)
                             .tint(AppTheme.amber)

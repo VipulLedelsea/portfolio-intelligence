@@ -33,6 +33,9 @@ targets:
     platform: iOS
     sources:
       - IntelligentPortfolioTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
     dependencies:
       - target: IntelligentPortfolio
 

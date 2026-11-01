@@ -10,5 +10,13 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(result.code, "ABCD2345")
         XCTAssertEqual(result.pollAfterSeconds, 2)
     }
+
+    func testPairingExpiryParsesFractionalSeconds() throws {
+        XCTAssertNotNil(PairingExpiryParser.date(from: "2026-10-31T12:00:00.000Z"))
+    }
+
+    func testPairingExpiryParsesWholeSeconds() throws {
+        XCTAssertNotNil(PairingExpiryParser.date(from: "2026-10-31T12:00:00Z"))
+    }
 }
 
