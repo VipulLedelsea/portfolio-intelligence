@@ -7,11 +7,10 @@ struct AnalysisView: View {
 
     var body: some View {
         NavigationStack {
-            AnalysisContent(candidate: candidate)
+            AnalysisContent(candidate: candidate, onBack: { dismiss() })
                 .navigationTitle(candidate.symbol)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) { Button("Close") { dismiss() } }
                     ToolbarItem(placement: .topBarTrailing) { ReadOnlyBadge() }
                 }
         }
@@ -31,6 +30,8 @@ struct AnalysisContent: View {
     @Environment(\.openURL) private var openURL
     @State private var chartMode = ChartMode.signal
     let candidate: Candidate
+    /// When set, a glass back button sits beside the chart controls (sheet presentation).
+    var onBack: (() -> Void)?
 
     var body: some View {
         ScrollView {
@@ -51,6 +52,41 @@ struct AnalysisContent: View {
         .task(id: candidate.symbol) { await model.analyze(symbol: candidate.symbol) }
     }
 
+    private var chartControls: some View {
+        HStack(spacing: 10) {
+            if let onBack {
+                Button(action: onBack) {
+                    Image(systemName: "chevron.left")
+                        .font(.headline)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white)
+                .glass(Circle())
+                .accessibilityLabel("Back to scanner")
+            }
+            HStack(spacing: 4) {
+                ForEach(ChartMode.allCases) { mode in
+                    Button { chartMode = mode } label: {
+                        Text(mode.rawValue)
+                            .font(.footnote.weight(.semibold))
+                            .padding(.horizontal, 12)
+                            .frame(height: 36)
+                            .foregroundStyle(chartMode == mode ? Color.black : Color.white)
+                            .background(chartMode == mode ? AppTheme.amber : Color.clear, in: Capsule())
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(chartMode == mode ? .isSelected : [])
+                }
+            }
+            .padding(4)
+            .glass(Capsule())
+            Spacer(minLength: 0)
+        }
+    }
+
     @ViewBuilder
     private func analysisBody(_ analysis: AnalysisResponse) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -63,10 +99,7 @@ struct AnalysisContent: View {
         }
 
         if let chart = analysis.chart {
-            Picker("Chart", selection: $chartMode) {
-                ForEach(ChartMode.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
+            chartControls
             switch chartMode {
             case .signal:
                 CandlestickChart(series: chart.series, levels: chart.levels)

@@ -59,3 +59,16 @@ extension View {
     /// Keeps long-form content to a comfortable measure on wide scenes.
     func readableWidth() -> some View { modifier(ReadableWidthModifier()) }
 }
+
+extension View {
+    /// Liquid Glass on iOS 26 and later, a material with a hairline edge before that.
+    @ViewBuilder
+    func glass<S: Shape>(_ shape: S) -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular.interactive(), in: shape)
+        } else {
+            self.background(.ultraThinMaterial, in: shape)
+                .overlay(shape.stroke(AppTheme.line, lineWidth: 1))
+        }
+    }
+}
