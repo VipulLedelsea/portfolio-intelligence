@@ -16,6 +16,7 @@ final class AppModel: ObservableObject {
     @Published var discovery: DiscoveryResponse?
     @Published var analysis: AnalysisResponse?
     @Published var memory: MemoryResponse?
+    @Published var market: Market = .us
     @Published var isScanning = false
     @Published var isAnalyzing = false
     @Published var errorMessage: String?
@@ -23,6 +24,7 @@ final class AppModel: ObservableObject {
     private let api = APIClient.shared
     private var token: String?
     private var pairingTask: Task<Void, Never>?
+    private var autoRefreshTask: Task<Void, Never>?
 
     func restoreSession() async {
         guard let stored = KeychainStore.load() else {
@@ -91,14 +93,39 @@ final class AppModel: ObservableObject {
         await refreshMemory()
     }
 
+    func selectMarket(_ newMarket: Market) async {
+        guard newMarket != market else { return }
+        market = newMarket
+        discovery = nil
+        analysis = nil
+        await refreshScanner()
+    }
+
+    /// Reads the latest scan. BSE and forex scans are produced by the server on its own
+    /// schedule, so this only reads the stored result and re-checks every few minutes.
     func refreshScanner() async {
         guard let token else { return }
+        autoRefreshTask?.cancel()
+        let requested = market
         isScanning = true
         defer { isScanning = false }
         do {
-            discovery = try await api.discover(token: token)
+            let result = try await api.discover(market: requested, token: token)
+            guard requested == market else { return }
+            discovery = result
             errorMessage = nil
-        } catch { errorMessage = error.localizedDescription }
+        } catch {
+            guard requested == market else { return }
+            errorMessage = error.localizedDescription
+        }
+        if requested.isAutomatic {
+            let warming = discovery?.warmingUp == true
+            autoRefreshTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(warming ? 15 : 300))
+                guard !Task.isCancelled else { return }
+                await self?.refreshScanner()
+            }
+        }
     }
 
     func analyze(symbol: String) async {
@@ -107,7 +134,7 @@ final class AppModel: ObservableObject {
         analysis = nil
         defer { isAnalyzing = false }
         do {
-            analysis = try await api.analyze(symbol: symbol, token: token)
+            analysis = try await api.analyze(symbol: symbol, market: market, token: token)
             await refreshMemory()
         } catch { errorMessage = error.localizedDescription }
     }
@@ -120,6 +147,7 @@ final class AppModel: ObservableObject {
 
     func disconnect() async {
         pairingTask?.cancel()
+        autoRefreshTask?.cancel()
         if let token { try? await api.revoke(token: token) }
         KeychainStore.delete()
         token = nil

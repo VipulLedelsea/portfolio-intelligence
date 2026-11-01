@@ -37,7 +37,51 @@ struct PairingStatus: Decodable, Sendable {
     let expiresAt: String
 }
 
+enum Market: String, CaseIterable, Identifiable, Sendable {
+    case us = "US"
+    case india = "IN"
+    case forex = "FX"
+
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .us: "US"
+        case .india: "BSE"
+        case .forex: "Forex"
+        }
+    }
+    /// BSE and forex scans refresh on the server schedule and cannot be refreshed by hand.
+    var isAutomatic: Bool { self != .us }
+    var scanTitle: String {
+        switch self {
+        case .us: "S&P 500"
+        case .india: "Sensex 30"
+        case .forex: "Major forex pairs"
+        }
+    }
+
+    func tradingViewSymbol(_ symbol: String) -> String {
+        switch self {
+        case .us: symbol
+        case .india: "BSE:\(symbol)"
+        case .forex: "FX:\(symbol)"
+        }
+    }
+}
+
+enum PriceFormat {
+    static func string(_ value: Double, prefix: String?, decimals: Int?) -> String {
+        let digits = decimals ?? 2
+        return (prefix ?? "$") + String(format: "%.\(digits)f", value)
+    }
+}
+
 struct DiscoveryResponse: Decodable, Sendable {
+    let market: String?
+    let autoRefresh: Bool?
+    let refreshedAt: String?
+    let warmingUp: Bool?
+    let message: String?
     let candidates: [Candidate]
     let longCandidates: [Candidate]
     let shortCandidates: [Candidate]
@@ -52,6 +96,8 @@ struct DiscoveryResponse: Decodable, Sendable {
 struct Candidate: Decodable, Identifiable, Hashable, Sendable {
     var id: String { symbol }
     let symbol: String
+    let currencySymbol: String?
+    let priceDecimals: Int?
     let company: String
     let sector: String
     let direction: String
@@ -73,6 +119,9 @@ struct Candidate: Decodable, Identifiable, Hashable, Sendable {
 
 struct AnalysisResponse: Decodable, Sendable {
     let symbol: String
+    let market: String?
+    let currencySymbol: String?
+    let priceDecimals: Int?
     let direction: String
     let action: String
     let currentPrice: Double

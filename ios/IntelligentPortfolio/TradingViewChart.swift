@@ -14,7 +14,7 @@ enum TradingViewLink {
     }
 
     static func isValid(symbol: String) -> Bool {
-        symbol.range(of: "^[A-Z0-9.\\-^]{1,12}$", options: .regularExpression) != nil
+        symbol.range(of: "^[A-Z0-9.\\-^&:_]{1,24}$", options: .regularExpression) != nil
     }
 }
 

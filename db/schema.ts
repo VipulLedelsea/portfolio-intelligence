@@ -4,6 +4,7 @@ export const recommendations = sqliteTable("recommendations", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull(),
   symbol: text("symbol").notNull(),
+  market: text("market").notNull().default("US"),
   action: text("action").notNull(),
   direction: text("direction").notNull(),
   generatedAt: text("generated_at").notNull(),
@@ -55,3 +56,10 @@ export const mobileSessions = sqliteTable("mobile_sessions", {
 }, table => [
   index("mobile_sessions_user_expiry_idx").on(table.userId, table.expiresAt),
 ]);
+
+export const scanCache = sqliteTable("scan_cache", {
+  market: text("market").primaryKey(),
+  payload: text("payload"),
+  generatedAt: text("generated_at").notNull(),
+  refreshingUntil: text("refreshing_until"),
+});

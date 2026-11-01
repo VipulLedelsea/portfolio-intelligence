@@ -58,7 +58,13 @@ struct ScannerView: View {
         ScrollView {
             LazyVStack(spacing: 12) {
                 header
-                if let discovery = model.discovery {
+                if let discovery = model.discovery, discovery.warmingUp == true {
+                    Label(discovery.message ?? "Preparing the first scan…", systemImage: "hourglass")
+                        .font(.footnote)
+                        .foregroundStyle(AppTheme.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .panel()
+                } else if let discovery = model.discovery {
                     HStack {
                         Label("\(discovery.successful)/\(discovery.universeSize) scanned", systemImage: "checkmark.circle")
                         Spacer()
@@ -74,7 +80,7 @@ struct ScannerView: View {
                         .buttonStyle(.plain)
                     }
                 } else if model.isScanning {
-                    ProgressView("Scanning the S&P 500…")
+                    ProgressView("Loading the \(model.market.scanTitle) scan…")
                         .tint(AppTheme.amber)
                         .padding(.top, 50)
                 }
@@ -82,23 +88,40 @@ struct ScannerView: View {
             .padding(16)
         }
         .background(AppTheme.background)
-        .refreshable { await model.refreshScanner() }
+        .refreshableIf(!model.market.isAutomatic) { await model.refreshScanner() }
+    }
+
+    private var autoRefreshText: String {
+        guard let stamp = model.discovery?.refreshedAt, let date = PairingExpiryParser.date(from: stamp) else {
+            return "Updates automatically. There is no manual refresh."
+        }
+        return "Updated \(date.formatted(date: .omitted, time: .shortened)). Refreshes automatically; no manual refresh."
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Daily direction.\nOne-hour timing.")
                 .font(.system(size: 34, weight: .medium, design: .serif))
-            Text("Confirmed daily and hourly Supertrend, strengthening ADX, and entry-extension controls rank the current S&P 500.")
-                .foregroundStyle(AppTheme.muted)
-            Button {
-                Task { await model.refreshScanner() }
-            } label: {
-                Label(model.isScanning ? "Scanning…" : "Refresh scan", systemImage: "arrow.clockwise")
+            Picker("Market", selection: Binding(get: { model.market }, set: { newValue in Task { await model.selectMarket(newValue) } })) {
+                ForEach(Market.allCases) { Text($0.label).tag($0) }
             }
-            .buttonStyle(.borderedProminent)
-            .tint(AppTheme.amber)
-            .disabled(model.isScanning)
+            .pickerStyle(.segmented)
+            Text("Confirmed daily and hourly Supertrend, strengthening ADX, and entry-extension controls rank the \(model.market.scanTitle).")
+                .foregroundStyle(AppTheme.muted)
+            if model.market.isAutomatic {
+                Label(autoRefreshText, systemImage: "clock.arrow.circlepath")
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.muted)
+            } else {
+                Button {
+                    Task { await model.refreshScanner() }
+                } label: {
+                    Label(model.isScanning ? "Scanning…" : "Refresh scan", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(AppTheme.amber)
+                .disabled(model.isScanning)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 12)
@@ -119,7 +142,7 @@ private struct CandidateCard: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing) {
-                    Text(candidate.price, format: .currency(code: "USD")).bold()
+                    Text(PriceFormat.string(candidate.price, prefix: candidate.currencySymbol, decimals: candidate.priceDecimals)).bold()
                     Text("\(Int(candidate.score))/100").font(.caption.monospaced()).foregroundStyle(AppTheme.muted)
                 }
             }

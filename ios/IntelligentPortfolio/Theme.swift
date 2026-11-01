@@ -56,6 +56,11 @@ private struct ReadableWidthModifier: ViewModifier {
 }
 
 extension View {
+    @ViewBuilder
+    func refreshableIf(_ enabled: Bool, action: @escaping @Sendable () async -> Void) -> some View {
+        if enabled { self.refreshable(action: action) } else { self }
+    }
+
     /// Keeps long-form content to a comfortable measure on wide scenes.
     func readableWidth() -> some View { modifier(ReadableWidthModifier()) }
 }

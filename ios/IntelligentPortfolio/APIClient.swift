@@ -27,12 +27,12 @@ actor APIClient {
         try await request(path: "/api/mobile/pair/status", body: ["code": code, "pairing_secret": secret])
     }
 
-    func discover(token: String) async throws -> DiscoveryResponse {
-        try await request(path: "/api/discover", token: token, body: ["limit": 20])
+    func discover(market: Market, token: String) async throws -> DiscoveryResponse {
+        try await request(path: "/api/discover", token: token, body: DiscoverBody(limit: 20, market: market.rawValue))
     }
 
-    func analyze(symbol: String, token: String) async throws -> AnalysisResponse {
-        try await request(path: "/api/analyze", token: token, body: ["symbol": symbol])
+    func analyze(symbol: String, market: Market, token: String) async throws -> AnalysisResponse {
+        try await request(path: "/api/analyze", token: token, body: AnalyzeBody(symbol: symbol, market: market.rawValue))
     }
 
     func memory(token: String) async throws -> MemoryResponse {
@@ -68,4 +68,6 @@ actor APIClient {
 }
 
 private struct RevokeResponse: Decodable { let revoked: Bool }
+private struct DiscoverBody: Encodable { let limit: Int; let market: String }
+private struct AnalyzeBody: Encodable { let symbol: String; let market: String }
 

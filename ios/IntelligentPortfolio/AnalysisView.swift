@@ -43,11 +43,37 @@ struct AnalysisContent: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.openURL) private var openURL
     @State private var chartMode = ChartMode.signal
+    @State private var trailingInset: CGFloat = 0
     let candidate: Candidate
     /// When set, a glass back button sits beside the chart controls (sheet presentation).
     var onBack: (() -> Void)?
 
+    /// iPhone Duo reserves a trailing strip for system status. When that strip is wide enough
+    /// the rail lives in it, below the status icons, so the chart keeps the full content width.
+    private var railInInset: Bool { trailingInset >= 56 }
+
     var body: some View {
+        ZStack(alignment: .topTrailing) {
+            scrollContent
+            if railInInset, model.analysis?.symbol == candidate.symbol, model.analysis?.chart != nil {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    chartRail.frame(width: trailingInset)
+                }
+                .padding(.top, 175)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .ignoresSafeArea(.container, edges: .trailing)
+            }
+        }
+        .background(AppTheme.background)
+        .background(GeometryReader { proxy in
+            Color.clear.preference(key: TrailingInsetKey.self, value: proxy.safeAreaInsets.trailing)
+        })
+        .onPreferenceChange(TrailingInsetKey.self) { trailingInset = $0 }
+        .task(id: candidate.symbol) { await model.analyze(symbol: candidate.symbol) }
+    }
+
+    private var scrollContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if model.isAnalyzing {
@@ -62,8 +88,6 @@ struct AnalysisContent: View {
             .padding(16)
             .readableWidth()
         }
-        .background(AppTheme.background)
-        .task(id: candidate.symbol) { await model.analyze(symbol: candidate.symbol) }
     }
 
     /// Vertical glass rail to the right of the chart: back button on top, chart modes below.
@@ -136,19 +160,19 @@ struct AnalysisContent: View {
                             .frame(minHeight: 240, maxHeight: 440)
                             .panel()
                     case .hourly, .daily:
-                        TradingViewChart(symbol: analysis.symbol, interval: chartMode == .daily ? "D" : "60")
+                        TradingViewChart(symbol: (Market(rawValue: analysis.market ?? "US") ?? .us).tradingViewSymbol(analysis.symbol), interval: chartMode == .daily ? "D" : "60")
                             .frame(height: 420)
                             .overlay(Rectangle().stroke(AppTheme.line, lineWidth: 1))
                     }
                 }
                 .frame(maxWidth: .infinity)
-                chartRail
+                if !railInInset { chartRail }
             }
             if chartMode != .signal {
                 Text("Chart by TradingView. Supertrend (10, 3) and DMI/ADX (14) are drawn by TradingView and can differ slightly from the engine's signal values. Entry, risk, and targets appear on the Signal chart.")
                     .font(.caption)
                     .foregroundStyle(AppTheme.muted)
-                if let url = TradingViewLink.url(symbol: analysis.symbol, interval: chartMode == .daily ? "D" : "60") {
+                if let url = TradingViewLink.url(symbol: (Market(rawValue: analysis.market ?? "US") ?? .us).tradingViewSymbol(analysis.symbol), interval: chartMode == .daily ? "D" : "60") {
                     Button { openURL(url) } label: {
                         Label("Open in TradingView", systemImage: "arrow.up.right.square")
                     }
@@ -156,7 +180,7 @@ struct AnalysisContent: View {
                     .tint(AppTheme.amber)
                 }
             }
-            levels(chart.levels)
+            levels(chart.levels, analysis: analysis)
         }
 
         VStack(alignment: .leading, spacing: 10) {
@@ -180,20 +204,22 @@ struct AnalysisContent: View {
         .panel()
     }
 
-    private func levels(_ levels: ScenarioLevels) -> some View {
+    @ViewBuilder
+    private func levels(_ levels: ScenarioLevels, analysis: AnalysisResponse) -> some View {
+        let format: (Double) -> String = { PriceFormat.string($0, prefix: analysis.currencySymbol, decimals: analysis.priceDecimals) }
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
-            level("Signal entry", levels.reference)
-            level("Current", levels.current)
-            level("Invalidation", levels.risk)
-            level("Target 1", levels.target1)
-            level("Target 2", levels.target2)
+            level("Signal entry", format(levels.reference))
+            level("Current", format(levels.current))
+            level("Invalidation", format(levels.risk))
+            level("Target 1", format(levels.target1))
+            level("Target 2", format(levels.target2))
         }
     }
 
-    private func level(_ title: String, _ value: Double) -> some View {
+    private func level(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading) {
             Text(title.uppercased()).font(.caption2).foregroundStyle(AppTheme.muted)
-            Text(value, format: .currency(code: "USD")).font(.headline.monospaced())
+            Text(value).font(.headline.monospaced())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .panel()
@@ -247,3 +273,8 @@ private struct CandlestickChart: View {
     }
 }
 
+
+private struct TrailingInsetKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}

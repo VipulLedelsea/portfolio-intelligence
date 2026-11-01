@@ -11,6 +11,68 @@ const MAX_ENTRY_EXTENSION_ATR = 0.5;
 const MAX_ADVERSE_EXTENSION_ATR = 0.75;
 const MOBILE_PAIRING_MINUTES = 10;
 const MOBILE_SESSION_DAYS = 90;
+const AUTO_REFRESH_OPEN_SECONDS = 55 * 60;
+const AUTO_REFRESH_CLOSED_SECONDS = 6 * 60 * 60;
+const AUTO_REFRESH_LOCK_SECONDS = 4 * 60;
+const EXTERNAL_ANALYSIS_CACHE_SECONDS = 15 * 60;
+const YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/";
+const TWELVE_DATA = "https://api.twelvedata.com/time_series";
+
+const SENSEX_30 = [
+  ["ADANIPORTS", "Adani Ports & SEZ", "Industrials"], ["ASIANPAINT", "Asian Paints", "Materials"],
+  ["AXISBANK", "Axis Bank", "Financials"], ["BAJAJ-AUTO", "Bajaj Auto", "Consumer Discretionary"],
+  ["BAJFINANCE", "Bajaj Finance", "Financials"], ["BAJAJFINSV", "Bajaj Finserv", "Financials"],
+  ["BHARTIARTL", "Bharti Airtel", "Communication Services"], ["ETERNAL", "Eternal", "Consumer Discretionary"],
+  ["HCLTECH", "HCL Technologies", "Information Technology"], ["HDFCBANK", "HDFC Bank", "Financials"],
+  ["HINDUNILVR", "Hindustan Unilever", "Consumer Staples"], ["ICICIBANK", "ICICI Bank", "Financials"],
+  ["INFY", "Infosys", "Information Technology"], ["ITC", "ITC", "Consumer Staples"],
+  ["KOTAKBANK", "Kotak Mahindra Bank", "Financials"], ["LT", "Larsen & Toubro", "Industrials"],
+  ["M&M", "Mahindra & Mahindra", "Consumer Discretionary"], ["MARUTI", "Maruti Suzuki", "Consumer Discretionary"],
+  ["NESTLEIND", "Nestle India", "Consumer Staples"], ["NTPC", "NTPC", "Utilities"],
+  ["ONGC", "Oil & Natural Gas Corp", "Energy"], ["POWERGRID", "Power Grid Corp", "Utilities"],
+  ["RELIANCE", "Reliance Industries", "Energy"], ["SBIN", "State Bank of India", "Financials"],
+  ["SUNPHARMA", "Sun Pharmaceutical", "Health Care"], ["TATAMOTORS", "Tata Motors", "Consumer Discretionary"],
+  ["TATASTEEL", "Tata Steel", "Materials"], ["TCS", "Tata Consultancy Services", "Information Technology"],
+  ["TECHM", "Tech Mahindra", "Information Technology"], ["TITAN", "Titan Company", "Consumer Discretionary"],
+].map(([symbol, company, sector]) => ({ symbol, company, sector }));
+
+const FOREX_PAIRS = [
+  ...["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"].map(symbol => ({ symbol, company: `${symbol.slice(0, 3)}/${symbol.slice(3)}`, sector: "Forex major" })),
+  ...["EURGBP", "EURJPY", "GBPJPY", "AUDJPY", "EURCHF", "EURAUD"].map(symbol => ({ symbol, company: `${symbol.slice(0, 3)}/${symbol.slice(3)}`, sector: "Forex cross" })),
+];
+
+const MARKETS = {
+  US: { id: "US", name: "S&P 500", label: "US stocks", provider: "robinhood", auto: false, tz: "America/New_York", dailyCloseMinutes: 16 * 60, currency: "USD", symbolPrefix: "$", decimals: () => 2 },
+  IN: { id: "IN", name: "Sensex 30", label: "India (BSE)", provider: "external", auto: true, tz: "Asia/Kolkata", dailyCloseMinutes: 15 * 60 + 35, currency: "INR", symbolPrefix: "₹", decimals: () => 2, universe: SENSEX_30, yahoo: symbol => `${symbol}.BO`, twelve: symbol => symbol, twelveExchange: "BSE", tradingView: symbol => `BSE:${symbol.replace(/[^A-Z0-9_-]/g, "_")}` },
+  FX: { id: "FX", name: "Major forex pairs", label: "Forex", provider: "external", auto: true, tz: "UTC", dailyCloseMinutes: Infinity, currency: "", symbolPrefix: "", decimals: value => value >= 20 ? 3 : 5, universe: FOREX_PAIRS, yahoo: symbol => `${symbol}=X`, twelve: symbol => `${symbol.slice(0, 3)}/${symbol.slice(3)}`, tradingView: symbol => `FX:${symbol}` },
+};
+
+function marketFrom(body) {
+  const id = String(body?.market || "US").toUpperCase();
+  const market = MARKETS[id];
+  if (!market) throw Object.assign(new Error("Unknown market"), { status: 400 });
+  return market;
+}
+
+function fmtPrice(value, market = MARKETS.US) {
+  const number = Number(value);
+  return `${market.symbolPrefix}${(Number.isFinite(number) ? number : 0).toFixed(market.decimals(number))}`;
+}
+
+function marketIsOpen(market, now = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: market.tz === "UTC" ? "America/New_York" : market.tz, weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now).filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+  const minutes = Number(parts.hour) * 60 + Number(parts.minute);
+  const weekday = parts.weekday;
+  if (market.id === "FX") {
+    if (weekday === "Sat") return false;
+    if (weekday === "Sun") return minutes >= 17 * 60;
+    if (weekday === "Fri") return minutes < 17 * 60;
+    return true;
+  }
+  if (weekday === "Sat" || weekday === "Sun") return false;
+  return minutes >= 9 * 60 && minutes <= 16 * 60 + 30;
+}
+
 let discoveryInFlight = null;
 const analysisInFlight = new Map();
 const memoryCache = new Map();
@@ -329,10 +391,10 @@ async function loadUniverse() {
   return records;
 }
 
-function normalizeBars(item, timeframe) {
+function normalizeBars(item, timeframe, market = MARKETS.US) {
   const now = Date.now();
   const nowParts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
+    timeZone: market.tz, year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", hourCycle: "h23",
   }).formatToParts(new Date(now)).filter(part => part.type !== "literal").map(part => [part.type, part.value]));
   const currentMarketDate = `${nowParts.year}-${nowParts.month}-${nowParts.day}`;
@@ -352,7 +414,7 @@ function normalizeBars(item, timeframe) {
     if (!bar.close || !bar.date) return false;
     if (timeframe === "day") {
       const barDate = bar.date.slice(0, 10);
-      return barDate < currentMarketDate || (barDate === currentMarketDate && marketMinutes >= 16 * 60);
+      return barDate < currentMarketDate || (barDate === currentMarketDate && marketMinutes >= market.dailyCloseMinutes);
     }
     if (timeframe !== "hour") return true;
     const begins = Date.parse(bar.date);
@@ -482,9 +544,9 @@ function standardDeviation(values) {
   return Math.sqrt(mean(values.map(value => (value - average) ** 2)));
 }
 
-function snapshotFromPayload(symbol, dailyItem, signalItem, quote) {
-  const daily = normalizeBars(dailyItem, "day");
-  const signal = normalizeBars(signalItem, "hour");
+function snapshotFromPayload(symbol, dailyItem, signalItem, quote, market = MARKETS.US) {
+  const daily = normalizeBars(dailyItem, "day", market);
+  const signal = normalizeBars(signalItem, "hour", market);
   if (daily.length < 35) throw new Error(`Insufficient daily history for ${symbol}`);
   if (signal.length < 22) throw new Error(`Insufficient confirmed one-hour history for ${symbol}`);
   const closes = daily.map(row => row.close);
@@ -501,11 +563,15 @@ function snapshotFromPayload(symbol, dailyItem, signalItem, quote) {
   const atr14 = mean(trueRanges.slice(-14)) || price * 0.03;
   const signalAtr14 = mean(signalRanges.slice(-14)) || atr14;
   const recentVolume = mean(volumes.slice(-5));
+  const hasVolume = volumes.some(value => value > 0);
   const baseVolume = mean(volumes.slice(-25, -5)) || recentVolume || 1;
   return {
     symbol,
-    currency: "USD",
-    exchange: "US Market",
+    market: market.id,
+    currency: market.currency,
+    currency_symbol: market.symbolPrefix,
+    price_decimals: market.decimals(price),
+    exchange: market.label,
     price: round(price, 4),
     previous_close: round(numeric(quote?.adjusted_previous_close) || closes.at(-2), 4),
     return_1d_pct: round(periodReturn(closes, 1), 3),
@@ -519,11 +585,11 @@ function snapshotFromPayload(symbol, dailyItem, signalItem, quote) {
     atr_14_pct: round(atr14 / price * 100, 3),
     signal_atr_14: round(signalAtr14, 4),
     signal_atr_14_pct: round(signalAtr14 / price * 100, 3),
-    volume_ratio_5d_to_20d: round(recentVolume / baseVolume, 3),
+    volume_ratio_5d_to_20d: hasVolume ? round(recentVolume / baseVolume, 3) : 1,
     market_time: quote?.venue_last_trade_time || signal.at(-1)?.date || daily.at(-1)?.date,
     fetched_at: new Date().toISOString(),
-    data_source: "Robinhood",
-    data_source_detail: "Robinhood confirmed daily trend with regular-hours one-hour entry candles; only completed bars are used",
+    data_source: market.provider === "robinhood" ? "Robinhood" : "Market data provider",
+    data_source_detail: market.provider === "robinhood" ? "Robinhood confirmed daily trend with regular-hours one-hour entry candles; only completed bars are used" : `${market.label} confirmed daily trend with one-hour entry candles from the market-data provider; only completed bars are used`,
     supertrend,
     daily_supertrend: dailySupertrend,
     daily_adx: dailyAdx,
@@ -552,7 +618,7 @@ async function fetchBatch(symbols) {
   return { snapshots, errors };
 }
 
-async function fetchSnapshots(symbols) {
+async function fetchRobinhoodSnapshots(symbols) {
   const batches = [];
   for (let index = 0; index < symbols.length; index += 20) batches.push(symbols.slice(index, index + 20));
   const snapshots = new Map(), errors = [];
@@ -567,6 +633,97 @@ async function fetchSnapshots(symbols) {
         errors.push(...batches[index + resultIndex].map(symbol => ({ symbol, error: reason })));
       }
     });
+  }
+  return { snapshots, errors };
+}
+
+function localDate(epochSeconds, timeZone) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(epochSeconds * 1000));
+}
+
+async function yahooChart(market, symbol, interval, range) {
+  const url = `${YAHOO_CHART}${encodeURIComponent(market.yahoo(symbol))}?interval=${interval}&range=${range}&includePrePost=false`;
+  const response = await fetch(url, {
+    headers: { accept: "application/json", "user-agent": "Mozilla/5.0 (compatible; PortfolioIntelligence/1.0)" },
+    signal: AbortSignal.timeout(20000),
+  });
+  if (response.status === 429) throw new Error("The market-data provider is rate limiting requests; the next automatic refresh will retry");
+  if (!response.ok) throw new Error(`Market data returned HTTP ${response.status}`);
+  const result = (await response.json())?.chart?.result?.[0];
+  if (!result?.timestamp?.length) throw new Error("Market data returned no history");
+  const quote = result.indicators?.quote?.[0] || {};
+  const daily = interval === "1d";
+  const historicals = result.timestamp.map((time, index) => ({
+    begins_at: daily ? `${localDate(time, market.tz)}T00:00:00Z` : new Date(time * 1000).toISOString(),
+    open_price: quote.open?.[index], high_price: quote.high?.[index], low_price: quote.low?.[index],
+    close_price: quote.close?.[index], volume: quote.volume?.[index],
+  })).filter(bar => bar.close_price != null);
+  return { symbol, historicals };
+}
+
+async function loadYahooSeries(symbols, market) {
+  const series = new Map(), errors = [];
+  for (let index = 0; index < symbols.length; index += 4) {
+    await Promise.all(symbols.slice(index, index + 4).map(async symbol => {
+      try {
+        const [daily, signal] = await Promise.all([yahooChart(market, symbol, "1d", "6mo"), yahooChart(market, symbol, "60m", "1mo")]);
+        series.set(symbol, { daily, signal });
+      } catch (error) { errors.push({ symbol, error: cleanError(error) }); }
+    }));
+  }
+  return { series, errors };
+}
+
+function twelveBars(values, daily) {
+  return (values || []).map(row => ({
+    begins_at: daily ? `${String(row.datetime).slice(0, 10)}T00:00:00Z` : `${String(row.datetime).replace(" ", "T")}Z`,
+    open_price: row.open, high_price: row.high, low_price: row.low, close_price: row.close, volume: row.volume,
+  }));
+}
+
+async function twelveSeries(market, symbols, interval, outputsize, apiKey) {
+  const params = new URLSearchParams({
+    symbol: symbols.map(market.twelve).join(","), interval, outputsize: String(outputsize),
+    order: "ASC", timezone: "UTC", apikey: apiKey,
+    ...(market.twelveExchange ? { exchange: market.twelveExchange } : {}),
+  });
+  const response = await fetch(`${TWELVE_DATA}?${params}`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(25000) });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.status === "error") throw new Error(payload.message ? String(payload.message).replace(apiKey, "***") : `Market data returned HTTP ${response.status}`);
+  const keyed = symbols.length === 1 ? { [market.twelve(symbols[0])]: payload } : payload;
+  const result = new Map();
+  for (const symbol of symbols) {
+    const entry = keyed[market.twelve(symbol)];
+    if (entry?.values?.length) result.set(symbol, { symbol, historicals: twelveBars(entry.values, interval === "1day") });
+  }
+  return result;
+}
+
+async function loadTwelveSeries(symbols, market, apiKey) {
+  const series = new Map(), errors = [];
+  for (let index = 0; index < symbols.length; index += 15) {
+    const batch = symbols.slice(index, index + 15);
+    try {
+      const [daily, signal] = await Promise.all([twelveSeries(market, batch, "1day", 160, apiKey), twelveSeries(market, batch, "1h", 220, apiKey)]);
+      for (const symbol of batch) {
+        if (daily.has(symbol) && signal.has(symbol)) series.set(symbol, { daily: daily.get(symbol), signal: signal.get(symbol) });
+        else errors.push({ symbol, error: "Market data returned no history" });
+      }
+    } catch (error) { batch.forEach(symbol => errors.push({ symbol, error: cleanError(error) })); }
+  }
+  return { series, errors };
+}
+
+async function fetchExternalSnapshots(symbols, market, env) {
+  const { series, errors } = env?.TWELVE_DATA_API_KEY ? await loadTwelveSeries(symbols, market, env.TWELVE_DATA_API_KEY) : await loadYahooSeries(symbols, market);
+  const snapshots = new Map();
+  for (const [symbol, item] of series) {
+    try {
+      const closes = normalizeBars(item.daily, "day", market).map(bar => bar.close);
+      const hourly = item.signal.historicals;
+      const quote = { last_trade_price: hourly.at(-1)?.close_price, adjusted_previous_close: closes.at(-2), venue_last_trade_time: hourly.at(-1)?.begins_at };
+      snapshots.set(symbol, snapshotFromPayload(symbol, item.daily, item.signal, quote, market));
+    } catch (error) { errors.push({ symbol, error: cleanError(error) }); }
   }
   return { snapshots, errors };
 }
@@ -622,12 +779,12 @@ function scoreCandidate(snapshot, metadata = {}) {
   longScore = round(clamp(longScore, 0, 100), 1); shortScore = round(clamp(shortScore, 0, 100), 1);
   const score = direction === "LONG" ? longScore : shortScore;
   (dailyAligned ? reasons : cautions).push(dailyAligned
-    ? `Confirmed daily Supertrend agrees: ${dailyDirection} at $${numeric(dailySupertrend.value).toFixed(2)}`
+    ? `Confirmed daily Supertrend agrees: ${dailyDirection} at ${fmtPrice(dailySupertrend.value, MARKETS[snapshot.market] || MARKETS.US)}`
     : `Daily Supertrend is ${dailyDirection} while the 1H trigger is ${direction} — countertrend entry rejected`);
   (regimeEligible ? reasons : cautions).push(regimeEligible
     ? `Daily ADX (14) is ${dailyAdx.toFixed(1)} and rising from ${dailyAdxPrior.toFixed(1)} five sessions ago`
     : `Trend-strength veto: daily ADX (14) is ${dailyAdx.toFixed(1)} and must be at least 20 and rising versus five sessions ago`);
-  reasons.push(`Confirmed 1H Supertrend (10, 3) is ${direction} at $${numeric(supertrend.value).toFixed(2)}`);
+  reasons.push(`Confirmed 1H Supertrend (10, 3) is ${direction} at ${fmtPrice(supertrend.value, MARKETS[snapshot.market] || MARKETS.US)}`);
   if (entryEligible) reasons.push(`Entry window is open: signal is ${age + 1} completed hourly bar${age ? "s" : ""} old and price is ${Math.abs(extensionAtr).toFixed(2)} ATR from the signal entry`);
   else if (!isFresh) cautions.push(`Late trend: the signal is ${age + 1} completed hourly bars old`);
   else if (target1Reached) cautions.push("Scenario target 1 was already reached — the original entry window is closed");
@@ -648,6 +805,9 @@ function scoreCandidate(snapshot, metadata = {}) {
   const statusLabel = entryStatus === "ENTRY_WINDOW" ? `Fresh ${direction.toLowerCase()} entry` : entryStatus === "DAILY_CONFLICT" ? "Daily trend conflict" : entryStatus === "WEAK_TREND_REGIME" ? "Weak or fading daily trend" : entryStatus === "TARGET_REACHED" ? "Target reached — entry closed" : entryStatus === "EXTENDED_DO_NOT_CHASE" ? "Extended — do not chase" : entryStatus === "SIGNAL_WEAKENING" ? "Signal weakening" : "Active trend — entry passed";
   return {
     symbol: snapshot.symbol,
+    market: snapshot.market || "US",
+    currency_symbol: snapshot.currency_symbol ?? "$",
+    price_decimals: snapshot.price_decimals ?? 2,
     company: metadata.company || snapshot.symbol,
     sector: metadata.sector || "Unknown",
     score,
@@ -689,11 +849,15 @@ function scoreCandidate(snapshot, metadata = {}) {
   };
 }
 
-async function discover() {
-  const records = await loadUniverse();
+function fetchSnapshots(symbols, market = MARKETS.US, env = {}) {
+  return market.provider === "robinhood" ? fetchRobinhoodSnapshots(symbols) : fetchExternalSnapshots(symbols, market, env);
+}
+
+async function discover(market = MARKETS.US, env = {}) {
+  const records = market.universe || await loadUniverse();
   const metadata = new Map(records.map(record => [record.symbol, record]));
   const symbols = [...metadata.keys()];
-  const { snapshots, errors } = await fetchSnapshots(symbols);
+  const { snapshots, errors } = await fetchSnapshots(symbols, market, env);
   const allCandidates = [...snapshots.entries()].map(([symbol, snapshot]) => scoreCandidate(snapshot, metadata.get(symbol))).sort((a, b) => b.score - a.score || a.symbol.localeCompare(b.symbol));
   const candidates = allCandidates.filter(candidate => candidate.entry_eligible);
   const lateCandidates = allCandidates.filter(candidate => !candidate.entry_eligible);
@@ -701,9 +865,14 @@ async function discover() {
   const shortCandidates = candidates.filter(candidate => candidate.direction === "SHORT").sort((a, b) => b.short_score - a.short_score || a.symbol.localeCompare(b.symbol));
   return {
     generated_at: new Date().toISOString(),
-    universe_name: "S&P 500",
-    universe_source: SP500_SOURCE,
-    market_data_source: "Robinhood",
+    market: market.id,
+    market_label: market.label,
+    currency: market.currency,
+    currency_symbol: market.symbolPrefix,
+    universe_name: market.name,
+    universe_source: market.universe ? "Built-in constituent list" : SP500_SOURCE,
+    market_data_source: market.provider === "robinhood" ? "Robinhood" : "Market data provider",
+    auto_refresh: market.auto,
     universe_size: symbols.length,
     successful: allCandidates.length,
     candidates: candidates.slice(0, 20),
@@ -734,10 +903,10 @@ function makeReport(role, symbol, score, confidence, thesis, evidence, risks, co
   return { role, symbol, score: round(clamp(score, 0, 100), 1), confidence, thesis, evidence, risks, sources: complete ? ["Robinhood"] : [], as_of: new Date().toISOString(), data_complete: complete };
 }
 
-async function analyze(symbol) {
-  const [{ snapshots }, fundamentals] = await Promise.all([fetchSnapshots([symbol]), fetchFundamentals(symbol)]);
+async function analyze(symbol, market = MARKETS.US, env = {}) {
+  const [{ snapshots }, fundamentals] = await Promise.all([fetchSnapshots([symbol], market, env), market.provider === "robinhood" ? fetchFundamentals(symbol) : Promise.resolve(null)]);
   const snapshot = snapshots.get(symbol);
-  if (!snapshot) throw new Error(`Could not fetch Robinhood market data for ${symbol}${symbol === "APPL" ? ". Did you mean AAPL?" : ""}`);
+  if (!snapshot) throw new Error(`Could not fetch market data for ${symbol}${symbol === "APPL" ? ". Did you mean AAPL?" : ""}`);
   const candidate = scoreCandidate(snapshot);
   const direction = candidate.direction;
   const technicalScore = candidate.score;
@@ -781,13 +950,17 @@ async function analyze(symbol) {
   const chartExplanation = [
     `Confirmed daily Supertrend is ${candidate.daily_supertrend_direction}; ${candidate.daily_aligned ? "it agrees with" : "it conflicts with"} the ${direction} one-hour trigger.`,
     `Daily ADX (14) is ${candidate.daily_adx.toFixed(1)} versus ${candidate.daily_adx_prior.toFixed(1)} five sessions ago; regime gate: ${candidate.regime_eligible ? "PASS" : "VETO"}.`,
-    `1H Supertrend (10, 3) flipped ${direction} at ${snapshot.supertrend.signal_confirmed_at}; the anchored signal entry is $${entryReference.toFixed(2)}.`,
+    `1H Supertrend (10, 3) flipped ${direction} at ${snapshot.supertrend.signal_confirmed_at}; the anchored signal entry is ${fmtPrice(entryReference, market)}.`,
     `Current price is ${candidate.extension_atr >= 0 ? "+" : ""}${candidate.extension_atr.toFixed(2)} ATR from that entry; status: ${candidate.entry_status.replaceAll("_", " ")}.`,
     ...candidate.reasons.slice(1, 3),
     ...vetoReasons,
     ...contextWarnings,
   ];
   return {
+    market: market.id,
+    currency: market.currency,
+    currency_symbol: market.symbolPrefix,
+    price_decimals: market.decimals(price),
     run_id: crypto.randomUUID(),
     decision_id: crypto.randomUUID().slice(0, 8),
     symbol,
@@ -824,7 +997,7 @@ async function analyze(symbol) {
     portfolio_review: { approved, reasons: approved ? [] : ["Risk veto is active"], final_position_pct: 0, portfolio_note: approved ? "Cleared as a research idea." : "Not cleared as a research idea." },
     chart: {
       series: snapshot.history,
-      source: "Robinhood",
+      source: snapshot.data_source,
       source_detail: snapshot.data_source_detail,
       supertrend: snapshot.supertrend,
       daily_supertrend: snapshot.daily_supertrend,
@@ -882,17 +1055,32 @@ async function rememberRecommendation(db, userId, report) {
   if (!db || !userId || !report?.symbol) return false;
   const generatedAt = report.market_snapshot?.fetched_at || new Date().toISOString();
   const plan = report.trade_plan || {};
-  const result = await db.prepare(`INSERT OR IGNORE INTO recommendations (
-    id, user_id, symbol, action, direction, generated_at, signal_confirmed_at,
-    entry_price, current_price, stop_price, target_1, target_2, confidence,
-    entry_status, daily_adx, horizon_trading_days, status
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 5, 'PENDING')`).bind(
+  const values = [
     crypto.randomUUID(), userId, report.symbol, report.action, report.direction, generatedAt,
     report.signal_confirmed_at, numeric(report.entry_price), numeric(report.current_price),
     numeric(report.stop_price), numeric(plan.target_1), numeric(plan.target_2),
     numeric(report.confidence), report.entry_status, numeric(report.daily_adx),
-  ).run();
+  ];
+  const columns = `id, user_id, symbol, action, direction, generated_at, signal_confirmed_at,
+    entry_price, current_price, stop_price, target_1, target_2, confidence,
+    entry_status, daily_adx, horizon_trading_days, status`;
+  let result;
+  try {
+    result = await db.prepare(`INSERT OR IGNORE INTO recommendations (${columns}, market)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 5, 'PENDING', ?)`).bind(...values, report.market || "US").run();
+  } catch (error) {
+    if ((report.market || "US") !== "US") throw error;
+    result = await db.prepare(`INSERT OR IGNORE INTO recommendations (${columns})
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 5, 'PENDING')`).bind(...values).run();
+  }
   return Boolean(result?.success);
+}
+
+async function fetchExternalDailyBars(symbols, market, env) {
+  const bars = new Map();
+  const { series } = env?.TWELVE_DATA_API_KEY ? await loadTwelveSeries(symbols, market, env.TWELVE_DATA_API_KEY) : await loadYahooSeries(symbols, market);
+  for (const [symbol, item] of series) bars.set(symbol, normalizeBars(item.daily, "day", market));
+  return bars;
 }
 
 async function fetchDailySettlementBars(symbols) {
@@ -948,17 +1136,23 @@ function gradeRecommendation(recommendation, path) {
   };
 }
 
-async function settlePendingRecommendations(db, userId) {
-  const pendingResult = await db.prepare(`SELECT id, symbol, action, direction, generated_at, current_price, stop_price, target_1, horizon_trading_days
+async function settlePendingRecommendations(db, userId, env = {}) {
+  const pendingResult = await db.prepare(`SELECT id, symbol, market, action, direction, generated_at, current_price, stop_price, target_1, horizon_trading_days
     FROM recommendations WHERE user_id = ? AND status = 'PENDING' ORDER BY generated_at ASC LIMIT 60`).bind(userId).all();
   const pending = pendingResult?.results || [];
   if (!pending.length) return 0;
-  const histories = await fetchDailySettlementBars([...new Set(pending.map(row => row.symbol))]);
+  const histories = new Map();
+  for (const market of Object.values(MARKETS)) {
+    const symbols = [...new Set(pending.filter(row => (row.market || "US") === market.id).map(row => row.symbol))];
+    if (!symbols.length) continue;
+    const bars = market.provider === "robinhood" ? await fetchDailySettlementBars(symbols) : await fetchExternalDailyBars(symbols, market, env);
+    bars.forEach((value, key) => histories.set(`${market.id}:${key}`, value));
+  }
   const updates = [];
   for (const recommendation of pending) {
     const generatedDate = String(recommendation.generated_at).slice(0, 10);
     const horizon = Math.max(1, Number(recommendation.horizon_trading_days) || 5);
-    const path = (histories.get(recommendation.symbol) || []).filter(bar => bar.date.slice(0, 10) > generatedDate).slice(0, horizon);
+    const path = (histories.get(`${recommendation.market || "US"}:${recommendation.symbol}`) || []).filter(bar => bar.date.slice(0, 10) > generatedDate).slice(0, horizon);
     if (path.length < horizon) continue;
     const grade = gradeRecommendation(recommendation, path);
     updates.push(db.prepare(`UPDATE recommendations SET status = 'SETTLED', settled_at = ?, exit_price = ?, raw_return_pct = ?,
@@ -973,11 +1167,11 @@ async function settlePendingRecommendations(db, userId) {
   return updates.length;
 }
 
-async function recommendationMemory(db, userId) {
+async function recommendationMemory(db, userId, env = {}) {
   if (!db) return { available: false, reason: "Persistent memory is not configured." };
   let newlySettled = 0;
   let settlementWarning = null;
-  try { newlySettled = await settlePendingRecommendations(db, userId); }
+  try { newlySettled = await settlePendingRecommendations(db, userId, env); }
   catch (error) { settlementWarning = `Existing grades are available, but new settlement was delayed: ${cleanError(error)}`; }
   const summary = await db.prepare(`SELECT
       COUNT(*) AS total_calls,
@@ -1022,6 +1216,79 @@ async function recommendationMemory(db, userId) {
     recent: recentResult?.results || [],
     methodology: "Each call is stored once per user, ticker, signal close, and action. IDEA and WATCH results are graded from the actual price available when the report was generated to the fifth subsequent completed daily close. PASS calls are retained to measure missed moves. No orders or portfolio holdings are stored.",
   };
+}
+
+const scanMemory = new Map();
+
+function refreshInterval(market, now = new Date()) {
+  return marketIsOpen(market, now) ? AUTO_REFRESH_OPEN_SECONDS : AUTO_REFRESH_CLOSED_SECONDS;
+}
+
+function withRefreshInfo(payload, generatedAt, market) {
+  const nextAt = new Date(Date.parse(generatedAt) + refreshInterval(market) * 1000).toISOString();
+  return { ...payload, refreshed_at: generatedAt, next_refresh_at: nextAt, auto_refresh: true };
+}
+
+async function readStoredScan(env, market) {
+  if (env.DB) {
+    try {
+      const row = await env.DB.prepare("SELECT payload, generated_at FROM scan_cache WHERE market = ? LIMIT 1").bind(market.id).first();
+      if (row?.payload) return { payload: JSON.parse(row.payload), generatedAt: row.generated_at };
+    } catch { /* table may not be migrated yet; fall back to memory */ }
+  }
+  return scanMemory.get(market.id) || null;
+}
+
+async function claimScanRefresh(env, market) {
+  const now = new Date();
+  if (env.DB) {
+    try {
+      await env.DB.prepare("INSERT OR IGNORE INTO scan_cache (market, payload, generated_at, refreshing_until) VALUES (?, NULL, ?, NULL)").bind(market.id, new Date(0).toISOString()).run();
+      const claimed = await env.DB.prepare("UPDATE scan_cache SET refreshing_until = ? WHERE market = ? AND (refreshing_until IS NULL OR refreshing_until <= ?)")
+        .bind(new Date(now.getTime() + AUTO_REFRESH_LOCK_SECONDS * 1000).toISOString(), market.id, now.toISOString()).run();
+      return Number(claimed?.meta?.changes ?? 0) > 0;
+    } catch { /* fall through to in-memory lock */ }
+  }
+  const lock = scanMemory.get(`${market.id}:lock`);
+  if (lock && lock > now.getTime()) return false;
+  scanMemory.set(`${market.id}:lock`, now.getTime() + AUTO_REFRESH_LOCK_SECONDS * 1000);
+  return true;
+}
+
+async function refreshScan(env, market) {
+  const payload = await discover(market, env);
+  const generatedAt = new Date().toISOString();
+  if (payload.successful === 0) throw new Error(payload.errors?.[0]?.error || "No market data was returned");
+  scanMemory.set(market.id, { payload, generatedAt });
+  if (env.DB) {
+    try {
+      await env.DB.prepare("UPDATE scan_cache SET payload = ?, generated_at = ?, refreshing_until = NULL WHERE market = ?").bind(JSON.stringify(payload), generatedAt, market.id).run();
+    } catch { /* memory copy still serves this instance */ }
+  }
+}
+
+async function refreshScanIfDue(env, market, ctx, { force = false } = {}) {
+  const stored = await readStoredScan(env, market);
+  const age = stored ? (Date.now() - Date.parse(stored.generatedAt)) / 1000 : Infinity;
+  if (!force && age < refreshInterval(market)) return stored;
+  if (!force && !marketIsOpen(market) && stored && age < AUTO_REFRESH_CLOSED_SECONDS) return stored;
+  if (await claimScanRefresh(env, market)) {
+    const work = refreshScan(env, market).catch(() => {
+      scanMemory.delete(`${market.id}:lock`);
+      if (env.DB) return env.DB.prepare("UPDATE scan_cache SET refreshing_until = NULL WHERE market = ?").bind(market.id).run().catch(() => {});
+    });
+    ctx.waitUntil(work);
+    if (!stored) await work;
+  }
+  return await readStoredScan(env, market);
+}
+
+async function autoScanResponse(env, market, ctx) {
+  const stored = await refreshScanIfDue(env, market, ctx);
+  if (!stored) {
+    return { market: market.id, market_label: market.label, auto_refresh: true, warming_up: true, candidates: [], long_candidates: [], short_candidates: [], late_candidates: [], direction_counts: { LONG: 0, SHORT: 0 }, errors: [], successful: 0, universe_size: market.universe.length, fresh_entry_count: 0, method: "", next_step: "", message: "The first scan for this market is being prepared automatically. It will appear shortly.", read_only: true, order_submission_supported: false };
+  }
+  return withRefreshInfo(stored.payload, stored.generatedAt, market);
 }
 
 async function handle(request, env, ctx) {
@@ -1074,7 +1341,8 @@ async function handle(request, env, ctx) {
     }
     if (url.pathname === "/api/discover") {
       await requireSubscription(request, env);
-      await readBody(request);
+      const market = marketFrom(await readBody(request));
+      if (market.auto) return json(await autoScanResponse(env, market, ctx));
       const payload = await fromCache(request, "sp500-discovery-v7-regime-filter", SCAN_CACHE_SECONDS, async () => {
         if (!discoveryInFlight) discoveryInFlight = discover().finally(() => { discoveryInFlight = null; });
         return discoveryInFlight;
@@ -1086,16 +1354,21 @@ async function handle(request, env, ctx) {
       await readBody(request);
       const user = await requestUser(request, env);
       if (!user) throw Object.assign(new Error("Sign in with ChatGPT to use persistent recommendation memory"), { status: 401 });
-      return json(await recommendationMemory(env.DB, user.id));
+      return json(await recommendationMemory(env.DB, user.id, env));
     }
     if (url.pathname === "/api/analyze") {
       await requireSubscription(request, env);
       const body = await readBody(request);
+      const market = marketFrom(body);
       const symbol = String(body.symbol || "").trim().toUpperCase();
-      if (!/^[A-Z0-9.\-^]{1,12}$/.test(symbol)) throw new Error("Enter a valid ticker symbol");
-      const payload = await fromCache(request, `analysis-${symbol}-v7-regime-filter`, ANALYSIS_CACHE_SECONDS, async () => {
-        if (!analysisInFlight.has(symbol)) analysisInFlight.set(symbol, analyze(symbol).finally(() => analysisInFlight.delete(symbol)));
-        return analysisInFlight.get(symbol);
+      if (!/^[A-Z0-9.\-^&]{1,15}$/.test(symbol)) throw new Error("Enter a valid ticker symbol");
+      if (market.universe && !market.universe.some(entry => entry.symbol === symbol)) throw new Error(`Choose one of the ${market.name} symbols`);
+      const cacheName = market.id === "US" ? `analysis-${symbol}-v7-regime-filter` : `analysis-${market.id}-${symbol}-v8`;
+      const cacheSeconds = market.id === "US" ? ANALYSIS_CACHE_SECONDS : EXTERNAL_ANALYSIS_CACHE_SECONDS;
+      const flightKey = `${market.id}:${symbol}`;
+      const payload = await fromCache(request, cacheName, cacheSeconds, async () => {
+        if (!analysisInFlight.has(flightKey)) analysisInFlight.set(flightKey, analyze(symbol, market, env).finally(() => analysisInFlight.delete(flightKey)));
+        return analysisInFlight.get(flightKey);
       }, ctx);
       const user = await requestUser(request, env);
       let memoryLogged = false;
@@ -1114,4 +1387,9 @@ async function handle(request, env, ctx) {
   }
 }
 
-export default { fetch: handle };
+export default {
+  fetch: handle,
+  async scheduled(_event, env, ctx) {
+    for (const market of Object.values(MARKETS).filter(item => item.auto)) ctx.waitUntil(refreshScanIfDue(env, market, ctx));
+  },
+};

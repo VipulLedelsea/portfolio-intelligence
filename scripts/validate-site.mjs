@@ -141,4 +141,63 @@ const revokeResponse = await workerModule.default.fetch(new Request("https://exa
 }), { DB: mobileDb }, { waitUntil() {} });
 assert.equal(revokeResponse.status, 200);
 
+
+// Multi-market: BSE and forex scans refresh automatically and are served from storage.
+const realFetch = globalThis.fetch;
+const fetchLog = [];
+function series(count, stepSeconds, endSeconds, base) {
+  const rows = Array.from({ length: count }, (_, index) => {
+    const mid = base * (1 + index * 0.0004 + Math.sin(index / 5) * 0.004);
+    return { time: endSeconds - (count - 1 - index) * stepSeconds, open: mid * 0.9995, high: mid * 1.003, low: mid * 0.997, close: mid, volume: base > 50 ? 1000 + index : 0 };
+  });
+  return rows;
+}
+const nowSeconds = Math.floor(Date.now() / 1000);
+const stamp = (time, daily) => { const iso = new Date(time * 1000).toISOString(); return daily ? iso.slice(0, 10) : `${iso.slice(0, 10)} ${iso.slice(11, 19)}`; };
+globalThis.fetch = async input => {
+  const url = new URL(String(input));
+  fetchLog.push(url.hostname);
+  if (url.hostname.includes("yahoo")) {
+    const daily = url.searchParams.get("interval") === "1d";
+    const rows = daily ? series(130, 86400, nowSeconds - 2 * 86400, 1.08) : series(300, 3600, nowSeconds - 4 * 3600, 1.08);
+    return new Response(JSON.stringify({ chart: { result: [{ timestamp: rows.map(row => row.time), indicators: { quote: [{ open: rows.map(r => r.open), high: rows.map(r => r.high), low: rows.map(r => r.low), close: rows.map(r => r.close), volume: rows.map(r => r.volume) }] } }] } }), { status: 200 });
+  }
+  if (url.hostname.includes("twelvedata")) {
+    const daily = url.searchParams.get("interval") === "1day";
+    const symbols = url.searchParams.get("symbol").split(",");
+    const entry = () => ({ status: "ok", values: (daily ? series(130, 86400, nowSeconds - 2 * 86400, 2500) : series(220, 3600, nowSeconds - 4 * 3600, 2500)).map(r => ({ datetime: stamp(r.time, daily), open: String(r.open), high: String(r.high), low: String(r.low), close: String(r.close), volume: String(r.volume) })) });
+    return new Response(JSON.stringify(symbols.length === 1 ? entry() : Object.fromEntries(symbols.map(symbol => [symbol, entry()]))), { status: 200 });
+  }
+  return new Response("{}", { status: 404 });
+};
+const post = (path, body, env = {}) => workerModule.default.fetch(new Request(`https://example.test${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }), env, { waitUntil() {} });
+
+const fxScan = await (await post("/api/discover", { market: "FX" })).json();
+assert.equal(fxScan.market, "FX");
+assert.equal(fxScan.auto_refresh, true, "Forex scans must refresh automatically");
+assert.equal(fxScan.successful, 13, "All 13 forex pairs must be scanned");
+assert.ok(fxScan.refreshed_at && fxScan.next_refresh_at, "Automatic scans must report refresh times");
+const fxCandidate = [...fxScan.candidates, ...fxScan.late_candidates][0];
+assert.equal(fxCandidate.price_decimals, 5, "Forex prices need five decimals");
+assert.equal(fxCandidate.currency_symbol, "");
+const callsAfterFirstScan = fetchLog.length;
+assert.ok(callsAfterFirstScan >= 26, "The first scan must fetch daily and hourly bars for each pair");
+for (let index = 0; index < 5; index += 1) await post("/api/discover", { market: "FX" });
+assert.equal(fetchLog.length, callsAfterFirstScan, "Repeated requests must be served from storage with no upstream calls");
+
+const inScan = await (await post("/api/discover", { market: "IN" }, { TWELVE_DATA_API_KEY: "test-key" })).json();
+assert.equal(inScan.market, "IN");
+assert.equal(inScan.universe_size, 30, "The Sensex 30 universe must have 30 symbols");
+assert.equal(inScan.successful, 30);
+assert.equal([...inScan.candidates, ...inScan.late_candidates][0].currency_symbol, "₹");
+assert.ok(fetchLog.includes("api.twelvedata.com"), "A Twelve Data key must route requests to Twelve Data");
+
+const fxAnalysis = await (await post("/api/analyze", { market: "FX", symbol: "EURUSD" })).json();
+assert.equal(fxAnalysis.market, "FX");
+assert.equal(fxAnalysis.price_decimals, 5);
+assert.ok(fxAnalysis.stop_price > 0 && fxAnalysis.chart.levels.target_1 > 0);
+assert.equal((await post("/api/analyze", { market: "FX", symbol: "AAPL" })).status, 502, "Forex analysis is limited to the pair list");
+assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unknown markets must be rejected");
+globalThis.fetch = realFetch;
+
 console.log("Artifact is valid ESM; read-only, subscription, persistent-memory, and iPhone pairing gates passed");
