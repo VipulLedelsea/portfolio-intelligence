@@ -128,10 +128,10 @@ struct ScannerView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Daily direction.\nOne-hour timing.")
+            Text("Daily direction.\nFour-hour timing.")
                 .font(.system(size: 34, weight: .medium, design: .serif))
             marketMenu
-            Text("Confirmed daily and hourly Supertrend, strengthening ADX, and entry-extension controls rank the \(model.market.scanTitle).")
+            Text("Confirmed daily and 4-hour Supertrend, strengthening ADX, and entry-extension controls rank the \(model.market.scanTitle).")
                 .foregroundStyle(AppTheme.muted)
             if model.market.isAutomatic {
                 Label(autoRefreshText, systemImage: "clock.arrow.circlepath")

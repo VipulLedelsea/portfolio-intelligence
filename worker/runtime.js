@@ -525,7 +525,7 @@ function normalizeBars(item, timeframe, market = MARKETS.US) {
   });
 }
 
-function calculateSupertrend(rows, period = 10, multiplier = 3, timeframe = "1h") {
+function calculateSupertrend(rows, period = 10, multiplier = 3, timeframe = "4h") {
   const trueRanges = [];
   const atrValues = new Array(rows.length).fill(null);
   for (let index = 0; index < rows.length; index += 1) {
@@ -575,8 +575,8 @@ function calculateSupertrend(rows, period = 10, multiplier = 3, timeframe = "1h"
   const signalBar = rows[flipIndex];
   const nextBar = rows[flipIndex + 1] || null;
   const signalStartedAt = Date.parse(signalBar.date);
-  const intervalMinutes = timeframe === "1d" ? 1440 : 60;
-  const signalConfirmedAt = Number.isFinite(signalStartedAt) ? new Date(signalStartedAt + intervalMinutes * 60 * 1000).toISOString() : signalBar.date;
+  const intervalMinutes = timeframe === "1d" ? 1440 : timeframe === "4h" ? 240 : 60;
+  const signalConfirmedAt = signalBar.ends_at || (Number.isFinite(signalStartedAt) ? new Date(signalStartedAt + intervalMinutes * 60 * 1000).toISOString() : signalBar.date);
   return {
     period,
     multiplier,
@@ -647,16 +647,56 @@ function standardDeviation(values) {
   return Math.sqrt(mean(values.map(value => (value - average) ** 2)));
 }
 
+// Entry timing uses 4-hour bars built from completed hourly bars: backtests on 41 liquid stocks showed 4h
+// Supertrend (10, 3) with the best profit factor and stable results across halves, while 30m and below lost money.
+// Each market day splits into chunks of four hourly bars (US: 09:30-13:30 and 13:30-16:00).
+function aggregateEntryBars(hourly, size, market) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: market.tz, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date()).filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+  const today = `${parts.year}-${parts.month}-${parts.day}`;
+  const dayClosed = Number(parts.hour) * 60 + Number(parts.minute) >= market.dailyCloseMinutes;
+  const dayFormat = new Intl.DateTimeFormat("en-CA", { timeZone: market.tz });
+  const days = new Map();
+  for (const bar of hourly) {
+    const begins = Date.parse(bar.date);
+    if (!Number.isFinite(begins)) continue;
+    const key = dayFormat.format(new Date(begins));
+    if (!days.has(key)) days.set(key, []);
+    days.get(key).push(bar);
+  }
+  const out = [];
+  for (const [key, bars] of days) {
+    for (let index = 0; index < bars.length; index += size) {
+      const group = bars.slice(index, index + size);
+      const complete = group.length === size || key < today || (key === today && dayClosed);
+      if (!complete) continue;
+      out.push({
+        date: group[0].date,
+        ends_at: new Date(Date.parse(group.at(-1).date) + 60 * 60 * 1000).toISOString(),
+        open: group[0].open,
+        close: group.at(-1).close,
+        high: round(Math.max(...group.map(bar => bar.high)), 4),
+        low: round(Math.min(...group.map(bar => bar.low)), 4),
+        volume: group.reduce((sum, bar) => sum + bar.volume, 0),
+        bar_status: "confirmed_close",
+      });
+    }
+  }
+  return out;
+}
+
 function snapshotFromPayload(symbol, dailyItem, signalItem, quote, market = MARKETS.US) {
   const daily = normalizeBars(dailyItem, "day", market);
-  const signal = normalizeBars(signalItem, "hour", market);
+  const signal = aggregateEntryBars(normalizeBars(signalItem, "hour", market), 4, market);
   if (daily.length < 35) throw new Error(`Insufficient daily history for ${symbol}`);
-  if (signal.length < 22) throw new Error(`Insufficient confirmed one-hour history for ${symbol}`);
+  if (signal.length < 22) throw new Error(`Insufficient confirmed 4-hour history for ${symbol}`);
   const closes = daily.map(row => row.close);
   const highs = daily.map(row => row.high);
   const lows = daily.map(row => row.low);
   const volumes = daily.map(row => row.volume);
-  const supertrend = calculateSupertrend(signal);
+  const supertrend = calculateSupertrend(signal, 10, 3, "4h");
   const dailySupertrend = calculateSupertrend(daily, 10, 3, "1d");
   const dailyAdx = calculateAdx(daily, 14);
   const price = numeric(quote?.last_trade_price) || closes.at(-1);
@@ -692,7 +732,7 @@ function snapshotFromPayload(symbol, dailyItem, signalItem, quote, market = MARK
     market_time: quote?.venue_last_trade_time || signal.at(-1)?.date || daily.at(-1)?.date,
     fetched_at: new Date().toISOString(),
     data_source: market.provider === "robinhood" ? "Robinhood" : "Market data provider",
-    data_source_detail: market.provider === "robinhood" ? "Robinhood confirmed daily trend with regular-hours one-hour entry candles; only completed bars are used" : `${market.label} confirmed daily trend with one-hour entry candles from the market-data provider; only completed bars are used`,
+    data_source_detail: market.provider === "robinhood" ? "Robinhood confirmed daily trend with regular-hours 4-hour entry candles; only completed bars are used" : `${market.label} confirmed daily trend with 4-hour entry candles from the market-data provider; only completed bars are used`,
     supertrend,
     daily_supertrend: dailySupertrend,
     daily_adx: dailyAdx,
@@ -897,13 +937,13 @@ function scoreCandidate(snapshot, metadata = {}) {
   const score = direction === "LONG" ? longScore : shortScore;
   (dailyAligned ? reasons : cautions).push(dailyAligned
     ? `Confirmed daily Supertrend agrees: ${dailyDirection} at ${fmtPrice(dailySupertrend.value, MARKETS[snapshot.market] || MARKETS.US)}`
-    : `Daily Supertrend is ${dailyDirection} while the 1H trigger is ${direction} — countertrend entry rejected`);
+    : `Daily Supertrend is ${dailyDirection} while the 4H trigger is ${direction} — countertrend entry rejected`);
   (regimeEligible ? reasons : cautions).push(regimeEligible
     ? `Daily ADX (14) is ${dailyAdx.toFixed(1)} and rising from ${dailyAdxPrior.toFixed(1)} five sessions ago`
     : `Trend-strength veto: daily ADX (14) is ${dailyAdx.toFixed(1)} and must be at least 20 and rising versus five sessions ago`);
-  reasons.push(`Confirmed 1H Supertrend (10, 3) is ${direction} at ${fmtPrice(supertrend.value, MARKETS[snapshot.market] || MARKETS.US)}`);
-  if (entryEligible) reasons.push(`Entry window is open: signal is ${age + 1} completed hourly bar${age ? "s" : ""} old and price is ${Math.abs(extensionAtr).toFixed(2)} ATR from the signal entry`);
-  else if (!isFresh) cautions.push(`Late trend: the signal is ${age + 1} completed hourly bars old`);
+  reasons.push(`Confirmed 4H Supertrend (10, 3) is ${direction} at ${fmtPrice(supertrend.value, MARKETS[snapshot.market] || MARKETS.US)}`);
+  if (entryEligible) reasons.push(`Entry window is open: signal is ${age + 1} completed 4-hour bar${age ? "s" : ""} old and price is ${Math.abs(extensionAtr).toFixed(2)} ATR from the signal entry`);
+  else if (!isFresh) cautions.push(`Late trend: the signal is ${age + 1} completed 4-hour bars old`);
   else if (target1Reached) cautions.push("Scenario target 1 was already reached — the original entry window is closed");
   else if (isExtended) cautions.push(`Extended ${extensionAtr.toFixed(2)} ATR beyond the signal entry — do not chase`);
   else cautions.push(`Price moved ${Math.abs(extensionAtr).toFixed(2)} ATR against the signal — wait for a new confirmation`);
@@ -1002,8 +1042,8 @@ async function discover(market = MARKETS.US, env = {}) {
     daily_conflict_count: lateCandidates.filter(candidate => candidate.entry_status === "DAILY_CONFLICT").length,
     regime_filtered_count: lateCandidates.filter(candidate => candidate.entry_status === "WEAK_TREND_REGIME").length,
     errors,
-    method: "Regime-aware hybrid screen: confirmed daily Supertrend (10, 3) sets direction, daily ADX (14) must be at least 20 and rising versus five sessions ago, then confirmed one-hour Supertrend finds the entry.",
-    next_step: "Countertrend, weak-regime, late, extended, and weakening setups cannot rank as new entries. In TradingView, confirm the daily direction and trend strength first, then use the 1H chart with ATR length 10 and factor 3 for timing.",
+    method: "Regime-aware hybrid screen: confirmed daily Supertrend (10, 3) sets direction, daily ADX (14) must be at least 20 and rising versus five sessions ago, then confirmed 4-hour Supertrend finds the entry.",
+    next_step: "Countertrend, weak-regime, late, extended, and weakening setups cannot rank as new entries. In TradingView, confirm the daily direction and trend strength first, then use the 4H chart with ATR length 10 and factor 3 for timing.",
     read_only: true,
     order_submission_supported: false,
   };
@@ -1036,14 +1076,14 @@ async function analyze(symbol, market = MARKETS.US, env = {}) {
     makeReport("fundamentals", symbol, fundamentalEvidence.length ? 58 : 50, fundamentalEvidence.length ? 0.6 : 0.25, fundamentalEvidence.length ? "Robinhood company fundamentals are available, but this technical scan does not model earnings quality or intrinsic value." : "Fundamental data was unavailable from the public market-data feed.", fundamentalEvidence, ["Financial statements and analyst estimates are not independently verified here."], Boolean(fundamentalEvidence.length)),
     makeReport("news", symbol, 50, 0.2, "No verified breaking-news feed is connected to this public deployment.", [], ["A fresh filing, earnings release, or headline could invalidate the setup."], false),
     makeReport("sentiment", symbol, 50 + clamp((snapshot.volume_ratio_5d_to_20d - 1) * 12, -12, 12), 0.55, `Price/volume behavior is being used as a sentiment proxy; recent volume is ${snapshot.volume_ratio_5d_to_20d.toFixed(2)}× its baseline.`, [`20-day return is ${snapshot.return_20d_pct >= 0 ? "+" : ""}${snapshot.return_20d_pct.toFixed(1)}%.`], ["This is not direct social-platform sentiment."], true),
-    makeReport("price_action", symbol, technicalScore, 0.78, `${direction} on confirmed one-hour Supertrend, with a ${candidate.label.toLowerCase()}.`, candidate.reasons, candidate.cautions, true),
+    makeReport("price_action", symbol, technicalScore, 0.78, `${direction} on confirmed 4-hour Supertrend, with a ${candidate.label.toLowerCase()}.`, candidate.reasons, candidate.cautions, true),
   ];
   const averageScore = mean(reports.map(report => report.score));
   const coreComplete = reports.filter(report => report.role === "price_action").every(report => report.data_complete);
   const contextWarnings = reports.filter(report => !report.data_complete).map(report => report.role === "news"
     ? "No live news feed is connected; check earnings, filings, and breaking headlines before acting."
     : `${report.role.replaceAll("_", " ")} context is incomplete and should be verified independently.`);
-  const synthesis = makeReport("synthesis", symbol, averageScore, coreComplete ? 0.68 : 0.48, `${direction} technical setup on completed one-hour candles. Core price data is complete; unavailable news or fundamental context is a caution, not an automatic veto.`, candidate.reasons, [...reports.flatMap(report => report.risks).slice(0, 4), ...contextWarnings].slice(0, 6), coreComplete);
+  const synthesis = makeReport("synthesis", symbol, averageScore, coreComplete ? 0.68 : 0.48, `${direction} technical setup on completed 4-hour candles. Core price data is complete; unavailable news or fundamental context is a caution, not an automatic veto.`, candidate.reasons, [...reports.flatMap(report => report.risks).slice(0, 4), ...contextWarnings].slice(0, 6), coreComplete);
   const bull = makeReport("bull", symbol, direction === "LONG" ? technicalScore : 100 - technicalScore, 0.62, direction === "LONG" ? "Trend, momentum, and Supertrend are aligned for the bullish case." : "A reversal back above the Supertrend line is the main bullish counter-case.", candidate.reasons, candidate.cautions, true);
   const bear = makeReport("bear", symbol, direction === "SHORT" ? technicalScore : 100 - technicalScore, 0.7, direction === "SHORT" ? "Trend, momentum, and Supertrend are aligned for the bearish case." : "Headline risk, volatility, and a close below Supertrend are the main reasons the long setup could fail.", candidate.cautions.length ? candidate.cautions : ["No setup is certain."], ["Risk is defined by the invalidation level."], true);
   const price = snapshot.price;
@@ -1059,15 +1099,15 @@ async function analyze(symbol, market = MARKETS.US, env = {}) {
     : [price, ...postSignalBars.map(row => row.high)].some(value => numeric(value) >= target1);
   const vetoReasons = [];
   if (snapshot.annualized_volatility_pct > 85) vetoReasons.push(`Annualized volatility ${snapshot.annualized_volatility_pct.toFixed(1)}% exceeds the 85% review limit`);
-  if (!candidate.entry_eligible) vetoReasons.push(candidate.entry_status === "DAILY_CONFLICT" ? `Daily Supertrend is ${candidate.daily_supertrend_direction}; it does not confirm the ${direction} one-hour trigger` : candidate.entry_status === "WEAK_TREND_REGIME" ? `Daily ADX is ${candidate.daily_adx.toFixed(1)}; qualifying setups require ADX of at least 20 and rising versus five sessions ago` : candidate.entry_status === "TARGET_REACHED" ? "Scenario target 1 was already reached; the original entry window is closed" : candidate.entry_status === "EXTENDED_DO_NOT_CHASE" ? `Entry is extended ${candidate.extension_atr.toFixed(2)} ATR beyond the original signal price` : candidate.entry_status === "LATE_TREND" ? `Entry window passed ${candidate.signal_age_bars + 1} completed hourly bars ago` : `Signal weakened ${Math.abs(candidate.extension_atr).toFixed(2)} ATR against the intended direction`);
+  if (!candidate.entry_eligible) vetoReasons.push(candidate.entry_status === "DAILY_CONFLICT" ? `Daily Supertrend is ${candidate.daily_supertrend_direction}; it does not confirm the ${direction} 4-hour trigger` : candidate.entry_status === "WEAK_TREND_REGIME" ? `Daily ADX is ${candidate.daily_adx.toFixed(1)}; qualifying setups require ADX of at least 20 and rising versus five sessions ago` : candidate.entry_status === "TARGET_REACHED" ? "Scenario target 1 was already reached; the original entry window is closed" : candidate.entry_status === "EXTENDED_DO_NOT_CHASE" ? `Entry is extended ${candidate.extension_atr.toFixed(2)} ATR beyond the original signal price` : candidate.entry_status === "LATE_TREND" ? `Entry window passed ${candidate.signal_age_bars + 1} completed 4-hour bars ago` : `Signal weakened ${Math.abs(candidate.extension_atr).toFixed(2)} ATR against the intended direction`);
   if (target1Reached) vetoReasons.push("Scenario target 1 was already reached after the signal; this entry is no longer actionable");
   const approved = vetoReasons.length === 0 && technicalScore >= 65 && candidate.entry_eligible && !target1Reached;
   const action = approved ? "IDEA" : candidate.entry_eligible && !target1Reached && technicalScore >= 55 ? "WATCH" : "PASS";
   const levels = { reference: round(entryReference, 4), current: round(price, 4), risk: round(stop, 4), target_1: round(target1, 4), target_2: round(target2, 4) };
   const chartExplanation = [
-    `Confirmed daily Supertrend is ${candidate.daily_supertrend_direction}; ${candidate.daily_aligned ? "it agrees with" : "it conflicts with"} the ${direction} one-hour trigger.`,
+    `Confirmed daily Supertrend is ${candidate.daily_supertrend_direction}; ${candidate.daily_aligned ? "it agrees with" : "it conflicts with"} the ${direction} 4-hour trigger.`,
     `Daily ADX (14) is ${candidate.daily_adx.toFixed(1)} versus ${candidate.daily_adx_prior.toFixed(1)} five sessions ago; regime gate: ${candidate.regime_eligible ? "PASS" : "VETO"}.`,
-    `1H Supertrend (10, 3) flipped ${direction} at ${snapshot.supertrend.signal_confirmed_at}; the anchored signal entry is ${fmtPrice(entryReference, market)}.`,
+    `4H Supertrend (10, 3) flipped ${direction} at ${snapshot.supertrend.signal_confirmed_at}; the anchored signal entry is ${fmtPrice(entryReference, market)}.`,
     `Current price is ${candidate.extension_atr >= 0 ? "+" : ""}${candidate.extension_atr.toFixed(2)} ATR from that entry; status: ${candidate.entry_status.replaceAll("_", " ")}.`,
     ...candidate.reasons.slice(1, 3),
     ...vetoReasons,
@@ -1124,7 +1164,7 @@ async function analyze(symbol, market = MARKETS.US, env = {}) {
       direction,
       stance: action,
       explanation: chartExplanation,
-      method: `${direction} scenario: confirmed daily Supertrend must agree and daily ADX (14) must be at least 20 and rising before the 1H trigger can qualify. Entry, risk, and 2R/3R targets stay anchored to the original hourly signal price. Late, extended, or already-targeted signals are rejected. Levels are research scenarios, not orders.`,
+      method: `${direction} scenario: confirmed daily Supertrend must agree and daily ADX (14) must be at least 20 and rising before the 4H trigger can qualify. Entry, risk, and 2R/3R targets stay anchored to the original 4-hour signal price. Late, extended, or already-targeted signals are rejected. Levels are research scenarios, not orders.`,
     },
     read_only: true,
     order_submission_supported: false,

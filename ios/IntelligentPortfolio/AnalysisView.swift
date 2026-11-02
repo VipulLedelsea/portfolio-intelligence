@@ -21,7 +21,7 @@ struct AnalysisView: View {
 struct AnalysisContent: View {
     private enum ChartMode: String, CaseIterable, Identifiable {
         case signal = "Signal"
-        case hourly = "TV 1H"
+        case hourly = "TV 4H"
         case daily = "TV Daily"
         var id: String { rawValue }
         var icon: String {
@@ -34,7 +34,7 @@ struct AnalysisContent: View {
         var railLabel: String {
             switch self {
             case .signal: "Signal"
-            case .hourly: "1H"
+            case .hourly: "4H"
             case .daily: "1D"
             }
         }
@@ -192,7 +192,7 @@ struct AnalysisContent: View {
                             .frame(minHeight: 240, maxHeight: 440)
                             .panel()
                     case .hourly, .daily:
-                        TradingViewChart(symbol: (Market(rawValue: analysis.market ?? "US") ?? .us).tradingViewSymbol(analysis.symbol), interval: chartMode == .daily ? "D" : "60")
+                        TradingViewChart(symbol: (Market(rawValue: analysis.market ?? "US") ?? .us).tradingViewSymbol(analysis.symbol), interval: chartMode == .daily ? "D" : "240")
                             .frame(height: 420)
                             .overlay(Rectangle().stroke(AppTheme.line, lineWidth: 1))
                     }
@@ -204,7 +204,7 @@ struct AnalysisContent: View {
                 Text("Chart by TradingView: Volume, Supertrend (10, 3), and a 9-period SMA. Supertrend can differ slightly from the engine's signal. Entry, risk, and targets appear on the Signal chart.")
                     .font(.caption)
                     .foregroundStyle(AppTheme.muted)
-                if let url = TradingViewLink.url(symbol: (Market(rawValue: analysis.market ?? "US") ?? .us).tradingViewSymbol(analysis.symbol), interval: chartMode == .daily ? "D" : "60") {
+                if let url = TradingViewLink.url(symbol: (Market(rawValue: analysis.market ?? "US") ?? .us).tradingViewSymbol(analysis.symbol), interval: chartMode == .daily ? "D" : "240") {
                     Button { openURL(url) } label: {
                         Label("Open in TradingView", systemImage: "arrow.up.right.square")
                     }
