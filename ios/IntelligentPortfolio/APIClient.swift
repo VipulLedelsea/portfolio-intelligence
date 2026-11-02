@@ -16,7 +16,7 @@ actor APIClient {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
     }
 
-    func access(token: String) async throws -> AccessResponse {
+    func access(token: String?) async throws -> AccessResponse {
         try await request(path: "/api/access", method: "GET", token: token, body: Optional<String>.none)
     }
 
@@ -28,11 +28,11 @@ actor APIClient {
         try await request(path: "/api/mobile/pair/status", body: ["code": code, "pairing_secret": secret])
     }
 
-    func discover(market: Market, token: String, refresh: Bool = false) async throws -> DiscoveryResponse {
+    func discover(market: Market, token: String?, refresh: Bool = false) async throws -> DiscoveryResponse {
         try await request(path: "/api/discover", token: token, body: DiscoverBody(limit: 20, market: market.rawValue, refresh: refresh))
     }
 
-    func analyze(symbol: String, market: Market, token: String) async throws -> AnalysisResponse {
+    func analyze(symbol: String, market: Market, token: String?) async throws -> AnalysisResponse {
         try await request(path: "/api/analyze", token: token, body: AnalyzeBody(symbol: symbol, market: market.rawValue))
     }
 
@@ -42,6 +42,10 @@ actor APIClient {
 
     func revoke(token: String) async throws {
         let _: RevokeResponse = try await request(path: "/api/mobile/session/revoke", token: token, body: [:] as [String: String])
+    }
+
+    func deleteAccountData(token: String) async throws {
+        let _: DeleteResponse = try await request(path: "/api/mobile/account/delete", token: token, body: [:] as [String: String])
     }
 
     private func request<Response: Decodable, Body: Encodable>(

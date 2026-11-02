@@ -6,6 +6,9 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             AppTheme.background.ignoresSafeArea()
+            if !model.disclaimerAccepted {
+                DisclaimerView()
+            } else {
             switch model.connectionState {
             case .checking:
                 ProgressView("Checking secure access…")
@@ -22,6 +25,7 @@ struct ContentView: View {
                         .tabItem { Label("Account", systemImage: "person.crop.circle") }
                 }
                 .tint(AppTheme.amber)
+            }
             }
         }
         .alert("IntelligentPortfolio", isPresented: Binding(

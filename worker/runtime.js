@@ -1456,6 +1456,84 @@ async function autoScanResponse(env, market, ctx, { wait = false, force = false 
   return withRefreshInfo(stored.payload, stored.generatedAt, market);
 }
 
+const LEGAL_UPDATED = "November 2, 2026";
+const esc = value => String(value).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+
+function legalPage(env, slug) {
+  const contact = env.SUPPORT_EMAIL
+    ? `<a href="mailto:${esc(env.SUPPORT_EMAIL)}">${esc(env.SUPPORT_EMAIL)}</a>`
+    : "the developer through the TestFlight invitation or the App Store listing";
+  const pages = {
+    privacy: ["Privacy Policy", `
+<p>IntelligentPortfolio is a read-only stock, India (BSE) and forex research tool with a website and an iPhone app. It never connects to a brokerage and never places orders. This page explains what information it handles.</p>
+<h2>What we collect</h2>
+<ul>
+<li><strong>Sign-in details.</strong> If you sign in on the website with Google, we receive your Google account ID and email address. We use them only to recognise your account.</li>
+<li><strong>Research history.</strong> When you are signed in, the research calls the app generates for you are stored against your account so their results can be graded later (the "learning memory").</li>
+<li><strong>Device pairing.</strong> To connect the iPhone app to your account we store your device name, a one-time pairing code and a hashed session token. The token on the phone is kept in the iOS Keychain.</li>
+<li><strong>Browsing without an account.</strong> The app and website can be used without signing in while the service is free. No personal data is stored for that.</li>
+</ul>
+<h2>What we do not collect</h2>
+<p>No brokerage credentials, bank or card details, contacts, location, photos or advertising identifiers. We do not track you across other apps or websites, show advertising or sell data.</p>
+<h2>Services involved</h2>
+<ul>
+<li><strong>Cloudflare</strong> hosts the service and its database.</li>
+<li><strong>Google</strong> handles sign-in on the website.</li>
+<li><strong>TradingView</strong> provides the embedded charts. The chart is loaded from TradingView, which may process data such as your IP address under its own privacy policy.</li>
+<li><strong>Market-data providers</strong> supply prices. No information about you is sent to them.</li>
+<li><strong>Stripe</strong> will process payments if paid subscriptions are switched on later. We never see card numbers.</li>
+</ul>
+<h2>Keeping and deleting your data</h2>
+<p>In the iPhone app, open Account and choose "Delete my account data" to erase your research history, paired-device sessions and website sessions from our database. You can also email ${contact} to ask for deletion. Disconnecting a device in the app ends its session immediately. Sessions also expire on their own.</p>
+<h2>Children</h2>
+<p>The service is not directed at children under 13.</p>
+<h2>Changes and contact</h2>
+<p>We will update this page when anything material changes. Questions: ${contact}.</p>`],
+    terms: ["Terms of Use and Disclaimer", `
+<p>By using IntelligentPortfolio you agree to these terms.</p>
+<h2>Research only, not advice</h2>
+<p>IntelligentPortfolio provides general market research and educational information. It is <strong>not investment, financial, tax or legal advice</strong>, and it is not a recommendation to buy or sell any security, currency or other instrument. We are not a registered investment adviser or broker-dealer. You make your own decisions and are responsible for them.</p>
+<h2>No trading</h2>
+<p>The service is read-only. It cannot access brokerage accounts, positions or orders, and it never places trades.</p>
+<h2>Accuracy and risk</h2>
+<p>Prices and indicators come from third-party sources and may be delayed, incomplete or wrong. Signals, targets, stops and historical test results are research scenarios. Past or simulated performance does not guarantee future results, and trading can lose money, including all of what you invest.</p>
+<h2>Beta software</h2>
+<p>During testing the service is free, may change or be interrupted, and is provided "as is" without warranties. To the extent the law allows, we are not liable for losses arising from its use.</p>
+<h2>Charts and data</h2>
+<p>Charts are provided by TradingView. Market data belongs to its respective providers.</p>
+<p>Privacy: see the <a href="/privacy">Privacy Policy</a>. Last updated ${LEGAL_UPDATED}.</p>`],
+    support: ["Support", `
+<p>Need help with IntelligentPortfolio? Contact ${contact}.</p>
+<h2>Common questions</h2>
+<ul>
+<li><strong>How do I connect the iPhone app to my account?</strong> In the app choose "Connect existing account", then open the website, sign in and enter the code under Pair iPhone. Or tap "Browse without an account" to try it first.</li>
+<li><strong>How do I delete my data?</strong> In the app open Account and choose "Delete my account data".</li>
+<li><strong>Does it place trades?</strong> No. It is read-only research.</li>
+</ul>
+<p><a href="/privacy">Privacy Policy</a> · <a href="/terms">Terms and Disclaimer</a></p>`],
+  };
+  const [title, body] = pages[slug];
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · IntelligentPortfolio</title><style>body{margin:0;background:#0b0f0d;color:#e8ece9;font:16px/1.6 -apple-system,system-ui,sans-serif}main{max-width:720px;margin:0 auto;padding:32px 20px 64px}h1{font:500 34px/1.2 Georgia,serif}h2{margin-top:28px;font-size:18px;color:#ffb85c}a{color:#ffb85c}li{margin:6px 0}</style></head><body><main><p><a href="/">← IntelligentPortfolio</a></p><h1>${esc(title)}</h1>${body}</main></body></html>`;
+  return new Response(html, { headers: {
+    "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=300",
+    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
+    "referrer-policy": "no-referrer", "x-content-type-options": "nosniff", "x-frame-options": "DENY",
+  } });
+}
+
+async function deleteMobileAccountData(request, env) {
+  const user = await requestUser(request, env);
+  if (!user || user.auth_type !== "mobile" || !env.DB) throw Object.assign(new Error("Connect your account before deleting its data"), { status: 401 });
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM recommendations WHERE user_id = ?").bind(user.id),
+    env.DB.prepare("DELETE FROM mobile_pairings WHERE user_id = ?").bind(user.id),
+    env.DB.prepare("DELETE FROM mobile_sessions WHERE user_id = ?").bind(user.id),
+    env.DB.prepare("DELETE FROM web_sessions WHERE user_id = ?").bind(user.id),
+  ]);
+  accessCache.delete(`${user.id}:mobile`);
+  return { deleted: true };
+}
+
 async function handle(request, env, ctx) {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/") {
@@ -1471,6 +1549,7 @@ async function handle(request, env, ctx) {
       },
     });
   }
+  if (request.method === "GET" && ["/privacy", "/terms", "/support"].includes(url.pathname)) return legalPage(env, url.pathname.slice(1));
   if (request.method === "GET" && url.pathname === "/auth/google/start") {
     try { return await startGoogleSignIn(request, env); } catch (error) { return json({ error: cleanError(error) }, Number(error?.status) || 502); }
   }
@@ -1502,6 +1581,9 @@ async function handle(request, env, ctx) {
     }
     if (url.pathname === "/api/mobile/pair/approve") {
       return json(await approveMobilePairing(request, env, await readBody(request)));
+    }
+    if (url.pathname === "/api/mobile/account/delete") {
+      return json(await deleteMobileAccountData(request, env));
     }
     if (url.pathname === "/api/mobile/session/revoke") {
       return json(await revokeMobileSession(request, env));

@@ -9,7 +9,18 @@ struct MemoryView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("The system grades every research call after five completed market sessions.")
                         .foregroundStyle(AppTheme.muted)
-                    if let memory = model.memory, let summary = memory.summary {
+                    if model.isGuest {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Connect an account to see your learning history.")
+                                .font(.headline)
+                            Text("Browsing without an account does not save any research calls.")
+                                .foregroundStyle(AppTheme.muted)
+                            Button("Connect an account") { model.leaveGuest() }
+                                .buttonStyle(.borderedProminent)
+                                .tint(AppTheme.amber)
+                        }
+                        .panel()
+                    } else if let memory = model.memory, let summary = memory.summary {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
                             metric("Tracked", "\(summary.totalCalls)")
                             metric("Pending", "\(summary.pendingCalls)")

@@ -18,10 +18,12 @@
 		7D796360836A5BF7E88D114D /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C909D7FF7D92AF39FC090B9 /* APIClient.swift */; };
 		90A7FFB74939CC6D288CD4A6 /* ConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3EE5F377CF667D867689F77 /* ConnectionView.swift */; };
 		A8BB3C6A84BBCF64CDC774D2 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2437AB8CD6E22EE81276F8E4 /* Theme.swift */; };
+		B895D4EB1FF8D3AB42BF7B42 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = DE7C627CE526BE320CCCCDC2 /* PrivacyInfo.xcprivacy */; };
 		C3789F7C125CE60F596828CD /* MemoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13E0F1D83D6D06F0BB49BE1B /* MemoryView.swift */; };
 		CF0D8EFA107F571DFBA8A69B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 747B55681A69FDBE29EA853F /* Assets.xcassets */; };
 		ECB6681D71B3AAED6CCC4E9D /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A02CDFD9316DBDABC405649 /* Models.swift */; };
 		EEFF886EACA47E567C69A669 /* AnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7526A067DDFBBC1A80176FF /* AnalysisView.swift */; };
+		F83D4FA4177906ED454B3C18 /* DisclaimerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDDA04DD99202CBC6DB9A56C /* DisclaimerView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -49,8 +51,10 @@
 		B921725742B97F32E0FFE6B3 /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountView.swift; sourceTree = "<group>"; };
 		C1BA4C261A09E30098F20070 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		D26F5C33879FCECCBAE73617 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		DE7C627CE526BE320CCCCDC2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		E4FE8B10C30926D8C8C286AC /* IntelligentPortfolioApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntelligentPortfolioApp.swift; sourceTree = "<group>"; };
 		E7526A067DDFBBC1A80176FF /* AnalysisView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisView.swift; sourceTree = "<group>"; };
+		EDDA04DD99202CBC6DB9A56C /* DisclaimerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisclaimerView.swift; sourceTree = "<group>"; };
 		F3EE5F377CF667D867689F77 /* ConnectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -74,10 +78,12 @@
 				747B55681A69FDBE29EA853F /* Assets.xcassets */,
 				F3EE5F377CF667D867689F77 /* ConnectionView.swift */,
 				C1BA4C261A09E30098F20070 /* ContentView.swift */,
+				EDDA04DD99202CBC6DB9A56C /* DisclaimerView.swift */,
 				E4FE8B10C30926D8C8C286AC /* IntelligentPortfolioApp.swift */,
 				0C9E1313DAB4D0807C19A165 /* KeychainStore.swift */,
 				13E0F1D83D6D06F0BB49BE1B /* MemoryView.swift */,
 				9A02CDFD9316DBDABC405649 /* Models.swift */,
+				DE7C627CE526BE320CCCCDC2 /* PrivacyInfo.xcprivacy */,
 				A4C0C449AFD0F3B8BAD73333 /* ScannerView.swift */,
 				2437AB8CD6E22EE81276F8E4 /* Theme.swift */,
 				452CFA140E206E7A51EF83F6 /* TradingViewChart.swift */,
@@ -184,6 +190,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CF0D8EFA107F571DFBA8A69B /* Assets.xcassets in Resources */,
+				B895D4EB1FF8D3AB42BF7B42 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -208,6 +215,7 @@
 				16770662B1A9BE7946E6E197 /* AppModel.swift in Sources */,
 				90A7FFB74939CC6D288CD4A6 /* ConnectionView.swift in Sources */,
 				48678BA818E688C72BB8738A /* ContentView.swift in Sources */,
+				F83D4FA4177906ED454B3C18 /* DisclaimerView.swift in Sources */,
 				78C29AB09DAC36F372E7775C /* IntelligentPortfolioApp.swift in Sources */,
 				4653911D3DEB449A748A772E /* KeychainStore.swift in Sources */,
 				C3789F7C125CE60F596828CD /* MemoryView.swift in Sources */,
@@ -355,8 +363,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = IntelligentPortfolio;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -366,6 +376,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.vipulledelsea.IntelligentPortfolio;
 				PRODUCT_NAME = IntelligentPortfolio;
 				SDKROOT = iphoneos;
@@ -378,8 +389,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = IntelligentPortfolio;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -389,6 +402,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.vipulledelsea.IntelligentPortfolio;
 				PRODUCT_NAME = IntelligentPortfolio;
 				SDKROOT = iphoneos;

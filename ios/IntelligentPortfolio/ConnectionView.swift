@@ -52,6 +52,20 @@ struct ConnectionView: View {
                     .tint(AppTheme.amber)
                 }
 
+                Button("Browse without an account") {
+                    Task { await model.enterGuest() }
+                }
+                .buttonStyle(.bordered)
+                .tint(AppTheme.amber)
+                .frame(maxWidth: .infinity)
+
+                HStack(spacing: 18) {
+                    Link("Terms", destination: webURL.appending(path: "terms"))
+                    Link("Privacy", destination: webURL.appending(path: "privacy"))
+                    Link("Support", destination: webURL.appending(path: "support"))
+                }
+                .font(.footnote)
+
                 Label("Analysis only - no orders are ever placed", systemImage: "lock.fill")
                     .font(.footnote)
                     .foregroundStyle(AppTheme.muted)

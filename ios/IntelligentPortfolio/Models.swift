@@ -218,3 +218,7 @@ struct APIError: Decodable, Error, LocalizedError, Sendable {
     var errorDescription: String? { error }
 }
 
+
+struct DeleteResponse: Decodable, Sendable {
+    let deleted: Bool
+}

@@ -20,6 +20,11 @@ final class AppModel: ObservableObject {
     @Published var isScanning = false
     @Published var isAnalyzing = false
     @Published var errorMessage: String?
+    @Published var isGuest = false
+    @Published var disclaimerAccepted = UserDefaults.standard.bool(forKey: AppModel.disclaimerKey)
+
+    private static let disclaimerKey = "disclaimerAcceptedV1"
+    private static let guestKey = "browsingWithoutAccount"
 
     private let api = APIClient.shared
     private var token: String?
@@ -28,7 +33,7 @@ final class AppModel: ObservableObject {
 
     func restoreSession() async {
         guard let stored = KeychainStore.load() else {
-            connectionState = .disconnected
+            if UserDefaults.standard.bool(forKey: Self.guestKey) { await enterGuest() } else { connectionState = .disconnected }
             return
         }
         do {
@@ -41,6 +46,43 @@ final class AppModel: ObservableObject {
             KeychainStore.delete()
             connectionState = .disconnected
         }
+    }
+
+    func acceptDisclaimer() {
+        UserDefaults.standard.set(true, forKey: Self.disclaimerKey)
+        disclaimerAccepted = true
+    }
+
+    /// Lets someone try the scanner without an account while the service is free. The server decides:
+    /// once a paywall is on, anonymous access is refused and this stays unavailable.
+    func enterGuest() async {
+        errorMessage = nil
+        do {
+            let access = try await api.access(token: nil)
+            guard !access.paywallEnabled || access.subscribed else {
+                UserDefaults.standard.set(false, forKey: Self.guestKey)
+                errorMessage = "Browsing without an account is not available right now. Connect your account to continue."
+                connectionState = .disconnected
+                return
+            }
+            UserDefaults.standard.set(true, forKey: Self.guestKey)
+            isGuest = true
+            connectionState = .connected
+            await refreshScanner()
+        } catch {
+            errorMessage = error.localizedDescription
+            connectionState = .disconnected
+        }
+    }
+
+    func leaveGuest() {
+        autoRefreshTask?.cancel()
+        UserDefaults.standard.set(false, forKey: Self.guestKey)
+        isGuest = false
+        discovery = nil
+        analysis = nil
+        memory = nil
+        connectionState = .disconnected
     }
 
     func beginPairing() async {
@@ -71,6 +113,8 @@ final class AppModel: ObservableObject {
                 if status.approved, let newToken = status.token {
                     try KeychainStore.save(token: newToken)
                     token = newToken
+                    isGuest = false
+                    UserDefaults.standard.set(false, forKey: Self.guestKey)
                     pairing = nil
                     connectionState = .connected
                     await refreshAll()
@@ -104,7 +148,6 @@ final class AppModel: ObservableObject {
     /// Reads the latest scan. BSE and forex scans are produced by the server on its own
     /// schedule, so this only reads the stored result and re-checks every few minutes.
     func refreshScanner(manual: Bool = false) async {
-        guard let token else { return }
         autoRefreshTask?.cancel()
         let requested = market
         isScanning = true
@@ -129,7 +172,6 @@ final class AppModel: ObservableObject {
     }
 
     func analyze(symbol: String) async {
-        guard let token else { return }
         isAnalyzing = true
         analysis = nil
         defer { isAnalyzing = false }
@@ -140,7 +182,7 @@ final class AppModel: ObservableObject {
     }
 
     func refreshMemory() async {
-        guard let token else { return }
+        guard let token else { memory = nil; return }
         do { memory = try await api.memory(token: token) }
         catch { errorMessage = error.localizedDescription }
     }
@@ -155,6 +197,22 @@ final class AppModel: ObservableObject {
         analysis = nil
         memory = nil
         connectionState = .disconnected
+    }
+
+    /// Erases this account's research history and sessions on the server, then disconnects the device.
+    func deleteAccountData() async {
+        guard let token else { return }
+        do {
+            try await api.deleteAccountData(token: token)
+            pairingTask?.cancel()
+            autoRefreshTask?.cancel()
+            KeychainStore.delete()
+            self.token = nil
+            discovery = nil
+            analysis = nil
+            memory = nil
+            connectionState = .disconnected
+        } catch { errorMessage = error.localizedDescription }
     }
 }
 

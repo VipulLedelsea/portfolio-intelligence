@@ -13,6 +13,15 @@ for (const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Function
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`;
 const workerModule = await import(moduleUrl);
 assert.equal(typeof workerModule.default?.fetch, "function", "Worker must export default.fetch");
+for (const slug of ["privacy", "terms", "support"]) {
+  const page = await workerModule.default.fetch(new Request(`https://example.test/${slug}`), { SUPPORT_EMAIL: "help@example.test" }, { waitUntil() {} });
+  assert.equal(page.status, 200, `${slug} page must be public`);
+  const text = await page.text();
+  assert.match(text, /IntelligentPortfolio/);
+  if (slug === "terms") assert.match(text, /not investment, financial, tax or legal advice/i);
+  if (slug === "privacy") assert.match(text, /Delete my account data/);
+  if (slug === "support") assert.match(text, /help@example\.test/);
+}
 const response = await workerModule.default.fetch(new Request("https://example.test/health"), {}, { waitUntil() {} });
 assert.equal(response.status, 200);
 const health = await response.json();
@@ -135,6 +144,14 @@ const mobileAccess = await mobileAccessResponse.json();
 assert.equal(mobileAccess.signed_in, true);
 assert.equal(mobileAccess.subscribed, true);
 assert.equal(mobileAccess.auth_type, "mobile");
+
+const anonymousDelete = await workerModule.default.fetch(new Request("https://example.test/api/mobile/account/delete", { method: "POST", body: "{}" }), { DB: mobileDb }, { waitUntil() {} });
+assert.equal(anonymousDelete.status, 401, "Deleting account data requires a connected device");
+const deleteResponse = await workerModule.default.fetch(new Request("https://example.test/api/mobile/account/delete", {
+  method: "POST", headers: { authorization: `Bearer ${pairingStatus.token}` }, body: "{}",
+}), { DB: mobileDb }, { waitUntil() {} });
+assert.equal(deleteResponse.status, 200);
+assert.equal((await deleteResponse.json()).deleted, true);
 
 const revokeResponse = await workerModule.default.fetch(new Request("https://example.test/api/mobile/session/revoke", {
   method: "POST", headers: { authorization: `Bearer ${pairingStatus.token}` }, body: "{}",
