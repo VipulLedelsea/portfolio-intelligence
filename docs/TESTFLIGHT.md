@@ -15,7 +15,7 @@ The app is read-only research. It stays free during the beta and only invited pe
 1. **Join the paid Apple Developer Program** (US$99/year) at developer.apple.com/programs. A free "Personal Team" cannot use TestFlight. This Mac currently has only an *Apple Development* certificate.
 2. In **App Store Connect ▸ Apps ▸ +** create the app: bundle ID `com.vipulledelsea.IntelligentPortfolio`, a name, a SKU, category Finance.
 3. **Upload a build**: open `ios/IntelligentPortfolio.xcodeproj`, pick *Any iOS Device (arm64)*, Product ▸ Archive, then Distribute App ▸ App Store Connect ▸ Upload. Raise the build number (`CURRENT_PROJECT_VERSION` in `ios/project.yml`, then `xcodegen generate`) for every upload.
-4. **App Privacy** in App Store Connect: data collected = Email Address and User ID, linked to the user, not used for tracking, purpose App Functionality. Tracking = No.
+4. **App Privacy** in App Store Connect: data collected = Email Address, User ID and Other Financial Info (the holdings users type in), linked to the user, not used for tracking, purpose App Functionality. Tracking = No.
 5. **Test Information** (TestFlight tab): feedback email, privacy policy URL `https://intelligent-portfolio.portfolio-intelligence-site.workers.dev/privacy`, description, and the review notes below.
 6. **Testers**: internal testing (up to 100 people added as App Store Connect users) needs no review. For outside people use *External Testing* with email invitations (or a public link with a tester limit). The first build of each version goes through Beta App Review, usually within a day.
 

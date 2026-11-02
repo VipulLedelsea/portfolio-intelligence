@@ -73,3 +73,20 @@ export const webSessions = sqliteTable("web_sessions", {
 }, table => [
   index("web_sessions_expires_idx").on(table.expiresAt),
 ]);
+
+export const holdings = sqliteTable("holdings", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  symbol: text("symbol").notNull(),
+  market: text("market").notNull().default("US"),
+  shares: real("shares").notNull(),
+  buyPrice: real("buy_price").notNull(),
+  boughtAt: text("bought_at").notNull(),
+  createdAt: text("created_at").notNull(),
+  closedAt: text("closed_at"),
+  sellPrice: real("sell_price"),
+  lastAction: text("last_action"),
+  lastActionAt: text("last_action_at"),
+}, table => [
+  index("holdings_user_idx").on(table.userId, table.closedAt),
+]);

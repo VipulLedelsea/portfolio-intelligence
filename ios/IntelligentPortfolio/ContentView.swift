@@ -19,6 +19,8 @@ struct ContentView: View {
                 TabView {
                     ScannerView()
                         .tabItem { Label("Scanner", systemImage: "chart.xyaxis.line") }
+                    HoldingsView()
+                        .tabItem { Label("Holdings", systemImage: "briefcase") }
                     MemoryView()
                         .tabItem { Label("Memory", systemImage: "brain.head.profile") }
                     AccountView()

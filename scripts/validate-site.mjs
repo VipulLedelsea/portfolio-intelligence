@@ -267,6 +267,65 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
   for (let index = 0; index < 5; index += 1) await ask();
   assert.equal(upstream.length, callsAfterFailure, "After a provider rate limit, no further upstream calls may be made until the backoff ends");
 }
+// Holdings: positions entered by hand are evaluated by the same engine and stay private to their owner.
+{
+  class HoldingsDb {
+    constructor() { this.rows = []; }
+    prepare(sql) {
+      const statement = { args: [], bind: (...args) => { statement.args = args; return statement; } };
+      statement.run = async () => {
+        const a = statement.args;
+        if (sql.startsWith("INSERT INTO holdings")) this.rows.push({ id: a[0], user_id: a[1], symbol: a[2], market: a[3], shares: a[4], buy_price: a[5], bought_at: a[6], created_at: a[7], closed_at: null, sell_price: null, last_action: null, last_action_at: null });
+        else if (sql.startsWith("UPDATE holdings SET last_action")) { const row = this.rows.find(r => r.id === a[2] && r.user_id === a[3]); if (row) { row.last_action = a[0]; row.last_action_at = a[1]; } }
+        else if (sql.startsWith("UPDATE holdings SET closed_at")) { const row = this.rows.find(r => r.id === a[2] && r.user_id === a[3] && !r.closed_at); if (row) { row.closed_at = a[0]; row.sell_price = a[1]; } }
+        else if (sql.startsWith("DELETE FROM holdings")) this.rows = this.rows.filter(r => !(r.id === a[0] && r.user_id === a[1]));
+        return { success: true };
+      };
+      statement.first = async () => sql.includes("COUNT(*)") ? { n: this.rows.filter(r => r.user_id === statement.args[0] && !r.closed_at).length } : null;
+      statement.all = async () => ({ results: this.rows.filter(r => r.user_id === statement.args[0]) });
+      return statement;
+    }
+    async batch(list) { for (const item of list) await item.run(); return []; }
+  }
+  globalThis.fetch = async input => {
+    const url = new URL(String(input));
+    if (url.hostname !== "api.robinhood.com") return new Response("{}", { status: 404 });
+    const symbols = url.searchParams.get("symbols").split(",");
+    if (!url.pathname.includes("historicals")) return new Response(JSON.stringify({ results: symbols.map(symbol => ({ symbol, last_trade_price: "100", adjusted_previous_close: "99" })) }), { status: 200 });
+    const daily = url.searchParams.get("interval") === "day";
+    const rows = daily ? series(130, 86400, nowSeconds - 2 * 86400, 100) : series(300, 3600, nowSeconds - 4 * 3600, 100);
+    return new Response(JSON.stringify({ results: symbols.map(symbol => ({ symbol, historicals: rows.map(r => ({ begins_at: new Date(r.time * 1000).toISOString(), open_price: String(r.open), high_price: String(r.high), low_price: String(r.low), close_price: String(r.close), volume: r.volume })) })) }), { status: 200 });
+  };
+  const holdingsModule = await import(`data:text/javascript;base64,${Buffer.from(`${source}\n//holdings-test`).toString("base64")}`);
+  const db = new HoldingsDb();
+  const as = (user, path, body) => holdingsModule.default.fetch(new Request(`https://example.test${path}`, {
+    method: "POST", headers: { "content-type": "application/json", ...(user ? { "oai-authenticated-user-id": user, "oai-authenticated-user-email": `${user}@example.test` } : {}) }, body: JSON.stringify(body || {}),
+  }), { DB: db, AUTH_MODE: "oai" }, { waitUntil() {} });
+  assert.equal((await as(null, "/api/holdings")).status, 401, "Holdings require an account");
+  assert.equal((await as("alice", "/api/holdings/add", { symbol: "AAPL", shares: 0, price: 10 })).status, 400, "Zero shares must be rejected");
+  assert.equal((await as("alice", "/api/holdings/add", { symbol: "AAPL", market: "FX", shares: 1, price: 10 })).status, 400, "Forex holdings are not supported");
+  for (const [symbol, price] of [["AAPL", 90], ["MSFT", 40], ["NVDA", 1000]]) assert.equal((await as("alice", "/api/holdings/add", { symbol, shares: 10, price })).status, 200);
+  const list = await (await as("alice", "/api/holdings")).json();
+  assert.equal(list.open.length, 3);
+  const bySymbol = Object.fromEntries(list.open.map(item => [item.symbol, item]));
+  assert.equal(bySymbol.NVDA.action, "EXIT", "A position far under its protective level must give an exit signal");
+  assert.ok(bySymbol.NVDA.pnl_value < 0 && bySymbol.NVDA.reasons.length > 0);
+  assert.equal(bySymbol.MSFT.action, "TAKE_PROFIT", "A position past 2R in an uptrend must flag taking profit");
+  assert.ok(["HOLD", "WATCH", "TAKE_PROFIT"].includes(bySymbol.AAPL.action));
+  assert.ok(bySymbol.AAPL.trailing_level > 0 && bySymbol.AAPL.target_1 > bySymbol.AAPL.buy_price);
+  assert.match(list.disclaimer, /not personal financial advice/);
+  assert.equal(db.rows.find(row => row.symbol === "NVDA").last_action, "EXIT", "The latest decision must be remembered so changes can be shown");
+  assert.equal((await (await as("bob", "/api/holdings")).json()).open.length, 0, "Holdings must stay private to their owner");
+  const nvda = bySymbol.NVDA.id;
+  await as("bob", "/api/holdings/remove", { id: nvda });
+  assert.equal(db.rows.length, 3, "Another user must not be able to remove someone else's holding");
+  assert.equal((await as("alice", "/api/holdings/close", { id: nvda, sell_price: 900 })).status, 200);
+  const afterClose = await (await as("alice", "/api/holdings")).json();
+  assert.equal(afterClose.open.length, 2);
+  assert.equal(afterClose.closed[0].pnl_value, -1000, "Closed holdings must show realized profit and loss");
+  assert.equal((await as("alice", "/api/holdings/remove", { id: bySymbol.AAPL.id })).status, 200);
+  assert.equal((await (await as("alice", "/api/holdings")).json()).open.length, 1);
+}
 globalThis.fetch = realFetch;
 
 console.log("Artifact is valid ESM; read-only, subscription, persistent-memory, and iPhone pairing gates passed");

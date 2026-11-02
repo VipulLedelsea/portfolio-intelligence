@@ -21,6 +21,8 @@ final class AppModel: ObservableObject {
     @Published var isAnalyzing = false
     @Published var errorMessage: String?
     @Published var isGuest = false
+    @Published var holdings: HoldingsResponse?
+    @Published var isLoadingHoldings = false
     @Published var disclaimerAccepted = UserDefaults.standard.bool(forKey: AppModel.disclaimerKey)
 
     private static let disclaimerKey = "disclaimerAcceptedV1"
@@ -82,6 +84,7 @@ final class AppModel: ObservableObject {
         discovery = nil
         analysis = nil
         memory = nil
+        holdings = nil
         connectionState = .disconnected
     }
 
@@ -135,6 +138,44 @@ final class AppModel: ObservableObject {
     func refreshAll() async {
         await refreshScanner()
         await refreshMemory()
+        await refreshHoldings()
+    }
+
+    func refreshHoldings() async {
+        guard let token else { holdings = nil; return }
+        isLoadingHoldings = true
+        defer { isLoadingHoldings = false }
+        do { holdings = try await api.holdings(token: token) }
+        catch { errorMessage = error.localizedDescription }
+    }
+
+    /// Returns true when the holding was saved, so the entry sheet can close.
+    func addHolding(symbol: String, market: String, shares: Double, price: Double, boughtAt: String) async -> Bool {
+        guard let token else { return false }
+        do {
+            try await api.addHolding(AddHoldingBody(symbol: symbol, market: market, shares: shares, price: price, boughtAt: boughtAt), token: token)
+            await refreshHoldings()
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func closeHolding(id: String, sellPrice: Double) async {
+        guard let token else { return }
+        do {
+            try await api.closeHolding(CloseHoldingBody(id: id, sellPrice: sellPrice), token: token)
+            await refreshHoldings()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func removeHolding(id: String) async {
+        guard let token else { return }
+        do {
+            try await api.removeHolding(id: id, token: token)
+            await refreshHoldings()
+        } catch { errorMessage = error.localizedDescription }
     }
 
     func selectMarket(_ newMarket: Market) async {
@@ -196,6 +237,7 @@ final class AppModel: ObservableObject {
         discovery = nil
         analysis = nil
         memory = nil
+        holdings = nil
         connectionState = .disconnected
     }
 
@@ -211,6 +253,7 @@ final class AppModel: ObservableObject {
             discovery = nil
             analysis = nil
             memory = nil
+        holdings = nil
             connectionState = .disconnected
         } catch { errorMessage = error.localizedDescription }
     }

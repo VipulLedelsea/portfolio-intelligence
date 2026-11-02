@@ -1470,6 +1470,7 @@ function legalPage(env, slug) {
 <ul>
 <li><strong>Sign-in details.</strong> If you sign in on the website with Google, we receive your Google account ID and email address. We use them only to recognise your account.</li>
 <li><strong>Research history.</strong> When you are signed in, the research calls the app generates for you are stored against your account so their results can be graded later (the "learning memory").</li>
+<li><strong>Holdings you enter.</strong> If you use "My holdings", the stocks, share counts, purchase prices and dates you type in are stored against your account so they can be checked against market data. They are never shared with a broker or anyone else.</li>
 <li><strong>Device pairing.</strong> To connect the iPhone app to your account we store your device name, a one-time pairing code and a hashed session token. The token on the phone is kept in the iOS Keychain.</li>
 <li><strong>Browsing without an account.</strong> The app and website can be used without signing in while the service is free. No personal data is stored for that.</li>
 </ul>
@@ -1484,7 +1485,7 @@ function legalPage(env, slug) {
 <li><strong>Stripe</strong> will process payments if paid subscriptions are switched on later. We never see card numbers.</li>
 </ul>
 <h2>Keeping and deleting your data</h2>
-<p>In the iPhone app, open Account and choose "Delete my account data" to erase your research history, paired-device sessions and website sessions from our database. You can also email ${contact} to ask for deletion. Disconnecting a device in the app ends its session immediately. Sessions also expire on their own.</p>
+<p>In the iPhone app, open Account and choose "Delete my account data" to erase your research history, saved holdings, paired-device sessions and website sessions from our database. You can also email ${contact} to ask for deletion. Disconnecting a device in the app ends its session immediately. Sessions also expire on their own.</p>
 <h2>Children</h2>
 <p>The service is not directed at children under 13.</p>
 <h2>Changes and contact</h2>
@@ -1493,6 +1494,8 @@ function legalPage(env, slug) {
 <p>By using IntelligentPortfolio you agree to these terms.</p>
 <h2>Research only, not advice</h2>
 <p>IntelligentPortfolio provides general market research and educational information. It is <strong>not investment, financial, tax or legal advice</strong>, and it is not a recommendation to buy or sell any security, currency or other instrument. We are not a registered investment adviser or broker-dealer. You make your own decisions and are responsible for them.</p>
+<h2>Holdings and "hold / exit" readings</h2>
+<p>The holdings tracker only records what you tell it. Its hold, watch, take-profit and exit readings are automatic outputs of a technical-analysis rule set applied to public prices and your stated buy price. They do not know your goals, finances, taxes, other investments or risk tolerance, so they are <strong>not personalised advice</strong>. They can be late or wrong. You decide whether to buy or sell, and you place any order yourself with your own broker.</p>
 <h2>No trading</h2>
 <p>The service is read-only. It cannot access brokerage accounts, positions or orders, and it never places trades.</p>
 <h2>Accuracy and risk</h2>
@@ -1526,12 +1529,192 @@ async function deleteMobileAccountData(request, env) {
   if (!user || user.auth_type !== "mobile" || !env.DB) throw Object.assign(new Error("Connect your account before deleting its data"), { status: 401 });
   await env.DB.batch([
     env.DB.prepare("DELETE FROM recommendations WHERE user_id = ?").bind(user.id),
+    env.DB.prepare("DELETE FROM holdings WHERE user_id = ?").bind(user.id),
     env.DB.prepare("DELETE FROM mobile_pairings WHERE user_id = ?").bind(user.id),
     env.DB.prepare("DELETE FROM mobile_sessions WHERE user_id = ?").bind(user.id),
     env.DB.prepare("DELETE FROM web_sessions WHERE user_id = ?").bind(user.id),
   ]);
   accessCache.delete(`${user.id}:mobile`);
   return { deleted: true };
+}
+
+// ---- Holdings: positions the user entered by hand (read-only; nothing is ever sent to a broker) ----
+const HOLDING_MARKETS = ["US", "IN"];
+const MAX_OPEN_HOLDINGS = 20;
+const HOLDING_ACTIONS = { HOLD: "Hold", WATCH: "Watch closely", TAKE_PROFIT: "Consider taking profit", EXIT: "Exit signal", NO_DATA: "No data" };
+const holdingSnapshotCache = new Map();
+
+async function holdingSnapshotsFor(env, market, symbols) {
+  const key = `${market.id}:${[...symbols].sort().join(",")}`;
+  const hit = holdingSnapshotCache.get(key);
+  if (hit && hit.expires > Date.now()) return hit.value;
+  const value = await fetchSnapshots(symbols, market, env).catch(error => ({ snapshots: new Map(), errors: symbols.map(symbol => ({ symbol, error: cleanError(error) })) }));
+  if (holdingSnapshotCache.size > 40) holdingSnapshotCache.delete(holdingSnapshotCache.keys().next().value);
+  holdingSnapshotCache.set(key, { value, expires: Date.now() + 3 * 60 * 1000 });
+  return value;
+}
+
+// A hold / watch / take-profit / exit read on a long position, from the same engine that ranks the scanner.
+// Risk 1R is two daily ATRs (at least 1.25%) below the buy price; targets sit at 2R and 3R.
+function evaluateHolding(holding, snapshot) {
+  const market = MARKETS[holding.market] || MARKETS.US;
+  const fmt = value => fmtPrice(value, market);
+  const price = numeric(snapshot.price);
+  const buy = Number(holding.buy_price), shares = Number(holding.shares);
+  const trend4h = snapshot.supertrend?.direction || "SHORT";
+  const dailyTrend = snapshot.daily_supertrend?.direction || "SHORT";
+  const adx = numeric(snapshot.daily_adx?.value);
+  const atr = numeric(snapshot.atr_14) || buy * 0.02;
+  const risk = Math.max(2 * atr, buy * 0.0125);
+  const stopLevel = Math.max(0.01, buy - risk);
+  const trailing = trend4h === "LONG" ? Math.max(stopLevel, numeric(snapshot.supertrend?.value)) : stopLevel;
+  const target1 = buy + 2 * risk, target2 = buy + 3 * risk;
+  const pnlPct = (price / buy - 1) * 100;
+  const reasons = [];
+  let action, headline;
+  if (price <= stopLevel) {
+    action = "EXIT";
+    headline = "Price is below the protective level for this position";
+    reasons.push(`Price ${fmt(price)} is under the protective level ${fmt(stopLevel)} (two daily ranges below your buy price).`);
+  } else if (trend4h === "SHORT") {
+    action = "EXIT";
+    headline = "The 4-hour trend has turned down";
+    reasons.push("The confirmed 4H Supertrend (10, 3) is now pointing down, which is how the strategy leaves a long trade.");
+    if (dailyTrend === "SHORT") reasons.push("The daily trend is down as well, so both timeframes agree.");
+  } else if (price >= target1) {
+    action = "TAKE_PROFIT";
+    headline = price >= target2 ? "Target 2 (3R) has been reached" : "Target 1 (2R) has been reached";
+    reasons.push(`Price ${fmt(price)} is above ${price >= target2 ? `target 2 at ${fmt(target2)}` : `target 1 at ${fmt(target1)}`}.`);
+    reasons.push(`The 4H trend is still up. Securing part of the gain and trailing the rest under ${fmt(trailing)} follows the trend.`);
+  } else if (dailyTrend === "SHORT" || adx < 20 || (price - trailing) < 0.5 * atr) {
+    action = "WATCH";
+    headline = "Trend is intact but weakening";
+    if (dailyTrend === "SHORT") reasons.push("The daily trend is down while the 4H trend is still up, so the move is against the bigger direction.");
+    if (adx < 20) reasons.push(`Daily ADX is ${adx.toFixed(1)}, below 20, which means weak trend strength.`);
+    if ((price - trailing) < 0.5 * atr) reasons.push(`Price is within half a daily range of the trailing level ${fmt(trailing)}.`);
+  } else {
+    action = "HOLD";
+    headline = "Trend is intact";
+    reasons.push(`The 4H trend is up and daily trend is up. The trailing level is ${fmt(trailing)}.`);
+    reasons.push(`Daily ADX is ${adx.toFixed(1)}${snapshot.daily_adx?.rising ? " and rising" : ""}.`);
+  }
+  return {
+    action,
+    action_label: HOLDING_ACTIONS[action],
+    headline,
+    reasons,
+    current_price: round(price, 4),
+    cost: round(buy * shares, 2),
+    value: round(price * shares, 2),
+    pnl_value: round((price - buy) * shares, 2),
+    pnl_pct: round(pnlPct, 2),
+    stop_level: round(stopLevel, 4),
+    trailing_level: round(trailing, 4),
+    target_1: round(target1, 4),
+    target_2: round(target2, 4),
+    trend_4h: trend4h,
+    daily_trend: dailyTrend,
+    daily_adx: round(adx, 1),
+    market_time: snapshot.market_time || null,
+  };
+}
+
+function noDataEvaluation() {
+  return { action: "NO_DATA", action_label: HOLDING_ACTIONS.NO_DATA, headline: "Market data is unavailable right now", reasons: ["The data provider did not return enough history for this symbol. It will be checked again on the next refresh."] };
+}
+
+async function holdingsUser(request, env) {
+  await requireSubscription(request, env);
+  const user = await requestUser(request, env);
+  if (!user || !env.DB) throw Object.assign(new Error("Sign in or connect your account to track holdings"), { status: 401 });
+  return user;
+}
+
+async function addHolding(request, env) {
+  const user = await holdingsUser(request, env);
+  const body = await readBody(request);
+  const symbol = String(body.symbol || "").trim().toUpperCase();
+  const marketId = String(body.market || "US").toUpperCase();
+  if (!HOLDING_MARKETS.includes(marketId)) throw Object.assign(new Error("Holdings can be tracked for US and BSE stocks"), { status: 400 });
+  const market = MARKETS[marketId];
+  if (!/^[A-Z0-9.\-^&]{1,15}$/.test(symbol)) throw Object.assign(new Error("Enter a valid ticker symbol"), { status: 400 });
+  if (market.universe && !market.universe.some(entry => entry.symbol === symbol)) throw Object.assign(new Error(`Choose one of the ${market.name} symbols`), { status: 400 });
+  const shares = Number(body.shares), price = Number(body.price);
+  if (!Number.isFinite(shares) || shares <= 0 || shares > 1e9) throw Object.assign(new Error("Enter how many shares you bought"), { status: 400 });
+  if (!Number.isFinite(price) || price <= 0 || price > 1e8) throw Object.assign(new Error("Enter the price you paid per share"), { status: 400 });
+  const today = new Date().toISOString().slice(0, 10);
+  const boughtAt = String(body.bought_at || today).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(boughtAt) || boughtAt > today) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
+  const open = await env.DB.prepare("SELECT COUNT(*) AS n FROM holdings WHERE user_id = ? AND closed_at IS NULL").bind(user.id).first();
+  if (Number(open?.n || 0) >= MAX_OPEN_HOLDINGS) throw Object.assign(new Error(`You can track up to ${MAX_OPEN_HOLDINGS} open holdings. Remove or close one first.`), { status: 400 });
+  const { snapshots, errors } = await holdingSnapshotsFor(env, market, [symbol]);
+  if (!snapshots.get(symbol)) throw Object.assign(new Error(`No market data found for ${symbol}${errors?.[0]?.error ? ` (${errors[0].error})` : ""}`), { status: 400 });
+  const id = randomBase64Url(12);
+  await env.DB.prepare("INSERT INTO holdings (id, user_id, symbol, market, shares, buy_price, bought_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(id, user.id, symbol, marketId, shares, price, boughtAt, new Date().toISOString()).run();
+  return { added: true, id };
+}
+
+async function listHoldings(request, env) {
+  const user = await holdingsUser(request, env);
+  const rows = (await env.DB.prepare("SELECT * FROM holdings WHERE user_id = ? ORDER BY created_at DESC LIMIT 100").bind(user.id).all()).results || [];
+  const open = rows.filter(row => !row.closed_at), closed = rows.filter(row => row.closed_at);
+  const symbolsByMarket = new Map();
+  for (const row of open) {
+    if (!symbolsByMarket.has(row.market)) symbolsByMarket.set(row.market, new Set());
+    symbolsByMarket.get(row.market).add(row.symbol);
+  }
+  const loaded = new Map();
+  for (const [marketId, symbols] of symbolsByMarket) if (MARKETS[marketId]) loaded.set(marketId, await holdingSnapshotsFor(env, MARKETS[marketId], [...symbols]));
+  const now = new Date().toISOString();
+  const updates = [];
+  const base = row => ({ id: row.id, symbol: row.symbol, market: row.market, currency_symbol: MARKETS[row.market]?.symbolPrefix || "$", price_decimals: MARKETS[row.market]?.decimals(row.buy_price) ?? 2, shares: row.shares, buy_price: row.buy_price, bought_at: row.bought_at });
+  const openOut = open.map(row => {
+    let evaluation;
+    try {
+      const snapshot = loaded.get(row.market)?.snapshots.get(row.symbol);
+      evaluation = snapshot ? evaluateHolding(row, snapshot) : noDataEvaluation();
+    } catch { evaluation = noDataEvaluation(); }
+    let since = row.last_action_at || now;
+    if (evaluation.action !== "NO_DATA" && evaluation.action !== row.last_action) {
+      since = now;
+      updates.push(env.DB.prepare("UPDATE holdings SET last_action = ?, last_action_at = ? WHERE id = ? AND user_id = ?").bind(evaluation.action, now, row.id, user.id));
+    }
+    return { ...base(row), ...evaluation, previous_action: row.last_action || null, action_since: since };
+  });
+  if (updates.length) await env.DB.batch(updates).catch(() => {});
+  const totals = new Map();
+  for (const item of openOut) {
+    if (item.action === "NO_DATA") continue;
+    const total = totals.get(item.market) || { market: item.market, currency_symbol: item.currency_symbol, cost: 0, value: 0 };
+    total.cost += item.cost; total.value += item.value;
+    totals.set(item.market, total);
+  }
+  return {
+    updated_at: now,
+    open: openOut,
+    closed: closed.slice(0, 20).map(row => ({ ...base(row), sell_price: row.sell_price, closed_at: row.closed_at, pnl_value: round((row.sell_price - row.buy_price) * row.shares, 2), pnl_pct: round((row.sell_price / row.buy_price - 1) * 100, 2) })),
+    totals: [...totals.values()].map(total => ({ ...total, cost: round(total.cost, 2), value: round(total.value, 2), pnl_value: round(total.value - total.cost, 2), pnl_pct: total.cost ? round((total.value / total.cost - 1) * 100, 2) : 0 })),
+    disclaimer: "Automated research scenarios from public price data, not personal financial advice. You decide what to do; nothing is ever sent to a broker.",
+  };
+}
+
+async function closeHolding(request, env) {
+  const user = await holdingsUser(request, env);
+  const body = await readBody(request);
+  const id = String(body.id || ""), sellPrice = Number(body.sell_price);
+  if (!/^[A-Za-z0-9_-]{6,40}$/.test(id)) throw Object.assign(new Error("Holding not found"), { status: 404 });
+  if (!Number.isFinite(sellPrice) || sellPrice <= 0) throw Object.assign(new Error("Enter the price you sold at"), { status: 400 });
+  await env.DB.prepare("UPDATE holdings SET closed_at = ?, sell_price = ? WHERE id = ? AND user_id = ? AND closed_at IS NULL").bind(new Date().toISOString(), sellPrice, id, user.id).run();
+  return { closed: true };
+}
+
+async function removeHolding(request, env) {
+  const user = await holdingsUser(request, env);
+  const id = String((await readBody(request)).id || "");
+  if (!/^[A-Za-z0-9_-]{6,40}$/.test(id)) throw Object.assign(new Error("Holding not found"), { status: 404 });
+  await env.DB.prepare("DELETE FROM holdings WHERE id = ? AND user_id = ?").bind(id, user.id).run();
+  return { removed: true };
 }
 
 async function handle(request, env, ctx) {
@@ -1582,6 +1765,10 @@ async function handle(request, env, ctx) {
     if (url.pathname === "/api/mobile/pair/approve") {
       return json(await approveMobilePairing(request, env, await readBody(request)));
     }
+    if (url.pathname === "/api/holdings") return json(await listHoldings(request, env));
+    if (url.pathname === "/api/holdings/add") return json(await addHolding(request, env));
+    if (url.pathname === "/api/holdings/close") return json(await closeHolding(request, env));
+    if (url.pathname === "/api/holdings/remove") return json(await removeHolding(request, env));
     if (url.pathname === "/api/mobile/account/delete") {
       return json(await deleteMobileAccountData(request, env));
     }

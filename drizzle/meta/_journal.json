@@ -29,6 +29,13 @@
       "when": 1793556378230,
       "tag": "0003_web_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1793635045312,
+      "tag": "0004_holdings",
+      "breakpoints": true
     }
   ]
 }

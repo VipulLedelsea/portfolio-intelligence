@@ -222,3 +222,88 @@ struct APIError: Decodable, Error, LocalizedError, Sendable {
 struct DeleteResponse: Decodable, Sendable {
     let deleted: Bool
 }
+
+struct HoldingsResponse: Decodable, Sendable {
+    let updatedAt: String
+    let open: [Holding]
+    let closed: [ClosedHolding]
+    let totals: [HoldingTotal]
+    let disclaimer: String
+}
+
+struct Holding: Decodable, Identifiable, Sendable {
+    let id: String
+    let symbol: String
+    let market: String
+    let currencySymbol: String
+    let priceDecimals: Int
+    let shares: Double
+    let buyPrice: Double
+    let boughtAt: String
+    let action: String
+    let actionLabel: String
+    let headline: String
+    let reasons: [String]
+    let currentPrice: Double?
+    let value: Double?
+    let pnlValue: Double?
+    let pnlPct: Double?
+    let stopLevel: Double?
+    let trailingLevel: Double?
+    let target1: Double?
+    let target2: Double?
+    let trend4h: String?
+    let dailyTrend: String?
+    let previousAction: String?
+    let actionSince: String?
+}
+
+struct ClosedHolding: Decodable, Identifiable, Sendable {
+    let id: String
+    let symbol: String
+    let currencySymbol: String
+    let priceDecimals: Int
+    let shares: Double
+    let buyPrice: Double
+    let sellPrice: Double
+    let pnlValue: Double
+    let pnlPct: Double
+}
+
+struct HoldingTotal: Decodable, Identifiable, Sendable {
+    let market: String
+    let currencySymbol: String
+    let value: Double
+    let pnlValue: Double
+    let pnlPct: Double
+    var id: String { market }
+}
+
+struct AddHoldingBody: Encodable, Sendable {
+    let symbol: String
+    let market: String
+    let shares: Double
+    let price: Double
+    let boughtAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case symbol, market, shares, price
+        case boughtAt = "bought_at"
+    }
+}
+
+struct CloseHoldingBody: Encodable, Sendable {
+    let id: String
+    let sellPrice: Double
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case sellPrice = "sell_price"
+    }
+}
+
+struct RemoveHoldingBody: Encodable, Sendable {
+    let id: String
+}
+
+struct HoldingChangeResponse: Decodable, Sendable {}
