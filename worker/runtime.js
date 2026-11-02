@@ -1544,13 +1544,16 @@ const MAX_OPEN_HOLDINGS = 20;
 const HOLDING_ACTIONS = { HOLD: "Hold", WATCH: "Watch closely", TAKE_PROFIT: "Consider taking profit", EXIT: "Exit signal", NO_DATA: "No data" };
 const holdingSnapshotCache = new Map();
 
-async function holdingSnapshotsFor(env, market, symbols) {
+// Prices are shared for a minute while the market is open (ten minutes when closed). A manual refresh accepts
+// data up to 20 seconds old, so repeated taps never multiply requests to the data provider.
+async function holdingSnapshotsFor(env, market, symbols, { manual = false } = {}) {
   const key = `${market.id}:${[...symbols].sort().join(",")}`;
+  const maxAge = manual ? 20000 : marketIsOpen(market) ? 55000 : 600000;
   const hit = holdingSnapshotCache.get(key);
-  if (hit && hit.expires > Date.now()) return hit.value;
+  if (hit && Date.now() - hit.fetchedAt <= maxAge) return hit.value;
   const value = await fetchSnapshots(symbols, market, env).catch(error => ({ snapshots: new Map(), errors: symbols.map(symbol => ({ symbol, error: cleanError(error) })) }));
   if (holdingSnapshotCache.size > 40) holdingSnapshotCache.delete(holdingSnapshotCache.keys().next().value);
-  holdingSnapshotCache.set(key, { value, expires: Date.now() + 3 * 60 * 1000 });
+  holdingSnapshotCache.set(key, { value, fetchedAt: Date.now() });
   return value;
 }
 
@@ -1657,6 +1660,7 @@ async function addHolding(request, env) {
 
 async function listHoldings(request, env) {
   const user = await holdingsUser(request, env);
+  const manual = (await readBody(request)).refresh === true;
   const rows = (await env.DB.prepare("SELECT * FROM holdings WHERE user_id = ? ORDER BY created_at DESC LIMIT 100").bind(user.id).all()).results || [];
   const open = rows.filter(row => !row.closed_at), closed = rows.filter(row => row.closed_at);
   const symbolsByMarket = new Map();
@@ -1665,7 +1669,7 @@ async function listHoldings(request, env) {
     symbolsByMarket.get(row.market).add(row.symbol);
   }
   const loaded = new Map();
-  for (const [marketId, symbols] of symbolsByMarket) if (MARKETS[marketId]) loaded.set(marketId, await holdingSnapshotsFor(env, MARKETS[marketId], [...symbols]));
+  for (const [marketId, symbols] of symbolsByMarket) if (MARKETS[marketId]) loaded.set(marketId, await holdingSnapshotsFor(env, MARKETS[marketId], [...symbols], { manual }));
   const now = new Date().toISOString();
   const updates = [];
   const base = row => ({ id: row.id, symbol: row.symbol, market: row.market, currency_symbol: MARKETS[row.market]?.symbolPrefix || "$", price_decimals: MARKETS[row.market]?.decimals(row.buy_price) ?? 2, shares: row.shares, buy_price: row.buy_price, bought_at: row.bought_at });
@@ -1690,8 +1694,10 @@ async function listHoldings(request, env) {
     total.cost += item.cost; total.value += item.value;
     totals.set(item.market, total);
   }
+  const anyOpen = [...symbolsByMarket.keys()].some(marketId => MARKETS[marketId] && marketIsOpen(MARKETS[marketId]));
   return {
     updated_at: now,
+    refresh_after_seconds: anyOpen ? 60 : 600,
     open: openOut,
     closed: closed.slice(0, 20).map(row => ({ ...base(row), sell_price: row.sell_price, closed_at: row.closed_at, pnl_value: round((row.sell_price - row.buy_price) * row.shares, 2), pnl_pct: round((row.sell_price / row.buy_price - 1) * 100, 2) })),
     totals: [...totals.values()].map(total => ({ ...total, cost: round(total.cost, 2), value: round(total.value, 2), pnl_value: round(total.value - total.cost, 2), pnl_pct: total.cost ? round((total.value / total.cost - 1) * 100, 2) : 0 })),

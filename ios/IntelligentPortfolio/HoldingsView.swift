@@ -6,6 +6,7 @@ struct HoldingsView: View {
     @State private var showingAdd = false
     @State private var sellTarget: Holding?
     @State private var removeTarget: Holding?
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
@@ -22,6 +23,12 @@ struct HoldingsView: View {
                         }
                         .panel()
                     } else if let data = model.holdings {
+                        HStack(spacing: 6) {
+                            if model.isLoadingHoldings { ProgressView().controlSize(.small) }
+                            Text(updatedText(data))
+                        }
+                        .font(.caption)
+                        .foregroundStyle(AppTheme.muted)
                         ForEach(data.totals) { total in
                             HStack {
                                 Text("\(total.market) value \(money(total.currencySymbol, 2, total.value))")
@@ -66,13 +73,21 @@ struct HoldingsView: View {
             .navigationTitle("My holdings")
             .toolbar {
                 if !model.isGuest {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { Task { await model.refreshHoldings(manual: true) } } label: { Image(systemName: "arrow.clockwise") }
+                            .disabled(model.isLoadingHoldings)
+                            .accessibilityLabel("Refresh holdings")
+                    }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button { showingAdd = true } label: { Image(systemName: "plus") }
                             .accessibilityLabel("Add a holding")
                     }
                 }
             }
-            .refreshable { await model.refreshHoldings() }
+            .refreshable { await model.refreshHoldings(manual: true) }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { Task { await model.refreshHoldings() } }
+            }
             .sheet(isPresented: $showingAdd) { AddHoldingSheet().environmentObject(model) }
             .sheet(item: $sellTarget) { holding in SellSheet(holding: holding).environmentObject(model) }
             .confirmationDialog("Remove this holding?", isPresented: Binding(get: { removeTarget != nil }, set: { if !$0 { removeTarget = nil } }), titleVisibility: .visible) {
@@ -83,14 +98,20 @@ struct HoldingsView: View {
                 Button("Cancel", role: .cancel) { removeTarget = nil }
             } message: { Text("It will not be kept in your closed list.") }
             .task {
-                // Re-check every five minutes while this tab is on screen.
+                // Re-check automatically while this tab is on screen.
                 while !Task.isCancelled {
                     await model.refreshHoldings()
-                    try? await Task.sleep(for: .seconds(300))
+                    try? await Task.sleep(for: model.holdingsRefreshInterval)
                 }
             }
         }
     }
+}
+
+private func updatedText(_ data: HoldingsResponse) -> String {
+    let when = PairingExpiryParser.date(from: data.updatedAt)?.formatted(date: .omitted, time: .standard) ?? data.updatedAt
+    let every = (data.refreshAfterSeconds ?? 300) >= 600 ? "every 10 minutes, markets closed" : "every minute, market open"
+    return "Updated \(when) · auto-updates \(every)"
 }
 
 private func money(_ symbol: String, _ decimals: Int, _ value: Double) -> String {

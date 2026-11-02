@@ -141,13 +141,17 @@ final class AppModel: ObservableObject {
         await refreshHoldings()
     }
 
-    func refreshHoldings() async {
+    /// `manual` accepts only very fresh server data, so a pull or tap really re-checks the market.
+    func refreshHoldings(manual: Bool = false) async {
         guard let token else { holdings = nil; return }
         isLoadingHoldings = true
         defer { isLoadingHoldings = false }
-        do { holdings = try await api.holdings(token: token) }
+        do { holdings = try await api.holdings(token: token, refresh: manual) }
         catch { errorMessage = error.localizedDescription }
     }
+
+    /// How long the Holdings tab waits before re-checking: a minute while a market is open, ten when closed.
+    var holdingsRefreshInterval: Duration { .seconds(max(30, holdings?.refreshAfterSeconds ?? 300)) }
 
     /// Returns true when the holding was saved, so the entry sheet can close.
     func addHolding(symbol: String, market: String, shares: Double, price: Double, boughtAt: String) async -> Bool {

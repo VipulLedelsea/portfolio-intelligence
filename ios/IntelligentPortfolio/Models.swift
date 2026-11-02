@@ -225,6 +225,7 @@ struct DeleteResponse: Decodable, Sendable {
 
 struct HoldingsResponse: Decodable, Sendable {
     let updatedAt: String
+    let refreshAfterSeconds: Int?
     let open: [Holding]
     let closed: [ClosedHolding]
     let totals: [HoldingTotal]
@@ -304,6 +305,10 @@ struct CloseHoldingBody: Encodable, Sendable {
 
 struct RemoveHoldingBody: Encodable, Sendable {
     let id: String
+}
+
+struct HoldingsBody: Encodable, Sendable {
+    let refresh: Bool
 }
 
 struct HoldingChangeResponse: Decodable, Sendable {}

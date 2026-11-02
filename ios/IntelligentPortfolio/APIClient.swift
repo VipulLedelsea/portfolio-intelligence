@@ -44,8 +44,8 @@ actor APIClient {
         let _: RevokeResponse = try await request(path: "/api/mobile/session/revoke", token: token, body: [:] as [String: String])
     }
 
-    func holdings(token: String) async throws -> HoldingsResponse {
-        try await request(path: "/api/holdings", token: token, body: [:] as [String: String])
+    func holdings(token: String, refresh: Bool = false) async throws -> HoldingsResponse {
+        try await request(path: "/api/holdings", token: token, body: HoldingsBody(refresh: refresh))
     }
 
     func addHolding(_ body: AddHoldingBody, token: String) async throws {

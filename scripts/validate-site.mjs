@@ -314,6 +314,7 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
   assert.ok(["HOLD", "WATCH", "TAKE_PROFIT"].includes(bySymbol.AAPL.action));
   assert.ok(bySymbol.AAPL.trailing_level > 0 && bySymbol.AAPL.target_1 > bySymbol.AAPL.buy_price);
   assert.match(list.disclaimer, /not personal financial advice/);
+  assert.ok([60, 600].includes(list.refresh_after_seconds), "The response must tell clients how soon to re-check");
   assert.equal(db.rows.find(row => row.symbol === "NVDA").last_action, "EXIT", "The latest decision must be remembered so changes can be shown");
   assert.equal((await (await as("bob", "/api/holdings")).json()).open.length, 0, "Holdings must stay private to their owner");
   const nvda = bySymbol.NVDA.id;

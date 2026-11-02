@@ -227,16 +227,19 @@ function render(data){
  totalsEl.innerHTML=data.totals.map(t=>`<span><b>${esc(t.market)}</b> value ${money(t.currency_symbol,2,t.value)} · <span class="${cls(t.pnl_value)}">${signed(t.currency_symbol,2,t.pnl_value)} (${t.pnl_pct>=0?'+':''}${t.pnl_pct.toFixed(2)}%)</span></span>`).join('');
  listEl.innerHTML=data.open.length?data.open.map(card).join(''):'<div class="status" style="margin-top:14px">No holdings yet. Add a stock you bought above.</div>';
  closedEl.innerHTML=data.closed.length?`<h4 style="margin:22px 0 4px">Closed</h4>`+data.closed.map(c=>`<div class="h-meta">${esc(c.symbol)} · ${Number(c.shares)} sh · bought ${money(c.currency_symbol,c.price_decimals,c.buy_price)}, sold ${money(c.currency_symbol,c.price_decimals,c.sell_price)} · <b class="${cls(c.pnl_value)}">${signed(c.currency_symbol,2,c.pnl_value)} (${c.pnl_pct>=0?'+':''}${c.pnl_pct.toFixed(2)}%)</b></div>`).join(''):'';
- statusEl.textContent='Checked '+new Date(data.updated_at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})+'. Re-checks every 5 minutes while this page is open.';
+ statusEl.textContent='Updated '+new Date(data.updated_at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'})+' · auto-updates about every '+(data.refresh_after_seconds>=600?'10 minutes (markets closed)':'minute (market open)')+' while this page is open.';
 }
-async function load(){statusEl.textContent='Checking your holdings…';try{render(await post('/api/holdings'))}catch(e){statusEl.textContent=e.message}}
+let timer=null,busy=false;
+async function load(manual){if(busy)return;busy=true;clearTimeout(timer);const btn=el('holdings-refresh');btn.disabled=true;btn.textContent='Refreshing…';let wait=300;
+ try{const data=await post('/api/holdings',{refresh:manual===true});render(data);wait=data.refresh_after_seconds||300}catch(e){statusEl.textContent=e.message}
+ finally{busy=false;btn.disabled=false;btn.textContent='Refresh';timer=setTimeout(()=>{if(!document.hidden)load();else timer=null},wait*1000)}}
 formEl.addEventListener('submit',async e=>{e.preventDefault();const b=formEl.querySelector('button');b.disabled=true;statusEl.textContent='Looking up market data…';
  try{await post('/api/holdings/add',{market:el('h-market').value,symbol:el('h-symbol').value,shares:el('h-shares').value,price:el('h-price').value,bought_at:el('h-date').value});formEl.reset();el('h-date').value=el('h-date').max;await load()}catch(err){statusEl.textContent=err.message}finally{b.disabled=false}});
 document.getElementById('holdings').addEventListener('click',async e=>{const sold=e.target.closest('[data-sold]'),rem=e.target.closest('[data-remove]');
  try{if(sold){const v=prompt('Price you sold at, per share:',sold.dataset.price||'');if(v===null)return;await post('/api/holdings/close',{id:sold.dataset.sold,sell_price:v});await load()}
  else if(rem){if(!confirm('Remove this holding? It will not be kept in your closed list.'))return;await post('/api/holdings/remove',{id:rem.dataset.remove});await load()}}catch(err){statusEl.textContent=err.message}});
-el('holdings-refresh').addEventListener('click',load);
+el('holdings-refresh').addEventListener('click',()=>load(true));document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!el('holding-form').classList.contains('hidden'))load()});
 fetch('/api/access').then(r=>r.json()).then(a=>{if(!a.signed_in){signinEl.classList.remove('hidden');el('holdings-refresh').classList.add('hidden');return}
- formEl.classList.remove('hidden');load();setInterval(()=>{if(!document.hidden)load()},300000)}).catch(()=>{});
+ formEl.classList.remove('hidden');load()}).catch(()=>{});
 })();
 </script></body></html>
