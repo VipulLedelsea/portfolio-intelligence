@@ -239,6 +239,11 @@ assert.ok(callsPerUsScan > 0 && callsPerUsScan <= usCalls, "A US manual refresh 
 await Promise.all([post("/api/discover", { market: "US", refresh: true }), post("/api/discover", { market: "US", refresh: true }), post("/api/discover", { market: "US", refresh: true })]);
 assert.ok(fetchLog.length - usCalls - callsPerUsScan <= callsPerUsScan * 2, "Simultaneous manual refreshes must share a scan instead of each making their own");
 assert.equal(usScan.auto_refresh, false, "US keeps a manual refresh control");
+assert.ok(usScan.market_trend && ["UP", "MIXED", "DOWN"].includes(usScan.market_trend.state), "The US scan must report the market trend");
+assert.equal(usScan.market_trend.index_symbol, "SPY");
+assert.equal(usScan.market_trend.label, "S&P 500");
+assert.ok(usScan.market_trend.breadth_daily_pct >= 0 && usScan.market_trend.breadth_daily_pct <= 100 && usScan.market_trend.stocks_counted === 503, "Breadth must come from the scanned stocks, not the index");
+assert.ok(![...usScan.candidates, ...usScan.late_candidates].some(item => item.symbol === "SPY"), "The index must never appear as a candidate");
 
 const inScan = await (await post("/api/discover", { market: "IN" }, { TWELVE_DATA_API_KEY: "test-key" })).json();
 assert.equal(inScan.market, "IN");
@@ -246,6 +251,14 @@ assert.equal(inScan.universe_size, 30, "The Sensex 30 universe must have 30 symb
 assert.equal(inScan.successful, 30);
 assert.equal([...inScan.candidates, ...inScan.late_candidates][0].currency_symbol, "₹");
 assert.ok(fetchLog.includes("api.twelvedata.com"), "A Twelve Data key must route requests to Twelve Data");
+assert.equal(inScan.market_trend, null, "Without a usable index feed the trend is left out rather than guessed");
+{
+  const yahooModule = await import(`data:text/javascript;base64,${Buffer.from(`${source}\n//index-test`).toString("base64")}`);
+  const scan = await (await yahooModule.default.fetch(new Request("https://example.test/api/discover", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ market: "IN" }) }), {}, { waitUntil() {} })).json();
+  assert.equal(scan.market_trend?.label, "Sensex 30", "The India scan must report the Sensex trend");
+  assert.equal(scan.market_trend.index_symbol, "^BSESN");
+  assert.equal(scan.successful, 30, "The Sensex index must not count as a stock");
+}
 
 const fxAnalysis = await (await post("/api/analyze", { market: "FX", symbol: "EURUSD" })).json();
 assert.equal(fxAnalysis.market, "FX");

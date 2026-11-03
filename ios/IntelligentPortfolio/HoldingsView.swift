@@ -647,6 +647,7 @@ private struct PortfolioPanel: View {
     private func marketSection(_ m: PortfolioMarket, limit: Double) -> some View {
         let symbol = m.currencySymbol
         Text(m.label.uppercased()).font(.caption.monospaced().bold()).foregroundStyle(AppTheme.amber)
+        if let trend = model.holdings?.marketTrends?[m.market] ?? nil { MarketTrendCard(trend: trend) }
         if !m.concentrated.isEmpty {
             let names = m.concentrated.map { "\($0.symbol) is \(String(format: "%.1f", $0.weightPct))%" }.joined(separator: ", ")
             Text("Concentrated: \(names) of your \(m.label) holdings (limit \(Int(limit))%). One bad move in a single stock would hit your total hard.")

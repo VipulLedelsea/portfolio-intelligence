@@ -73,6 +73,8 @@ struct ScannerView: View {
                     .font(.caption.monospaced())
                     .foregroundStyle(AppTheme.muted)
 
+                    if let trend = discovery.marketTrend { MarketTrendCard(trend: trend) }
+
                     ForEach(discovery.candidates) { candidate in
                         Button { selected = candidate } label: {
                             CandidateCard(candidate: candidate, isSelected: selectable && selected == candidate)

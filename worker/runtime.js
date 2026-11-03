@@ -48,7 +48,7 @@ const FOREX_PAIRS = [
 
 const MARKETS = {
   US: { id: "US", name: "S&P 500", label: "US stocks", provider: "robinhood", auto: false, tz: "America/New_York", dailyCloseMinutes: 16 * 60, currency: "USD", symbolPrefix: "$", decimals: () => 2 },
-  IN: { id: "IN", name: "Sensex 30", label: "India (BSE)", provider: "external", auto: true, tz: "Asia/Kolkata", dailyCloseMinutes: 15 * 60 + 35, currency: "INR", symbolPrefix: "₹", decimals: () => 2, universe: SENSEX_30, yahoo: symbol => `${symbol}.BO`, twelve: symbol => symbol, twelveExchange: "BSE", tradingView: symbol => `BSE:${symbol.replace(/[^A-Z0-9_-]/g, "_")}` },
+  IN: { id: "IN", name: "Sensex 30", label: "India (BSE)", provider: "external", auto: true, tz: "Asia/Kolkata", dailyCloseMinutes: 15 * 60 + 35, currency: "INR", symbolPrefix: "₹", decimals: () => 2, universe: SENSEX_30, yahoo: symbol => symbol.startsWith("^") ? symbol : `${symbol}.BO`, twelve: symbol => symbol, twelveExchange: "BSE", tradingView: symbol => `BSE:${symbol.replace(/[^A-Z0-9_-]/g, "_")}` },
   FX: { id: "FX", name: "Major forex pairs", label: "Forex", provider: "external", auto: true, tz: "UTC", dailyCloseMinutes: Infinity, currency: "", symbolPrefix: "", decimals: value => value >= 20 ? 3 : 5, universe: FOREX_PAIRS, yahoo: symbol => `${symbol}=X`, twelve: symbol => `${symbol.slice(0, 3)}/${symbol.slice(3)}`, tradingView: symbol => `FX:${symbol}` },
 };
 
@@ -1010,11 +1010,46 @@ function fetchSnapshots(symbols, market = MARKETS.US, env = {}) {
   return market.provider === "robinhood" ? fetchRobinhoodSnapshots(symbols) : fetchExternalSnapshots(symbols, market, env);
 }
 
+// The index each market's trend banner reads. It is fetched in the same batches as the stocks (no extra requests for
+// the S&P 500) and removed before ranking so it never appears as a candidate.
+const MARKET_INDEX = { US: { symbol: "SPY", label: "S&P 500" }, IN: { symbol: "^BSESN", label: "Sensex 30" } };
+
+function marketTrend(info, index, snapshots) {
+  if (!info || !index) return null;
+  const daily = index.daily_supertrend?.direction === "LONG" ? "UP" : "DOWN";
+  const fourHour = index.supertrend?.direction === "LONG" ? "UP" : "DOWN";
+  const all = [...snapshots.values()];
+  const share = pick => all.length ? round(all.filter(snapshot => pick(snapshot) === "LONG").length / all.length * 100, 0) : null;
+  const state = daily === "UP" && fourHour === "UP" ? "UP" : daily === "DOWN" && fourHour === "DOWN" ? "DOWN" : "MIXED";
+  const headline = state === "UP" ? "Market is in an uptrend" : state === "DOWN" ? "Market is in a downtrend"
+    : daily === "UP" ? "Choppy: daily up, 4H down" : "Choppy: daily down, 4H up";
+  const note = state === "UP" ? "Fresh long entries are moving with the market."
+    : state === "DOWN" ? "Long entries are going against the market. Watch protective levels closely."
+    : daily === "UP" ? "A pullback inside an uptrend. Fresh entries are less reliable until the 4H turns up."
+    : "A bounce inside a downtrend. Treat long entries with extra care.";
+  return {
+    state, headline, note,
+    index_symbol: info.symbol, label: info.label,
+    daily, four_hour: fourHour,
+    adx: round(numeric(index.daily_adx?.value), 0),
+    breadth_daily_pct: share(snapshot => snapshot.daily_supertrend?.direction),
+    breadth_4h_pct: share(snapshot => snapshot.supertrend?.direction),
+    stocks_counted: all.length,
+    as_of: index.market_time || null,
+  };
+}
+
 async function discover(market = MARKETS.US, env = {}) {
   const records = market.universe || await loadUniverse();
   const metadata = new Map(records.map(record => [record.symbol, record]));
   const symbols = [...metadata.keys()];
-  const { snapshots, errors } = await fetchSnapshots(symbols, market, env);
+  const indexInfo = MARKET_INDEX[market.id];
+  const withIndex = Boolean(indexInfo) && !(market.provider !== "robinhood" && env?.TWELVE_DATA_API_KEY);
+  const fetched = await fetchSnapshots(withIndex ? [...symbols, indexInfo.symbol] : symbols, market, env);
+  const errors = withIndex ? fetched.errors.filter(error => error.symbol !== indexInfo.symbol) : fetched.errors;
+  const snapshots = new Map(fetched.snapshots);
+  const indexSnapshot = withIndex ? snapshots.get(indexInfo.symbol) : null;
+  if (withIndex) snapshots.delete(indexInfo.symbol);
   const allCandidates = [...snapshots.entries()].map(([symbol, snapshot]) => scoreCandidate(snapshot, metadata.get(symbol))).sort((a, b) => b.score - a.score || a.symbol.localeCompare(b.symbol));
   const candidates = allCandidates.filter(candidate => candidate.entry_eligible);
   const lateCandidates = allCandidates.filter(candidate => !candidate.entry_eligible);
@@ -1022,6 +1057,7 @@ async function discover(market = MARKETS.US, env = {}) {
   const shortCandidates = candidates.filter(candidate => candidate.direction === "SHORT").sort((a, b) => b.short_score - a.short_score || a.symbol.localeCompare(b.symbol));
   return {
     generated_at: new Date().toISOString(),
+    market_trend: marketTrend(withIndex ? indexInfo : null, indexSnapshot, snapshots),
     market: market.id,
     market_label: market.label,
     currency: market.currency,
@@ -1784,6 +1820,7 @@ async function listHoldings(request, env) {
     refresh_after_seconds: anyOpen ? 60 : 600,
     open: openOut,
     portfolio: await buildPortfolio(openOut),
+    market_trends: Object.fromEntries(await Promise.all([...symbolsByMarket.keys()].filter(id => MARKETS[id]).map(async id => [id, (await readStoredScan(env, MARKETS[id]))?.payload?.market_trend || null]))),
     closed: closed.slice(0, 20).map(row => ({ ...base(row), sell_price: row.sell_price, closed_at: row.closed_at, pnl_value: round((row.sell_price - row.buy_price) * row.shares, 2), pnl_pct: round((row.sell_price / row.buy_price - 1) * 100, 2) })),
     totals: [...totals.values()].map(total => ({ ...total, cost: round(total.cost, 2), value: round(total.value, 2), pnl_value: round(total.value - total.cost, 2), pnl_pct: total.cost ? round((total.value / total.cost - 1) * 100, 2) : 0 })),
     disclaimer: "Automated research scenarios from public price data, not personal financial advice. You decide what to do; nothing is ever sent to a broker.",

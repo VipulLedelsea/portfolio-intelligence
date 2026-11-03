@@ -85,6 +85,7 @@ enum PriceFormat {
 
 struct DiscoveryResponse: Decodable, Sendable {
     let market: String?
+    let marketTrend: MarketTrend?
     let autoRefresh: Bool?
     let refreshedAt: String?
     let warmingUp: Bool?
@@ -230,6 +231,7 @@ struct HoldingsResponse: Decodable, Sendable {
     let closed: [ClosedHolding]
     let totals: [HoldingTotal]
     let portfolio: PortfolioSummary?
+    let marketTrends: [String: MarketTrend?]?
     let disclaimer: String
 }
 
@@ -450,4 +452,16 @@ struct PortfolioReading: Decodable, Identifiable, Sendable {
 struct PortfolioConcentrated: Decodable, Sendable {
     let symbol: String
     let weightPct: Double
+}
+
+/// How the market's main index is trending, from the same Supertrend and ADX the scanner uses.
+struct MarketTrend: Decodable, Sendable {
+    let state: String
+    let headline: String
+    let note: String
+    let label: String
+    let daily: String
+    let fourHour: String
+    let adx: Double
+    let breadthDailyPct: Double?
 }
