@@ -129,6 +129,26 @@ struct Candidate: Decodable, Identifiable, Hashable, Sendable {
     /// When this setup stops counting as a fresh entry (about a trading day after the signal).
     let windowClosesAt: String?
     let firstSeenAt: String?
+    let buyRange: BuyRange?
+}
+
+/// The zones around a signal price: failing, deep dip, buy zone, extended and chasing, with where the price sits now.
+struct BuyRange: Decodable, Hashable, Sendable {
+    let state: String
+    let label: String
+    let price: Double
+    let entry: Double
+    let atr: Double
+    let zones: [BuyZone]
+    let scaleMin: Double
+    let scaleMax: Double
+}
+
+struct BuyZone: Decodable, Hashable, Sendable {
+    let key: String
+    let label: String
+    let lo: Double?
+    let hi: Double?
 }
 
 /// A setup that was a fresh entry in the last 24 hours and no longer is, with why and how the price has moved since.

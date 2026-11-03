@@ -997,6 +997,7 @@ function scoreCandidate(snapshot, metadata = {}) {
     signal_atr: round(signalAtr, 4),
     extension_atr: round(extensionAtr, 3),
     extension_pct: round(extensionPct, 3),
+    buy_range: buyRange(direction, entryReference, signalAtr, price),
     entry_status: entryStatus,
     entry_eligible: entryEligible,
     target_1_reached: target1Reached,
@@ -1130,6 +1131,37 @@ function recentSetups(previous, allCandidates, freshSymbols, nowIso) {
     });
   }
   return out.sort((a, b) => Date.parse(b.dropped_at) - Date.parse(a.dropped_at)).slice(0, 30);
+}
+
+// The buy range around a signal, in units of the signal bar's 4-hour range (ATR). Measured as the favourable move
+// from the signal price. Edges come from the entry-timing backtest: entries from 1 range below to 0.5 above
+// matched the current entry rules; entries up to 2 ranges above still worked; beyond that, or 3 ranges below, they
+// weakened. It is guidance only and does not change which setups count as fresh.
+const BUY_RANGE_ZONES = [
+  { key: "FAILING", label: "Failing", from: -Infinity, to: -3 },
+  { key: "DEEP_DIP", label: "Deep dip", from: -3, to: -1 },
+  { key: "IN_BUY_RANGE", label: "In buy range", from: -1, to: 0.5 },
+  { key: "EXTENDED", label: "Extended", from: 0.5, to: 2 },
+  { key: "CHASING", label: "Chasing", from: 2, to: Infinity },
+];
+
+function buyRange(direction, entry, atr, price) {
+  if (!(entry > 0) || !(atr > 0) || !(price > 0)) return null;
+  const sign = direction === "SHORT" ? -1 : 1;
+  const favourable = sign * (price - entry) / atr;
+  const zone = BUY_RANGE_ZONES.find(item => favourable >= item.from && favourable < item.to) || BUY_RANGE_ZONES[BUY_RANGE_ZONES.length - 1];
+  const at = move => Number.isFinite(move) ? round(entry + sign * move * atr, 4) : null;
+  const zones = BUY_RANGE_ZONES.map(item => sign === 1
+    ? { key: item.key, label: item.label, lo: at(item.from), hi: at(item.to) }
+    : { key: item.key, label: item.label, lo: at(item.to), hi: at(item.from) });
+  if (sign === -1) zones.reverse();
+  const edges = zones.flatMap(item => [item.lo, item.hi]).filter(value => value !== null);
+  return {
+    state: zone.key, label: zone.label,
+    price: round(price, 4), entry: round(entry, 4), atr: round(atr, 4),
+    zones,
+    scale_min: round(Math.min(...edges) - 0.7 * atr, 4), scale_max: round(Math.max(...edges) + 0.7 * atr, 4),
+  };
 }
 
 async function discover(market = MARKETS.US, env = {}, previous = null) {

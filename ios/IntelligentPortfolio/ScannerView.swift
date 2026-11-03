@@ -249,6 +249,9 @@ private struct CandidateCard: View {
                 }
             }
             ProgressView(value: candidate.score, total: 100).tint(AppTheme.amber)
+            if let range = candidate.buyRange {
+                BuyRangeBar(range: range, currency: candidate.currencySymbol, decimals: candidate.priceDecimals)
+            }
             if let closing = candidate.windowClosesAt.flatMap(PairingExpiryParser.date(from:)) {
                 Label("Entry window closes \(timeText(closing)) · \(leftText(closing))", systemImage: "timer")
                     .font(.caption)
@@ -323,5 +326,62 @@ private struct RecentSetupCard: View {
         let seen = setup.candidate.firstSeenAt.flatMap(PairingExpiryParser.date(from:)).map(timeText)
         let dropped = PairingExpiryParser.date(from: setup.droppedAt).map(timeText)
         return [seen.map { "First seen \($0)" }, dropped.map { "dropped out \($0)" }].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+/// A slim bar of the zones around the signal price with the current price marked, plus where that puts the setup.
+private struct BuyRangeBar: View {
+    let range: BuyRange
+    let currency: String?
+    let decimals: Int?
+
+    private func colour(_ key: String) -> Color {
+        switch key {
+        case "IN_BUY_RANGE": AppTheme.mint
+        case "DEEP_DIP", "EXTENDED": AppTheme.amber
+        default: AppTheme.red
+        }
+    }
+
+    private func money(_ value: Double) -> String { PriceFormat.string(value, prefix: currency, decimals: decimals) }
+
+    var body: some View {
+        let span = max(range.scaleMax - range.scaleMin, 0.0001)
+        let buy = range.zones.first { $0.key == "IN_BUY_RANGE" }
+        VStack(alignment: .leading, spacing: 6) {
+            GeometryReader { proxy in
+                let width = proxy.size.width
+                let x: (Double) -> CGFloat = { price in CGFloat(min(max((price - range.scaleMin) / span, 0), 1)) * width }
+                ZStack(alignment: .leading) {
+                    ForEach(range.zones, id: \.key) { zone in
+                        let start = x(zone.lo ?? range.scaleMin), end = x(zone.hi ?? range.scaleMax)
+                        Rectangle()
+                            .fill(colour(zone.key).opacity(zone.key == "IN_BUY_RANGE" ? 1 : 0.5))
+                            .frame(width: max(0, end - start), height: 8)
+                            .offset(x: start)
+                    }
+                    Rectangle().fill(Color.primary.opacity(0.65)).frame(width: 1, height: 14).offset(x: x(range.entry))
+                    Rectangle().fill(Color.primary).frame(width: 3, height: 18).offset(x: x(range.price) - 1.5)
+                }
+                .frame(height: 18, alignment: .center)
+            }
+            .frame(height: 18)
+            HStack(spacing: 8) {
+                Text(range.label.uppercased())
+                    .font(.caption2.bold())
+                    .foregroundStyle(colour(range.state))
+                    .padding(.horizontal, 7).padding(.vertical, 2)
+                    .overlay(Rectangle().stroke(colour(range.state).opacity(0.7)))
+                if let buy, let lo = buy.lo, let hi = buy.hi {
+                    Text("Buy zone \(money(lo)) – \(money(hi))")
+                        .font(.caption)
+                        .foregroundStyle(AppTheme.muted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Buy range: \(range.label).\(buy.flatMap { zone in zone.lo.flatMap { lo in zone.hi.map { hi in " Buy zone \(money(lo)) to \(money(hi))." } } } ?? "")")
     }
 }

@@ -472,7 +472,7 @@ globalThis.fetch = realFetch;
 {
   const start = source.indexOf("// ---- Entry window timing"), end = source.indexOf("async function discover(");
   assert.ok(start > 0 && end > start, "The entry window helpers must be present");
-  const h = new Function("round", "MAX_ENTRY_AGE_BARS", `${source.slice(start, end)}; return { sessionBarEnds, nextBarEnds, recentSetups };`)((v, d = 0) => Math.round(v * 10 ** d) / 10 ** d, 1);
+  const h = new Function("round", "MAX_ENTRY_AGE_BARS", `${source.slice(start, end)}; return { sessionBarEnds, nextBarEnds, recentSetups, buyRange };`)((v, d = 0) => Math.round(v * 10 ** d) / 10 ** d, 1);
   const ny = { tz: "America/New_York" };
   const bar = iso => ({ ends_at: iso });
   const pattern = h.sessionBarEnds([
@@ -484,6 +484,25 @@ globalThis.fetch = realFetch;
   assert.deepEqual(iso(h.nextBarEnds(pattern, ny, new Date("2026-11-06T22:00:00Z"), 2)), ["2026-11-09T19:00:00.000Z", "2026-11-09T21:00:00.000Z"], "The next bar ends must skip the weekend");
   assert.deepEqual(iso(h.nextBarEnds(pattern, ny, new Date("2026-10-30T22:00:00Z"), 2)), ["2026-11-02T19:00:00.000Z", "2026-11-02T21:00:00.000Z"], "Clock changes must be handled (summer to winter time here)");
   assert.deepEqual(iso(h.nextBarEnds(pattern, ny, new Date("2026-10-28T20:30:00Z"), 2)), ["2026-10-29T18:00:00.000Z", "2026-10-29T20:00:00.000Z"], "Summer-time bars must land an hour earlier in UTC");
+
+  // Buy range: zones around the signal price, in units of the signal bar's range, mirrored for shorts.
+  const long = h.buyRange("LONG", 100, 2, 100.9);
+  assert.equal(long.state, "IN_BUY_RANGE");
+  assert.deepEqual(long.zones.map(z => z.key), ["FAILING", "DEEP_DIP", "IN_BUY_RANGE", "EXTENDED", "CHASING"], "A long's zones run from failing (lowest price) to chasing (highest)");
+  const buyZone = long.zones.find(z => z.key === "IN_BUY_RANGE");
+  assert.equal(buyZone.lo, 98); assert.equal(buyZone.hi, 101, "The buy zone runs from 1 range below to half a range above the signal price");
+  assert.equal(h.buyRange("LONG", 100, 2, 101).state, "EXTENDED");
+  assert.equal(h.buyRange("LONG", 100, 2, 104.5).state, "CHASING");
+  assert.equal(h.buyRange("LONG", 100, 2, 94).state, "DEEP_DIP");
+  assert.equal(h.buyRange("LONG", 100, 2, 93.9).state, "FAILING");
+  assert.equal(long.zones[0].lo, null); assert.equal(long.zones[4].hi, null, "The outer zones are open-ended");
+  const short = h.buyRange("SHORT", 100, 2, 99);
+  assert.equal(short.state, "EXTENDED", "For a short, a fall is the favourable move");
+  assert.deepEqual(short.zones.map(z => z.key), ["CHASING", "EXTENDED", "IN_BUY_RANGE", "DEEP_DIP", "FAILING"], "A short's zones run from chasing (lowest price) to failing (highest)");
+  const shortZone = short.zones.find(z => z.key === "IN_BUY_RANGE");
+  assert.equal(shortZone.lo, 99); assert.equal(shortZone.hi, 102);
+  assert.ok(short.scale_min < 96 && short.scale_max > 106, "The scale must leave room around the outer edges");
+  assert.equal(h.buyRange("LONG", 0, 2, 100), null, "No range without a valid signal price");
 
   const nowIso = "2026-11-03T20:00:00.000Z";
   const candidate = (symbol, extra = {}) => ({ symbol, direction: "LONG", price: 100, signal_entry_price: 100, entry_status: "ENTRY_WINDOW", extension_atr: 0, ...extra });
