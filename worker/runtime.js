@@ -1635,6 +1635,68 @@ const TRADE_SQL = "INSERT INTO holding_trades (id, user_id, holding_id, chain_id
 const tradeStatement = (env, userId, holdingId, row, side, shares, price, at, pnl = null, chainId = holdingId) =>
   env.DB.prepare(TRADE_SQL).bind(randomBase64Url(9), userId, holdingId, chainId, row.symbol, row.market, side, shares, price, at, pnl);
 
+const PORTFOLIO_CONCENTRATION_LIMIT = 25;
+const sectorCache = new Map();
+
+async function sectorsFor(marketId) {
+  const market = MARKETS[marketId];
+  if (market?.universe) return new Map(market.universe.map(entry => [entry.symbol, entry.sector || "Other"]));
+  const hit = sectorCache.get(marketId);
+  if (hit && Date.now() - hit.at < 12 * 3600 * 1000) return hit.map;
+  try {
+    const map = new Map((await loadUniverse()).map(record => [record.symbol, record.sector]));
+    sectorCache.set(marketId, { at: Date.now(), map });
+    return map;
+  } catch { return new Map(); }
+}
+
+// How the open holdings fit together, per market (rupees and dollars are never added): weights, sectors,
+// concentration, how much is at risk down to the protective levels, and how the readings split.
+async function buildPortfolio(items) {
+  const markets = [];
+  for (const marketId of HOLDING_MARKETS) {
+    const group = items.filter(item => item.market === marketId && item.action !== "NO_DATA");
+    if (!group.length) continue;
+    const sectors = await sectorsFor(marketId);
+    const value = group.reduce((sum, item) => sum + item.value, 0), cost = group.reduce((sum, item) => sum + item.cost, 0);
+    const bySymbol = new Map(), bySector = new Map(), byAction = new Map();
+    let riskToStops = 0;
+    for (const item of group) {
+      const sector = sectors.get(item.symbol) || "Unknown";
+      const position = bySymbol.get(item.symbol) || { symbol: item.symbol, sector, value: 0, cost: 0, action: item.action };
+      position.value += item.value; position.cost += item.cost;
+      bySymbol.set(item.symbol, position);
+      const sectorEntry = bySector.get(sector) || { sector, value: 0 };
+      sectorEntry.value += item.value; bySector.set(sector, sectorEntry);
+      const actionEntry = byAction.get(item.action) || { action: item.action, label: HOLDING_ACTIONS[item.action], count: 0, value: 0 };
+      actionEntry.count += 1; actionEntry.value += item.value; byAction.set(item.action, actionEntry);
+      riskToStops += Math.max(0, (item.current_price - item.stop_level) * item.shares);
+    }
+    const weight = amount => value ? round(amount / value * 100, 1) : 0;
+    const positions = [...bySymbol.values()].sort((a, b) => b.value - a.value).map(position => ({
+      symbol: position.symbol, sector: position.sector, action: position.action, value: round(position.value, 2), weight_pct: weight(position.value),
+      pnl_pct: position.cost ? round((position.value / position.cost - 1) * 100, 2) : 0,
+    }));
+    markets.push({
+      market: marketId,
+      label: MARKETS[marketId].label,
+      currency_symbol: MARKETS[marketId].symbolPrefix,
+      value: round(value, 2),
+      cost: round(cost, 2),
+      pnl_value: round(value - cost, 2),
+      pnl_pct: cost ? round((value / cost - 1) * 100, 2) : 0,
+      risk_to_stops_value: round(riskToStops, 2),
+      risk_to_stops_pct: value ? round(riskToStops / value * 100, 1) : 0,
+      positions,
+      sectors: [...bySector.values()].sort((a, b) => b.value - a.value).map(entry => ({ sector: entry.sector, value: round(entry.value, 2), weight_pct: weight(entry.value) })),
+      readings: [...byAction.values()].sort((a, b) => b.value - a.value).map(entry => ({ ...entry, value: round(entry.value, 2), weight_pct: weight(entry.value) })),
+      single_position: positions.length === 1,
+      concentrated: positions.length > 1 ? positions.filter(position => position.weight_pct > PORTFOLIO_CONCENTRATION_LIMIT).map(position => ({ symbol: position.symbol, weight_pct: position.weight_pct })) : [],
+    });
+  }
+  return { limit_pct: PORTFOLIO_CONCENTRATION_LIMIT, markets };
+}
+
 async function holdingsUser(request, env) {
   await requireSubscription(request, env);
   const user = await requestUser(request, env);
@@ -1721,6 +1783,7 @@ async function listHoldings(request, env) {
     updated_at: now,
     refresh_after_seconds: anyOpen ? 60 : 600,
     open: openOut,
+    portfolio: await buildPortfolio(openOut),
     closed: closed.slice(0, 20).map(row => ({ ...base(row), sell_price: row.sell_price, closed_at: row.closed_at, pnl_value: round((row.sell_price - row.buy_price) * row.shares, 2), pnl_pct: round((row.sell_price / row.buy_price - 1) * 100, 2) })),
     totals: [...totals.values()].map(total => ({ ...total, cost: round(total.cost, 2), value: round(total.value, 2), pnl_value: round(total.value - total.cost, 2), pnl_pct: total.cost ? round((total.value / total.cost - 1) * 100, 2) : 0 })),
     disclaimer: "Automated research scenarios from public price data, not personal financial advice. You decide what to do; nothing is ever sent to a broker.",
@@ -1843,11 +1906,19 @@ async function holdingStats(request, env) {
   const trades = (await env.DB.prepare("SELECT * FROM holding_trades WHERE user_id = ? ORDER BY at DESC, rowid DESC LIMIT 200").bind(user.id).all()).results || [];
   const latest = new Set();
   const seenChains = new Set();
+  const activeCount = new Map();
   for (const trade of trades) {
     if (trade.voided_at) continue;
     const chain = trade.chain_id || trade.holding_id;
+    activeCount.set(chain, (activeCount.get(chain) || 0) + 1);
     if (!seenChains.has(chain)) { seenChains.add(chain); latest.add(trade.id); }
   }
+  // What an edit may change on the newest entry: the share count (not for a full sale) and the date (opening purchase only).
+  const editable = trade => {
+    const chain = trade.chain_id || trade.holding_id;
+    if (trade.side === "BUY") return { shares: true, date: activeCount.get(chain) === 1 };
+    return { shares: trade.holding_id !== chain, date: false };
+  };
   return {
     updated_at: new Date().toISOString(),
     markets: computeHoldingStats(closed),
@@ -1857,6 +1928,7 @@ async function holdingStats(request, env) {
       realized_pnl: trade.realized_pnl == null ? null : round(trade.realized_pnl, 2),
       voided: Boolean(trade.voided_at),
       can_undo: latest.has(trade.id),
+      edit: latest.has(trade.id) ? editable(trade) : null,
     })),
     disclaimer: "Your own record of trades you entered. Past results do not predict future ones, and this is not personal financial advice.",
   };
@@ -1864,19 +1936,24 @@ async function holdingStats(request, env) {
 
 // Undo reverses the most recent entry of a position without deleting it: the entry stays in History marked as
 // undone and no longer counts in Performance. Older entries must be undone newest-first so averages stay exact.
-async function undoEntry(request, env) {
-  const user = await holdingsUser(request, env);
-  const id = String((await readBody(request)).id || "");
+// The entry an undo or edit may touch: the newest active one for its position, so averages stay exact.
+async function latestEntryContext(env, user, id) {
   if (!/^[A-Za-z0-9_-]{6,40}$/.test(id)) throw Object.assign(new Error("Entry not found"), { status: 404 });
   const trade = await env.DB.prepare("SELECT * FROM holding_trades WHERE id = ? AND user_id = ?").bind(id, user.id).first();
   if (!trade || trade.voided_at) throw Object.assign(new Error("That entry was not found or is already undone"), { status: 404 });
   const chain = trade.chain_id || trade.holding_id;
   const active = ((await env.DB.prepare("SELECT * FROM holding_trades WHERE user_id = ? AND chain_id = ? ORDER BY at DESC, rowid DESC").bind(user.id, chain).all()).results || []).filter(entry => !entry.voided_at);
-  if (!active.length || active[0].id !== trade.id) throw Object.assign(new Error("Only the most recent entry for this stock can be undone. Undo the newer one first."), { status: 400 });
-  const now = new Date().toISOString();
-  const voidTrade = env.DB.prepare("UPDATE holding_trades SET voided_at = ? WHERE id = ? AND user_id = ?").bind(now, trade.id, user.id);
+  if (!active.length || active[0].id !== trade.id) throw Object.assign(new Error("Only the most recent entry for this stock can be changed. Undo the newer one first."), { status: 400 });
   const holding = await env.DB.prepare("SELECT * FROM holdings WHERE id = ? AND user_id = ?").bind(trade.holding_id, user.id).first();
   if (!holding) throw Object.assign(new Error("Holding not found"), { status: 404 });
+  return { trade, chain, active, holding };
+}
+
+async function undoEntry(request, env) {
+  const user = await holdingsUser(request, env);
+  const { trade, chain, active, holding } = await latestEntryContext(env, user, String((await readBody(request)).id || ""));
+  const now = new Date().toISOString();
+  const voidTrade = env.DB.prepare("UPDATE holding_trades SET voided_at = ? WHERE id = ? AND user_id = ?").bind(now, trade.id, user.id);
   const shares = Number(trade.shares), price = Number(trade.price);
   if (trade.side === "BUY") {
     if (active.length === 1) {
@@ -1901,6 +1978,60 @@ async function undoEntry(request, env) {
     ]);
   }
   return { undone: true };
+}
+
+// Editing corrects the newest entry of a position: the old version stays in History marked as undone and a
+// corrected entry takes its place, so there is always a trail. Shares and price can change; the date only for
+// an opening purchase. A full sale keeps its share count (undo it and sell again to change that).
+async function editEntry(request, env) {
+  const user = await holdingsUser(request, env);
+  const body = await readBody(request);
+  const { trade, chain, active, holding } = await latestEntryContext(env, user, String(body.id || ""));
+  const price = Number(body.price);
+  if (!Number.isFinite(price) || price <= 0 || price > 1e8) throw Object.assign(new Error("Enter a valid price"), { status: 400 });
+  const oldShares = Number(trade.shares), oldPrice = Number(trade.price);
+  const shares = body.shares === undefined || body.shares === null || body.shares === "" ? oldShares : Number(body.shares);
+  if (!Number.isFinite(shares) || shares <= 0 || shares > 1e9) throw Object.assign(new Error("Enter a valid number of shares"), { status: 400 });
+  const now = new Date().toISOString();
+  const voidOld = env.DB.prepare("UPDATE holding_trades SET voided_at = ? WHERE id = ? AND user_id = ?").bind(now, trade.id, user.id);
+  const record = (count, at, pnl = null) => tradeStatement(env, user.id, trade.holding_id, holding, trade.side, count, price, at, pnl, chain);
+  if (trade.side === "BUY" && active.length === 1) {
+    if (holding.closed_at) throw Object.assign(new Error("This entry cannot be edited"), { status: 400 });
+    const today = new Date().toISOString().slice(0, 10);
+    const boughtAt = body.bought_at ? String(body.bought_at).slice(0, 10) : holding.bought_at;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(boughtAt) || boughtAt > today) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
+    await env.DB.batch([
+      env.DB.prepare("UPDATE holdings SET bought_at = ?, shares = ?, buy_price = ? WHERE id = ? AND user_id = ? AND closed_at IS NULL").bind(boughtAt, shares, price, holding.id, user.id),
+      voidOld, record(shares, `${boughtAt}T00:00:00.000Z`),
+    ]);
+  } else if (trade.side === "BUY") {
+    const before = Number(holding.shares) - oldShares;
+    if (holding.closed_at || before <= 1e-9) throw Object.assign(new Error("This entry cannot be edited"), { status: 400 });
+    const beforeAverage = (Number(holding.shares) * Number(holding.buy_price) - oldShares * oldPrice) / before;
+    const total = before + shares;
+    await env.DB.batch([
+      env.DB.prepare("UPDATE holdings SET shares = ?, buy_price = ? WHERE id = ? AND user_id = ? AND closed_at IS NULL").bind(total, (before * beforeAverage + shares * price) / total, holding.id, user.id),
+      voidOld, record(shares, trade.at),
+    ]);
+  } else if (trade.holding_id === chain) {
+    if (Math.abs(shares - oldShares) > 1e-9) throw Object.assign(new Error("To change how many shares you sold, undo this sale and record it again"), { status: 400 });
+    if (!holding.closed_at || holding.sell_price == null) throw Object.assign(new Error("This entry cannot be edited"), { status: 400 });
+    await env.DB.batch([
+      env.DB.prepare("UPDATE holdings SET sell_price = ? WHERE id = ? AND user_id = ?").bind(price, holding.id, user.id),
+      voidOld, record(oldShares, trade.at, (price - Number(holding.buy_price)) * oldShares),
+    ]);
+  } else {
+    const parent = await env.DB.prepare("SELECT * FROM holdings WHERE id = ? AND user_id = ?").bind(chain, user.id).first();
+    if (!parent || parent.closed_at) throw Object.assign(new Error("This sale cannot be edited because the position has changed"), { status: 400 });
+    const available = Number(parent.shares) + oldShares;
+    if (shares >= available - 1e-9) throw Object.assign(new Error("That would sell the whole remaining position. Undo this sale and use Sell all instead."), { status: 400 });
+    await env.DB.batch([
+      env.DB.prepare("UPDATE holdings SET shares = ? WHERE id = ? AND user_id = ? AND closed_at IS NULL").bind(available - shares, parent.id, user.id),
+      env.DB.prepare("UPDATE holdings SET shares = ?, sell_price = ? WHERE id = ? AND user_id = ?").bind(shares, price, holding.id, user.id),
+      voidOld, record(shares, trade.at, (price - Number(holding.buy_price)) * shares),
+    ]);
+  }
+  return { edited: true };
 }
 
 async function removeHolding(request, env) {
@@ -1964,6 +2095,7 @@ async function handle(request, env, ctx) {
     }
     if (url.pathname === "/api/holdings") return json(await listHoldings(request, env));
     if (url.pathname === "/api/holdings/undo") return json(await undoEntry(request, env));
+    if (url.pathname === "/api/holdings/edit") return json(await editEntry(request, env));
     if (url.pathname === "/api/holdings/stats") return json(await holdingStats(request, env));
     if (url.pathname === "/api/holdings/add") return json(await addHolding(request, env));
     if (url.pathname === "/api/holdings/increase") return json(await increaseHolding(request, env));

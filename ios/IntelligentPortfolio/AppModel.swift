@@ -209,6 +209,20 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Corrects the newest entry for a stock; the old version stays in History as undone.
+    func editEntry(id: String, shares: Double, price: Double, boughtAt: String?) async -> Bool {
+        guard let token else { return false }
+        do {
+            try await api.editEntry(EditEntryBody(id: id, shares: shares, price: price, boughtAt: boughtAt), token: token)
+            await refreshHoldings()
+            await refreshHoldingStats()
+            return true
+        } catch {
+            report(error)
+            return false
+        }
+    }
+
     /// Reverses the newest entry for a stock. It stays in History, marked as undone.
     func undoEntry(id: String) async {
         guard let token else { return }

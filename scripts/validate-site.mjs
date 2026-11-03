@@ -281,6 +281,10 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
         else if (sql.startsWith("UPDATE holdings SET closed_at = NULL")) { const r = this.rows.find(x => x.id === a[0] && x.user_id === a[1]); if (r) { r.closed_at = null; r.sell_price = null; } }
         else if (sql.startsWith("UPDATE holdings SET closed_at = ?, sell_price = NULL")) { const r = this.rows.find(x => x.id === a[1] && x.user_id === a[2]); if (r) { r.closed_at = a[0]; r.sell_price = null; } }
         else if (sql.startsWith("UPDATE holdings SET shares = shares +")) { const r = this.rows.find(x => x.id === a[1] && x.user_id === a[2] && !x.closed_at); if (r) r.shares += a[0]; }
+        else if (sql.startsWith("UPDATE holdings SET bought_at = ?")) { const r = this.rows.find(x => x.id === a[3] && x.user_id === a[4] && !x.closed_at); if (r) { r.bought_at = a[0]; r.shares = a[1]; r.buy_price = a[2]; } }
+        else if (sql.startsWith("UPDATE holdings SET sell_price = ? WHERE")) { const r = this.rows.find(x => x.id === a[1] && x.user_id === a[2]); if (r) r.sell_price = a[0]; }
+        else if (sql.startsWith("UPDATE holdings SET shares = ? WHERE")) { const r = this.rows.find(x => x.id === a[1] && x.user_id === a[2] && !x.closed_at); if (r) r.shares = a[0]; }
+        else if (sql.startsWith("UPDATE holdings SET shares = ?, sell_price = ?")) { const r = this.rows.find(x => x.id === a[2] && x.user_id === a[3]); if (r) { r.shares = a[0]; r.sell_price = a[1]; } }
         else if (sql.startsWith("UPDATE holdings SET sell_price = NULL")) { const r = this.rows.find(x => x.id === a[0] && x.user_id === a[1]); if (r) r.sell_price = null; }
         else if (sql.startsWith("DELETE FROM holding_trades WHERE holding_id")) this.trades = this.trades.filter(t => !(t.holding_id === a[0] && t.user_id === a[1]));
         else if (sql.startsWith("INSERT INTO holdings")) this.rows.push({ id: a[0], user_id: a[1], symbol: a[2], market: a[3], shares: a[4], buy_price: a[5], bought_at: a[6], created_at: a[7], closed_at: sql.includes("closed_at, sell_price") ? a[8] : null, sell_price: sql.includes("closed_at, sell_price") ? a[9] : null, last_action: null, last_action_at: null });
@@ -397,6 +401,49 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
   const afterUndo = await (await as("alice", "/api/holdings")).json();
   assert.ok(!afterUndo.open.some(item => item.symbol === "GOOGL") && !afterUndo.closed.some(item => item.symbol === "GOOGL"), "An undone opening purchase must disappear from positions");
   assert.ok(db.trades.some(t => t.holding_id === googl.id && t.voided_at), "...but stay in the record");
+
+  // Portfolio view: weights, concentration, risk to the protective levels.
+  assert.equal((await as("alice", "/api/holdings/add", { symbol: "TSLA", shares: 10, price: 50 })).status, 200);
+  assert.equal((await as("alice", "/api/holdings/add", { symbol: "META", shares: 10, price: 50 })).status, 200);
+  const withPortfolio = await (await as("alice", "/api/holdings")).json();
+  const usBook = withPortfolio.portfolio.markets.find(item => item.market === "US");
+  assert.equal(withPortfolio.portfolio.limit_pct, 25);
+  assert.ok(usBook.positions.length >= 2 && Math.abs(usBook.positions.reduce((sum, item) => sum + item.weight_pct, 0) - 100) < 0.5, "Position weights must add up to about 100%");
+  assert.ok(usBook.concentrated.length >= 1, "A position above the concentration limit must be flagged");
+  assert.ok(usBook.risk_to_stops_value > 0 && usBook.readings.length >= 1 && usBook.sectors.length >= 1);
+  assert.equal(usBook.currency_symbol, "$");
+
+  // Editing the newest entry: shares and price (date only for the opening purchase), older entries are locked.
+  const tsla = db.rows.find(row => row.symbol === "TSLA" && !row.closed_at), meta = db.rows.find(row => row.symbol === "META" && !row.closed_at);
+  assert.equal((await as("alice", "/api/holdings/increase", { id: tsla.id, shares: 10, price: 70 })).status, 200);
+  const tslaTrades = () => db.trades.filter(t => t.holding_id === tsla.id).sort((x, y) => y.at.localeCompare(x.at) || y.seq - x.seq);
+  assert.equal((await as("alice", "/api/holdings/edit", { id: tslaTrades().find(t => !t.voided_at && t.at.endsWith("T00:00:00.000Z")).id, shares: 1, price: 1 })).status, 400, "An older entry cannot be edited while a newer one is active");
+  assert.equal((await as("bob", "/api/holdings/edit", { id: tslaTrades()[0].id, shares: 5, price: 80 })).status, 404, "Another user must not be able to edit someone else's entry");
+  assert.equal((await as("alice", "/api/holdings/edit", { id: tslaTrades()[0].id, shares: 0, price: 80 })).status, 400, "An edit needs valid shares");
+  assert.equal((await as("alice", "/api/holdings/edit", { id: tslaTrades()[0].id, shares: 5, price: 80 })).status, 200);
+  assert.equal(tsla.shares, 15, "Editing a purchase must change the share count");
+  assert.ok(Math.abs(tsla.buy_price - (10 * 50 + 5 * 80) / 15) < 1e-9, "Editing a purchase must recompute the average price");
+  assert.equal(tslaTrades().filter(t => t.voided_at).length, 1, "The old version of an edited entry must stay as undone");
+  assert.equal(tslaTrades().find(t => !t.voided_at && t.side === "BUY" && t.shares === 5).price, 80);
+  const openingMeta = db.trades.find(t => t.holding_id === meta.id);
+  assert.equal((await as("alice", "/api/holdings/edit", { id: openingMeta.id, shares: 10, price: 55, bought_at: "2026-10-01" })).status, 200);
+  assert.equal(meta.buy_price, 55); assert.equal(meta.bought_at, "2026-10-01", "An opening purchase date can be corrected");
+  assert.equal((await as("alice", "/api/holdings/edit", { id: db.trades.find(t => t.holding_id === meta.id && !t.voided_at).id, shares: 10, price: 55, bought_at: "2999-01-01" })).status, 400, "A future purchase date must be rejected");
+  assert.equal((await as("alice", "/api/holdings/sell", { id: meta.id, shares: 5, price: 120 })).status, 200);
+  const metaPiece = db.rows.find(row => row.symbol === "META" && row.closed_at && row.sell_price === 120);
+  const metaSale = () => db.trades.find(t => t.holding_id === metaPiece.id && !t.voided_at);
+  assert.equal((await as("alice", "/api/holdings/edit", { id: metaSale().id, shares: 4, price: 130 })).status, 200);
+  assert.equal(meta.shares, 6, "Editing a partial sale must return the difference to the position");
+  assert.equal(metaPiece.shares, 4); assert.equal(metaPiece.sell_price, 130);
+  assert.equal(metaSale().realized_pnl, (130 - 55) * 4, "The edited sale must carry its recomputed profit");
+  assert.equal((await as("alice", "/api/holdings/edit", { id: metaSale().id, shares: 10, price: 130 })).status, 400, "An edit may not sell the whole remaining position");
+  assert.equal((await as("alice", "/api/holdings/sell", { id: meta.id, price: 140 })).status, 200);
+  const finalSale = db.trades.find(t => t.holding_id === meta.id && t.side === "SELL" && !t.voided_at);
+  assert.equal((await as("alice", "/api/holdings/edit", { id: finalSale.id, shares: 3, price: 150 })).status, 400, "A full sale keeps its share count");
+  assert.equal((await as("alice", "/api/holdings/edit", { id: finalSale.id, price: 150 })).status, 200);
+  assert.equal(meta.sell_price, 150, "Editing a full sale must change its price");
+  const editFlags = (await (await as("alice", "/api/holdings/stats")).json()).history.filter(item => item.can_undo);
+  assert.ok(editFlags.every(item => item.edit && typeof item.edit.shares === "boolean" && typeof item.edit.date === "boolean"), "Entries that can be changed must say what an edit may change");
   assert.equal((await (await as("bob", "/api/holdings/stats")).json()).history.length, 0, "History must stay private to its owner");
 }
 globalThis.fetch = realFetch;

@@ -29,6 +29,8 @@ struct HoldingsView: View {
                                 .tint(AppTheme.amber)
                         }
                         .panel()
+                    } else if section == .portfolio {
+                        PortfolioPanel()
                     } else if section == .performance {
                         PerformancePanel()
                     } else if section == .history {
@@ -125,6 +127,7 @@ struct HoldingsView: View {
 
 private enum HoldingsSection: String, CaseIterable, Identifiable {
     case positions = "Positions"
+    case portfolio = "Portfolio"
     case performance = "Performance"
     case history = "History"
     var id: String { rawValue }
@@ -458,6 +461,7 @@ private struct PerformancePanel: View {
 private struct HistoryPanel: View {
     @EnvironmentObject private var model: AppModel
     @State private var undoTarget: TradeEntry?
+    @State private var editTarget: TradeEntry?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -484,6 +488,11 @@ private struct HistoryPanel: View {
                                 .strikethrough(trade.voided)
                                 .foregroundStyle(trade.voided ? AppTheme.muted : pnl >= 0 ? AppTheme.mint : AppTheme.red)
                         }
+                        if trade.canUndo, trade.edit != nil {
+                            Button("Edit") { editTarget = trade }
+                                .buttonStyle(.bordered)
+                                .font(.footnote)
+                        }
                         if trade.canUndo {
                             Button("Undo") { undoTarget = trade }
                                 .buttonStyle(.bordered)
@@ -493,7 +502,7 @@ private struct HistoryPanel: View {
                     .opacity(trade.voided ? 0.55 : 1)
                     .panel()
                 }
-                Text("Only the newest entry for a stock can be undone, so averages stay exact. Undone entries stay here, marked as undone, and do not count in Performance.")
+                Text("Only the newest entry for a stock can be undone or edited, so averages stay exact. Undone entries (including the old version of an edited one) stay here, marked as undone, and do not count in Performance.")
                     .font(.caption)
                     .foregroundStyle(AppTheme.muted)
             } else {
@@ -501,6 +510,7 @@ private struct HistoryPanel: View {
             }
         }
         .task { await model.refreshHoldingStats() }
+        .sheet(item: $editTarget) { trade in EditEntrySheet(trade: trade).environmentObject(model) }
         .confirmationDialog("Undo this entry?", isPresented: Binding(get: { undoTarget != nil }, set: { if !$0 { undoTarget = nil } }), titleVisibility: .visible) {
             Button("Undo", role: .destructive) {
                 if let entry = undoTarget { Task { await model.undoEntry(id: entry.id) } }
@@ -514,5 +524,167 @@ private struct HistoryPanel: View {
 
     private func dateText(_ iso: String) -> String {
         PairingExpiryParser.date(from: iso)?.formatted(date: .abbreviated, time: .omitted) ?? iso
+    }
+}
+
+/// Corrects the newest entry for a stock. The old version stays in History as undone.
+private struct EditEntrySheet: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    let trade: TradeEntry
+    @State private var shares: String
+    @State private var price: String
+    @State private var date: Date
+    @State private var saving = false
+
+    init(trade: TradeEntry) {
+        self.trade = trade
+        _shares = State(initialValue: shareText(trade.shares))
+        _price = State(initialValue: String(trade.price))
+        _date = State(initialValue: PairingExpiryParser.date(from: trade.at) ?? Date())
+    }
+
+    private var canEditShares: Bool { trade.edit?.shares ?? false }
+    private var canEditDate: Bool { trade.edit?.date ?? false }
+    private var count: Double? { Double(shares.replacingOccurrences(of: ",", with: ".")) }
+    private var value: Double? { Double(price.replacingOccurrences(of: ",", with: ".")) }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Text("\(trade.side == "BUY" ? "Bought" : "Sold") \(trade.symbol) · \(shareText(trade.shares)) shares at \(money(trade.currencySymbol, trade.priceDecimals, trade.price))")
+                TextField("Shares", text: $shares)
+                    .keyboardType(.decimalPad)
+                    .disabled(!canEditShares)
+                    .foregroundStyle(canEditShares ? .primary : .secondary)
+                TextField("Price per share", text: $price).keyboardType(.decimalPad)
+                if canEditDate {
+                    DatePicker("Bought on", selection: $date, in: ...Date(), displayedComponents: .date)
+                }
+                if !canEditShares {
+                    Text("To change how many shares you sold, undo this sale and record it again.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Text("The old version stays in History marked as undone, and Performance uses the corrected one.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .navigationTitle("Edit entry")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        guard let n = count, n > 0, let p = value, p > 0 else { return }
+                        saving = true
+                        Task {
+                            let day = canEditDate ? date.formatted(.iso8601.year().month().day()) : nil
+                            let saved = await model.editEntry(id: trade.id, shares: n, price: p, boughtAt: day)
+                            saving = false
+                            if saved { dismiss() }
+                        }
+                    }
+                    .disabled((count ?? 0) <= 0 || (value ?? 0) <= 0 || saving)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
+/// How the open holdings fit together, per market: weights, sectors, concentration and risk to the protective levels.
+private struct PortfolioPanel: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let portfolio = model.holdings?.portfolio {
+                if portfolio.markets.isEmpty {
+                    Text("Add a holding to see how your positions fit together.")
+                        .foregroundStyle(AppTheme.muted)
+                        .panel()
+                }
+                ForEach(portfolio.markets) { market in
+                    marketSection(market, limit: portfolio.limitPct)
+                }
+                Text("Risk down to protective levels is what you would lose if every holding fell to its protective level. It ignores overnight gaps. Weights use current prices. This is not personal financial advice.")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.muted)
+            } else {
+                ProgressView("Loading portfolio…").tint(AppTheme.amber)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func marketSection(_ m: PortfolioMarket, limit: Double) -> some View {
+        let symbol = m.currencySymbol
+        Text(m.label.uppercased()).font(.caption.monospaced().bold()).foregroundStyle(AppTheme.amber)
+        if !m.concentrated.isEmpty {
+            let names = m.concentrated.map { "\($0.symbol) is \(String(format: "%.1f", $0.weightPct))%" }.joined(separator: ", ")
+            Text("Concentrated: \(names) of your \(m.label) holdings (limit \(Int(limit))%). One bad move in a single stock would hit your total hard.")
+                .font(.footnote)
+                .foregroundStyle(AppTheme.amber)
+                .panel()
+        } else if m.singlePosition {
+            Text("Only one position, so everything rides on one stock.")
+                .font(.footnote)
+                .foregroundStyle(AppTheme.amber)
+                .panel()
+        }
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 8)], spacing: 8) {
+            tile("Total value", money(symbol, 2, m.value))
+            tile("Cost", money(symbol, 2, m.cost))
+            tile("Unrealised P/L", "\(signed(symbol, m.pnlValue)) (\(String(format: "%+.2f", m.pnlPct))%)", color: m.pnlValue >= 0 ? AppTheme.mint : AppTheme.red)
+            tile("Risk to protective levels", "\(money(symbol, 2, m.riskToStopsValue)) (\(String(format: "%.1f", m.riskToStopsPct))%)")
+            tile("Positions", "\(m.positions.count)")
+            if let largest = m.positions.first { tile("Largest", "\(largest.symbol) \(String(format: "%.1f", largest.weightPct))%") }
+        }
+        Text("WHERE YOUR MONEY IS").font(.caption2).foregroundStyle(AppTheme.muted)
+        ForEach(m.positions) { position in
+            row(title: position.symbol, subtitle: position.sector, weight: position.weightPct,
+                over: m.positions.count > 1 && position.weightPct > limit,
+                trailing: "\(String(format: "%.1f", position.weightPct))% · \(String(format: "%+.1f", position.pnlPct))%",
+                trailingColor: position.pnlPct >= 0 ? AppTheme.mint : AppTheme.red)
+        }
+        Text("BY SECTOR").font(.caption2).foregroundStyle(AppTheme.muted)
+        ForEach(m.sectors) { sector in
+            row(title: sector.sector, subtitle: nil, weight: sector.weightPct, over: false, trailing: "\(String(format: "%.1f", sector.weightPct))%", trailingColor: AppTheme.muted)
+        }
+        Text("WHAT THE READINGS SAY").font(.caption2).foregroundStyle(AppTheme.muted)
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 8)], spacing: 8) {
+            ForEach(m.readings) { reading in
+                tile(reading.label, "\(reading.count) holding\(reading.count == 1 ? "" : "s") · \(String(format: "%.1f", reading.weightPct))%")
+            }
+        }
+    }
+
+    private func row(title: String, subtitle: String?, weight: Double, over: Bool, trailing: String, trailingColor: Color) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.footnote.bold())
+                if let subtitle { Text(subtitle).font(.caption2).foregroundStyle(AppTheme.muted) }
+            }
+            .frame(width: 96, alignment: .leading)
+            GeometryReader { proxy in
+                Rectangle()
+                    .fill(over ? AppTheme.amber.opacity(0.7) : AppTheme.mint.opacity(0.5))
+                    .frame(width: max(3, proxy.size.width * weight / 100), height: 10)
+                    .frame(maxHeight: .infinity, alignment: .center)
+            }
+            .frame(height: 16)
+            Text(trailing).font(.caption.monospaced()).foregroundStyle(trailingColor)
+        }
+    }
+
+    private func tile(_ title: String, _ value: String, color: Color = .primary) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title.uppercased()).font(.caption2).foregroundStyle(AppTheme.muted)
+            Text(value).font(.footnote.bold()).foregroundStyle(color)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .overlay(Rectangle().stroke(AppTheme.line))
     }
 }

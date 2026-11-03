@@ -64,6 +64,10 @@ actor APIClient {
         let _: HoldingChangeResponse = try await request(path: "/api/holdings/sell", token: token, body: body)
     }
 
+    func editEntry(_ body: EditEntryBody, token: String) async throws {
+        let _: HoldingChangeResponse = try await request(path: "/api/holdings/edit", token: token, body: body)
+    }
+
     func undoEntry(id: String, token: String) async throws {
         let _: HoldingChangeResponse = try await request(path: "/api/holdings/undo", token: token, body: UndoEntryBody(id: id))
     }

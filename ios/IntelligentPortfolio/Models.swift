@@ -229,6 +229,7 @@ struct HoldingsResponse: Decodable, Sendable {
     let open: [Holding]
     let closed: [ClosedHolding]
     let totals: [HoldingTotal]
+    let portfolio: PortfolioSummary?
     let disclaimer: String
 }
 
@@ -314,6 +315,18 @@ struct SellHoldingBody: Encodable, Sendable {
     let price: Double
 }
 
+struct EditEntryBody: Encodable, Sendable {
+    let id: String
+    let shares: Double
+    let price: Double
+    let boughtAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, shares, price
+        case boughtAt = "bought_at"
+    }
+}
+
 struct UndoEntryBody: Encodable, Sendable {
     let id: String
 }
@@ -377,4 +390,64 @@ struct TradeEntry: Decodable, Identifiable, Sendable {
     let realizedPnl: Double?
     let voided: Bool
     let canUndo: Bool
+    let edit: TradeEditRules?
+}
+
+struct TradeEditRules: Decodable, Sendable {
+    let shares: Bool
+    let date: Bool
+}
+
+struct PortfolioSummary: Decodable, Sendable {
+    let limitPct: Double
+    let markets: [PortfolioMarket]
+}
+
+struct PortfolioMarket: Decodable, Identifiable, Sendable {
+    let market: String
+    let label: String
+    let currencySymbol: String
+    let value: Double
+    let cost: Double
+    let pnlValue: Double
+    let pnlPct: Double
+    let riskToStopsValue: Double
+    let riskToStopsPct: Double
+    let positions: [PortfolioPosition]
+    let sectors: [PortfolioSector]
+    let readings: [PortfolioReading]
+    let singlePosition: Bool
+    let concentrated: [PortfolioConcentrated]
+    var id: String { market }
+}
+
+struct PortfolioPosition: Decodable, Identifiable, Sendable {
+    let symbol: String
+    let sector: String
+    let action: String
+    let value: Double
+    let weightPct: Double
+    let pnlPct: Double
+    var id: String { symbol }
+}
+
+struct PortfolioSector: Decodable, Identifiable, Sendable {
+    let sector: String
+    let value: Double
+    let weightPct: Double
+    var id: String { sector }
+}
+
+struct PortfolioReading: Decodable, Identifiable, Sendable {
+    let action: String
+    let label: String
+    let count: Int
+    let value: Double
+    let weightPct: Double
+    var id: String { action }
+}
+
+struct PortfolioConcentrated: Decodable, Sendable {
+    let symbol: String
+    let weightPct: Double
 }
