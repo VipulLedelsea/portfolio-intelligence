@@ -25,7 +25,19 @@ private extension MarketTrend {
     var symbolName: String { state == "UP" ? "arrow.up.right" : state == "DOWN" ? "arrow.down.right" : "arrow.left.and.right" }
 }
 
+private struct ArcShape: Shape {
+    let from: Double
+    let to: Double
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.addArc(center: CGPoint(x: rect.midX, y: rect.midY), radius: min(rect.width, rect.height) / 2,
+                    startAngle: .degrees(from), endAngle: .degrees(to), clockwise: false)
+        return path
+    }
+}
+
 /// A glass ring split into Down, Mixed and Up with the current third lit and a trend arrow in the middle.
+/// It stays put when the index changes: the lit third and the colours animate instead of a panel sliding away.
 private struct TrendRing: View {
     let trend: MarketTrend
 
@@ -33,53 +45,55 @@ private struct TrendRing: View {
         ZStack {
             Circle().fill(.ultraThinMaterial)
             Circle().stroke(AppTheme.line, lineWidth: 1)
-            Canvas { context, size in
-                let centre = CGPoint(x: size.width / 2, y: size.height / 2)
-                let radius = min(size.width, size.height) / 2 - 5
-                let parts: [(String, Double, Double)] = [("DOWN", 100, 215), ("MIXED", 225, 315), ("UP", 325, 440)]
-                for (state, from, to) in parts {
-                    var arc = Path()
-                    arc.addArc(center: centre, radius: radius, startAngle: .degrees(from), endAngle: .degrees(to), clockwise: false)
-                    context.stroke(arc, with: .color(trendColour(state).opacity(state == trend.state ? 1 : 0.3)), style: StrokeStyle(lineWidth: 4, lineCap: .butt))
-                }
+            ForEach(["DOWN", "MIXED", "UP"], id: \.self) { state in
+                let angles: (Double, Double) = state == "DOWN" ? (100, 215) : state == "MIXED" ? (225, 315) : (325, 440)
+                ArcShape(from: angles.0, to: angles.1)
+                    .stroke(trendColour(state), style: StrokeStyle(lineWidth: 4, lineCap: .butt))
+                    .padding(5)
+                    .opacity(state == trend.state ? 1 : 0.3)
             }
             Image(systemName: trend.symbolName)
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(trendColour(trend.state))
+                .contentTransition(.symbolEffect(.replace))
         }
         .frame(width: 54, height: 54)
     }
 }
 
-/// Fills the empty strip beside the content on the Duo. Swipe sideways to move between the US indexes; tap for the detail.
+/// Fills the empty strip beside the content on the Duo. Swipe sideways to move between the US indexes (it wraps
+/// around); tap for the detail. Only the ring's reading and the labels change, so nothing slides out of a box.
 struct MarketTrendStrip: View {
     let trends: [MarketTrend]
     let onTap: (Int) -> Void
     @State private var page = 0
 
+    private var trend: MarketTrend { trends[min(page, trends.count - 1)] }
+
     var body: some View {
         VStack(spacing: 6) {
-            TabView(selection: $page) {
-                ForEach(Array(trends.enumerated()), id: \.offset) { index, trend in
-                    VStack(spacing: 5) {
-                        Text(trend.shortLabel).font(.system(size: 9, weight: .semibold)).tracking(0.4).foregroundStyle(AppTheme.muted)
-                        TrendRing(trend: trend)
-                        Text(trend.stateWord).font(.system(size: 11, weight: .semibold)).foregroundStyle(trendColour(trend.state))
-                        VStack(spacing: 1) {
-                            Text("ADX \(Int(trend.adx))")
-                            if let breadth = trend.breadthDailyPct { Text("\(Int(breadth))% up") }
-                        }
-                        .font(.system(size: 9))
-                        .foregroundStyle(AppTheme.muted)
+            VStack(spacing: 5) {
+                Text(trend.shortLabel)
+                    .font(.system(size: 9, weight: .semibold)).tracking(0.4)
+                    .foregroundStyle(AppTheme.muted)
+                    .id("label-\(page)")
+                    .transition(.opacity)
+                TrendRing(trend: trend)
+                VStack(spacing: 2) {
+                    Text(trend.stateWord)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(trendColour(trend.state))
+                    VStack(spacing: 1) {
+                        Text("ADX \(Int(trend.adx))")
+                        if let breadth = trend.breadthDailyPct { Text("\(Int(breadth))% up") }
                     }
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
-                    .onTapGesture { onTap(index) }
-                    .tag(index)
+                    .font(.system(size: 9))
+                    .foregroundStyle(AppTheme.muted)
                 }
+                .id("state-\(page)")
+                .transition(.opacity)
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 124)
+            .frame(height: 112)
             if trends.count > 1 {
                 HStack(spacing: 5) {
                     ForEach(0..<trends.count, id: \.self) { index in
@@ -88,10 +102,25 @@ struct MarketTrendStrip: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity)
+        .animation(.snappy(duration: 0.28), value: page)
+        .contentShape(Rectangle())
+        .onTapGesture { onTap(page) }
+        .gesture(
+            DragGesture(minimumDistance: 10).onEnded { drag in
+                guard trends.count > 1, abs(drag.translation.width) > 18, abs(drag.translation.width) > abs(drag.translation.height) else { return }
+                let step = drag.translation.width < 0 ? 1 : trends.count - 1
+                page = (page + step) % trends.count
+            }
+        )
         .sensoryFeedback(.selection, trigger: page)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(trends.indices.contains(page) ? "Market trend, \(trends[page].label): \(trends[page].headline). Swipe sideways for other indexes." : "Market trend")
+        .accessibilityLabel("Market trend, \(trend.label): \(trend.headline). Swipe sideways for other indexes.")
         .accessibilityAddTraits(.isButton)
+        .accessibilityAdjustableAction { direction in
+            guard trends.count > 1 else { return }
+            page = direction == .increment ? (page + 1) % trends.count : (page + trends.count - 1) % trends.count
+        }
     }
 }
 
