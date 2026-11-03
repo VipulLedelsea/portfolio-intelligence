@@ -36,6 +36,13 @@
       "when": 1793635045312,
       "tag": "0004_holdings",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1793719667186,
+      "tag": "0005_trade_history",
+      "breakpoints": true
     }
   ]
 }

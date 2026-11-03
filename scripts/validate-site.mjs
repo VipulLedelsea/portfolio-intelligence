@@ -270,12 +270,14 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
 // Holdings: positions entered by hand are evaluated by the same engine and stay private to their owner.
 {
   class HoldingsDb {
-    constructor() { this.rows = []; }
+    constructor() { this.rows = []; this.trades = []; }
     prepare(sql) {
       const statement = { args: [], bind: (...args) => { statement.args = args; return statement; } };
       statement.run = async () => {
         const a = statement.args;
-        if (sql.startsWith("INSERT INTO holdings")) this.rows.push({ id: a[0], user_id: a[1], symbol: a[2], market: a[3], shares: a[4], buy_price: a[5], bought_at: a[6], created_at: a[7], closed_at: sql.includes("closed_at, sell_price") ? a[8] : null, sell_price: sql.includes("closed_at, sell_price") ? a[9] : null, last_action: null, last_action_at: null });
+        if (sql.startsWith("INSERT INTO holding_trades")) this.trades.push({ id: a[0], user_id: a[1], holding_id: a[2], symbol: a[3], market: a[4], side: a[5], shares: a[6], price: a[7], at: a[8], realized_pnl: a[9] });
+        else if (sql.startsWith("DELETE FROM holding_trades WHERE holding_id")) this.trades = this.trades.filter(t => !(t.holding_id === a[0] && t.user_id === a[1]));
+        else if (sql.startsWith("INSERT INTO holdings")) this.rows.push({ id: a[0], user_id: a[1], symbol: a[2], market: a[3], shares: a[4], buy_price: a[5], bought_at: a[6], created_at: a[7], closed_at: sql.includes("closed_at, sell_price") ? a[8] : null, sell_price: sql.includes("closed_at, sell_price") ? a[9] : null, last_action: null, last_action_at: null });
         else if (sql.startsWith("UPDATE holdings SET shares = shares -")) { const row = this.rows.find(r => r.id === a[1] && r.user_id === a[2] && !r.closed_at && r.shares > a[3]); if (row) row.shares -= a[0]; }
         else if (sql.startsWith("UPDATE holdings SET last_action")) { const row = this.rows.find(r => r.id === a[2] && r.user_id === a[3]); if (row) { row.last_action = a[0]; row.last_action_at = a[1]; } }
         else if (sql.startsWith("UPDATE holdings SET buy_price")) { const row = this.rows.find(r => r.id === a[4] && r.user_id === a[5] && !r.closed_at); if (row) { row.buy_price = (row.shares * row.buy_price + a[0] * a[1]) / (row.shares + a[2]); row.shares += a[3]; } }
@@ -284,7 +286,9 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
         return { success: true };
       };
       statement.first = async () => sql.startsWith("SELECT * FROM holdings WHERE id") ? (this.rows.find(r => r.id === statement.args[0] && r.user_id === statement.args[1]) || null) : sql.includes("COUNT(*)") ? { n: this.rows.filter(r => r.user_id === statement.args[0] && !r.closed_at).length } : null;
-      statement.all = async () => ({ results: this.rows.filter(r => r.user_id === statement.args[0]) });
+      statement.all = async () => sql.includes("FROM holding_trades") ? { results: this.trades.filter(t => t.user_id === statement.args[0]).sort((x, y) => y.at.localeCompare(x.at)) }
+        : sql.includes("closed_at IS NOT NULL") ? { results: this.rows.filter(r => r.user_id === statement.args[0] && r.closed_at) }
+        : { results: this.rows.filter(r => r.user_id === statement.args[0]) };
       return statement;
     }
     async batch(list) { for (const item of list) await item.run(); return []; }
@@ -344,6 +348,19 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
   assert.equal(afterClose.closed.find(item => item.symbol === "NVDA").pnl_value, -1000, "Closed holdings must show realized profit and loss");
   assert.equal(afterClose.closed.filter(item => item.symbol === "AAPL").length, 2, "A partial sale and the final sale must both appear as closed entries");
   assert.equal((await as("alice", "/api/holdings/close", { id: bySymbol.MSFT.id, sell_price: 120 })).status, 200, "The older close endpoint must keep working");
+  const stats = await (await as("alice", "/api/holdings/stats")).json();
+  const us = stats.markets.find(item => item.market === "US");
+  assert.equal(us.closed_trades, 4);
+  assert.equal(us.wins, 3);
+  assert.equal(us.realized_pnl, 350, "Realised profit must add up every closed sale");
+  assert.equal(us.win_rate, 75);
+  assert.equal(us.profit_factor, 1.35);
+  assert.equal(us.worst.symbol, "NVDA");
+  assert.ok(us.months.length >= 1 && us.months[0].trades === 4);
+  assert.equal(stats.history.filter(item => item.side === "BUY").length, 4, "Every purchase, including buying more, must be in the history");
+  assert.equal(stats.history.filter(item => item.side === "SELL").length, 4, "Every sale must be in the history");
+  assert.ok(stats.history.filter(item => item.side === "SELL").every(item => typeof item.realized_pnl === "number"));
+  assert.equal((await (await as("bob", "/api/holdings/stats")).json()).history.length, 0, "History must stay private to its owner");
 }
 globalThis.fetch = realFetch;
 

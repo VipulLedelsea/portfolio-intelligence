@@ -5,6 +5,7 @@ struct HoldingsView: View {
     @EnvironmentObject private var model: AppModel
     @State private var showingAdd = false
     @State private var positionEdit: PositionEdit?
+    @State private var section = HoldingsSection.positions
     @State private var removeTarget: Holding?
     @Environment(\.scenePhase) private var scenePhase
 
@@ -12,6 +13,12 @@ struct HoldingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    if !model.isGuest {
+                        Picker("View", selection: $section) {
+                            ForEach(HoldingsSection.allCases) { Text($0.rawValue).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                    }
                     if model.isGuest {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Connect an account to track holdings.").font(.headline)
@@ -22,6 +29,10 @@ struct HoldingsView: View {
                                 .tint(AppTheme.amber)
                         }
                         .panel()
+                    } else if section == .performance {
+                        PerformancePanel()
+                    } else if section == .history {
+                        HistoryPanel()
                     } else if let data = model.holdings {
                         HStack(spacing: 6) {
                             if model.isLoadingHoldings { ProgressView().controlSize(.small) }
@@ -106,6 +117,13 @@ struct HoldingsView: View {
             }
         }
     }
+}
+
+private enum HoldingsSection: String, CaseIterable, Identifiable {
+    case positions = "Positions"
+    case performance = "Performance"
+    case history = "History"
+    var id: String { rawValue }
 }
 
 private func updatedText(_ data: HoldingsResponse) -> String {
@@ -357,5 +375,120 @@ private struct PositionSheet: View {
             }
         }
         .preferredColorScheme(.dark)
+    }
+}
+
+/// Results from the user's own closed sales, kept per market because currencies cannot be added together.
+private struct PerformancePanel: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let stats = model.holdingStats {
+                if stats.markets.isEmpty {
+                    Text("No closed trades yet. Record a sale with Sell on a holding and your results appear here.")
+                        .foregroundStyle(AppTheme.muted)
+                        .panel()
+                }
+                ForEach(stats.markets) { market in
+                    marketSection(market)
+                }
+                Text(stats.disclaimer).font(.caption).foregroundStyle(AppTheme.muted)
+            } else {
+                ProgressView("Loading performance…").tint(AppTheme.amber)
+            }
+        }
+        .task { await model.refreshHoldingStats() }
+    }
+
+    @ViewBuilder
+    private func marketSection(_ m: MarketStats) -> some View {
+        Text(m.market == "IN" ? "INDIA (BSE)" : "US STOCKS")
+            .font(.caption.monospaced().bold()).foregroundStyle(AppTheme.amber)
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 8)], spacing: 8) {
+            tile("Closed trades", "\(m.closedTrades)")
+            tile("Win rate", "\(String(format: "%.1f", m.winRate))% (\(m.wins) of \(m.closedTrades))")
+            tile("Realised P/L", signed(m.currencySymbol, m.realizedPnl), color: m.realizedPnl >= 0 ? AppTheme.mint : AppTheme.red)
+            tile("Profit factor", m.profitFactor.map { String(format: "%.2f", $0) } ?? "no losing trades")
+            tile("Avg per trade", String(format: "%+.2f%%", m.avgReturnPct), color: m.avgReturnPct >= 0 ? AppTheme.mint : AppTheme.red)
+            tile("Average win", String(format: "%+.2f%%", m.avgWinPct), color: AppTheme.mint)
+            tile("Average loss", m.losses > 0 ? String(format: "%.2f%%", m.avgLossPct) : "none", color: AppTheme.red)
+            tile("Time held", String(format: "%.1f days", m.avgHoldDays))
+            tile("Best trade", "\(m.best.symbol) \(String(format: "%+.1f", m.best.pct))%", color: m.best.pct >= 0 ? AppTheme.mint : AppTheme.red)
+            tile("Worst trade", "\(m.worst.symbol) \(String(format: "%+.1f", m.worst.pct))%", color: m.worst.pct >= 0 ? AppTheme.mint : AppTheme.red)
+        }
+        let largest = max(m.months.map { abs($0.pnl) }.max() ?? 1, 1)
+        VStack(spacing: 6) {
+            ForEach(m.months) { month in
+                HStack(spacing: 10) {
+                    Text(month.month).font(.caption.monospaced()).foregroundStyle(AppTheme.muted).frame(width: 64, alignment: .leading)
+                    GeometryReader { proxy in
+                        Rectangle()
+                            .fill(month.pnl >= 0 ? AppTheme.mint.opacity(0.55) : AppTheme.red.opacity(0.55))
+                            .frame(width: max(3, proxy.size.width * abs(month.pnl) / largest), height: 10)
+                            .frame(maxHeight: .infinity, alignment: .center)
+                    }
+                    .frame(height: 14)
+                    Text("\(signed(m.currencySymbol, month.pnl)) · \(month.trades)")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(month.pnl >= 0 ? AppTheme.mint : AppTheme.red)
+                }
+            }
+        }
+    }
+
+    private func tile(_ title: String, _ value: String, color: Color = .primary) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title.uppercased()).font(.caption2).foregroundStyle(AppTheme.muted)
+            Text(value).font(.footnote.bold()).foregroundStyle(color)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .overlay(Rectangle().stroke(AppTheme.line))
+    }
+}
+
+/// Every purchase and sale the user recorded, newest first.
+private struct HistoryPanel: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let stats = model.holdingStats {
+                if stats.history.isEmpty {
+                    Text("No trades recorded yet.").foregroundStyle(AppTheme.muted).panel()
+                }
+                ForEach(stats.history) { trade in
+                    let bought = trade.side == "BUY"
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(bought ? "Bought" : "Sold") \(trade.symbol)")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(bought ? AppTheme.mint : AppTheme.red)
+                            Text("\(shareText(trade.shares)) sh at \(money(trade.currencySymbol, trade.priceDecimals, trade.price)) · \(dateText(trade.at))")
+                                .font(.caption)
+                                .foregroundStyle(AppTheme.muted)
+                        }
+                        Spacer()
+                        if let pnl = trade.realizedPnl {
+                            Text(signed(trade.currencySymbol, pnl))
+                                .font(.footnote.bold())
+                                .foregroundStyle(pnl >= 0 ? AppTheme.mint : AppTheme.red)
+                        }
+                    }
+                    .panel()
+                }
+                Text("Removing a holding erases its own entries here. Your closed sales stay in Performance.")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.muted)
+            } else {
+                ProgressView("Loading history…").tint(AppTheme.amber)
+            }
+        }
+        .task { await model.refreshHoldingStats() }
+    }
+
+    private func dateText(_ iso: String) -> String {
+        PairingExpiryParser.date(from: iso)?.formatted(date: .abbreviated, time: .omitted) ?? iso
     }
 }

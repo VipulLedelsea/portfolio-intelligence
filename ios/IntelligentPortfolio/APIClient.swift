@@ -48,6 +48,10 @@ actor APIClient {
         try await request(path: "/api/holdings", token: token, body: HoldingsBody(refresh: refresh))
     }
 
+    func holdingStats(token: String) async throws -> HoldingStatsResponse {
+        try await request(path: "/api/holdings/stats", token: token, body: [:] as [String: String])
+    }
+
     func addHolding(_ body: AddHoldingBody, token: String) async throws {
         let _: HoldingChangeResponse = try await request(path: "/api/holdings/add", token: token, body: body)
     }

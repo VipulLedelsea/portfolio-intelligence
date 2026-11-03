@@ -1530,6 +1530,7 @@ async function deleteMobileAccountData(request, env) {
   await env.DB.batch([
     env.DB.prepare("DELETE FROM recommendations WHERE user_id = ?").bind(user.id),
     env.DB.prepare("DELETE FROM holdings WHERE user_id = ?").bind(user.id),
+    env.DB.prepare("DELETE FROM holding_trades WHERE user_id = ?").bind(user.id),
     env.DB.prepare("DELETE FROM mobile_pairings WHERE user_id = ?").bind(user.id),
     env.DB.prepare("DELETE FROM mobile_sessions WHERE user_id = ?").bind(user.id),
     env.DB.prepare("DELETE FROM web_sessions WHERE user_id = ?").bind(user.id),
@@ -1628,6 +1629,10 @@ function noDataEvaluation() {
   return { action: "NO_DATA", action_label: HOLDING_ACTIONS.NO_DATA, headline: "Market data is unavailable right now", reasons: ["The data provider did not return enough history for this symbol. It will be checked again on the next refresh."] };
 }
 
+const TRADE_SQL = "INSERT INTO holding_trades (id, user_id, holding_id, symbol, market, side, shares, price, at, realized_pnl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+const tradeStatement = (env, userId, holdingId, row, side, shares, price, at, pnl = null) =>
+  env.DB.prepare(TRADE_SQL).bind(randomBase64Url(9), userId, holdingId, row.symbol, row.market, side, shares, price, at, pnl);
+
 async function holdingsUser(request, env) {
   await requireSubscription(request, env);
   const user = await requestUser(request, env);
@@ -1655,8 +1660,11 @@ async function addHolding(request, env) {
   const { snapshots, errors } = await holdingSnapshotsFor(env, market, [symbol]);
   if (!snapshots.get(symbol)) throw Object.assign(new Error(`No market data found for ${symbol}${errors?.[0]?.error ? ` (${errors[0].error})` : ""}`), { status: 400 });
   const id = randomBase64Url(12);
-  await env.DB.prepare("INSERT INTO holdings (id, user_id, symbol, market, shares, buy_price, bought_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(id, user.id, symbol, marketId, shares, price, boughtAt, new Date().toISOString()).run();
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO holdings (id, user_id, symbol, market, shares, buy_price, bought_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(id, user.id, symbol, marketId, shares, price, boughtAt, new Date().toISOString()),
+    tradeStatement(env, user.id, id, { symbol, market: marketId }, "BUY", shares, price, `${boughtAt}T00:00:00.000Z`),
+  ]);
   return { added: true, id };
 }
 
@@ -1716,9 +1724,13 @@ async function increaseHolding(request, env) {
   if (!/^[A-Za-z0-9_-]{6,40}$/.test(id)) throw Object.assign(new Error("Holding not found"), { status: 404 });
   if (!Number.isFinite(shares) || shares <= 0 || shares > 1e9) throw Object.assign(new Error("Enter how many more shares you bought"), { status: 400 });
   if (!Number.isFinite(price) || price <= 0 || price > 1e8) throw Object.assign(new Error("Enter the price you paid per share"), { status: 400 });
-  const result = await env.DB.prepare("UPDATE holdings SET buy_price = (shares * buy_price + ? * ?) / (shares + ?), shares = shares + ? WHERE id = ? AND user_id = ? AND closed_at IS NULL")
-    .bind(shares, price, shares, shares, id, user.id).run();
-  if (result?.meta && Number(result.meta.changes) === 0) throw Object.assign(new Error("Holding not found"), { status: 404 });
+  const row = await env.DB.prepare("SELECT * FROM holdings WHERE id = ? AND user_id = ?").bind(id, user.id).first();
+  if (!row || row.closed_at) throw Object.assign(new Error("Holding not found"), { status: 404 });
+  await env.DB.batch([
+    env.DB.prepare("UPDATE holdings SET buy_price = (shares * buy_price + ? * ?) / (shares + ?), shares = shares + ? WHERE id = ? AND user_id = ? AND closed_at IS NULL")
+      .bind(shares, price, shares, shares, id, user.id),
+    tradeStatement(env, user.id, id, row, "BUY", shares, price, new Date().toISOString()),
+  ]);
   return { increased: true };
 }
 
@@ -1737,13 +1749,18 @@ async function sellHolding(request, env) {
   if (sold > Number(row.shares) + 1e-9) throw Object.assign(new Error(`You only hold ${Number(row.shares)} shares`), { status: 400 });
   const now = new Date().toISOString();
   if (sold >= Number(row.shares) - 1e-9) {
-    await env.DB.prepare("UPDATE holdings SET closed_at = ?, sell_price = ? WHERE id = ? AND user_id = ? AND closed_at IS NULL").bind(now, price, id, user.id).run();
+    await env.DB.batch([
+      env.DB.prepare("UPDATE holdings SET closed_at = ?, sell_price = ? WHERE id = ? AND user_id = ? AND closed_at IS NULL").bind(now, price, id, user.id),
+      tradeStatement(env, user.id, id, row, "SELL", Number(row.shares), price, now, (price - Number(row.buy_price)) * Number(row.shares)),
+    ]);
     return { sold: true, closed: true, remaining: 0 };
   }
+  const closedId = randomBase64Url(12);
   await env.DB.batch([
     env.DB.prepare("UPDATE holdings SET shares = shares - ? WHERE id = ? AND user_id = ? AND closed_at IS NULL AND shares > ?").bind(sold, id, user.id, sold),
     env.DB.prepare("INSERT INTO holdings (id, user_id, symbol, market, shares, buy_price, bought_at, created_at, closed_at, sell_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(randomBase64Url(12), user.id, row.symbol, row.market, sold, row.buy_price, row.bought_at, now, now, price),
+      .bind(closedId, user.id, row.symbol, row.market, sold, row.buy_price, row.bought_at, now, now, price),
+    tradeStatement(env, user.id, closedId, row, "SELL", sold, price, now, (price - Number(row.buy_price)) * sold),
   ]);
   return { sold: true, closed: false, remaining: round(Number(row.shares) - sold, 6) };
 }
@@ -1754,15 +1771,84 @@ async function closeHolding(request, env) {
   const id = String(body.id || ""), sellPrice = Number(body.sell_price);
   if (!/^[A-Za-z0-9_-]{6,40}$/.test(id)) throw Object.assign(new Error("Holding not found"), { status: 404 });
   if (!Number.isFinite(sellPrice) || sellPrice <= 0) throw Object.assign(new Error("Enter the price you sold at"), { status: 400 });
-  await env.DB.prepare("UPDATE holdings SET closed_at = ?, sell_price = ? WHERE id = ? AND user_id = ? AND closed_at IS NULL").bind(new Date().toISOString(), sellPrice, id, user.id).run();
+  const row = await env.DB.prepare("SELECT * FROM holdings WHERE id = ? AND user_id = ?").bind(id, user.id).first();
+  if (!row || row.closed_at) return { closed: true };
+  const now = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE holdings SET closed_at = ?, sell_price = ? WHERE id = ? AND user_id = ? AND closed_at IS NULL").bind(now, sellPrice, id, user.id),
+    tradeStatement(env, user.id, id, row, "SELL", Number(row.shares), sellPrice, now, (sellPrice - Number(row.buy_price)) * Number(row.shares)),
+  ]);
   return { closed: true };
+}
+
+// Performance from the user's closed sales (each partial sale is its own closed entry), kept per market
+// because rupees and dollars cannot be added together.
+function computeHoldingStats(closed) {
+  const byMarket = new Map();
+  for (const row of closed) {
+    const shares = Number(row.shares), buy = Number(row.buy_price), sell = Number(row.sell_price);
+    if (!(shares > 0 && buy > 0 && sell > 0)) continue;
+    const entry = { symbol: row.symbol, pnl: (sell - buy) * shares, pct: (sell / buy - 1) * 100, closed_at: row.closed_at,
+      days: Math.max(0, (Date.parse(row.closed_at) - Date.parse(`${row.bought_at}T00:00:00Z`)) / 86400000) };
+    if (!byMarket.has(row.market)) byMarket.set(row.market, []);
+    byMarket.get(row.market).push(entry);
+  }
+  const mean = list => list.length ? list.reduce((sum, value) => sum + value, 0) / list.length : 0;
+  return [...byMarket.entries()].filter(([id]) => MARKETS[id]).map(([id, trades]) => {
+    const wins = trades.filter(trade => trade.pnl > 0), losses = trades.filter(trade => trade.pnl <= 0);
+    const grossWin = wins.reduce((sum, trade) => sum + trade.pnl, 0), grossLoss = -losses.reduce((sum, trade) => sum + trade.pnl, 0);
+    const best = trades.reduce((top, trade) => trade.pct > top.pct ? trade : top), worst = trades.reduce((low, trade) => trade.pct < low.pct ? trade : low);
+    const months = new Map();
+    for (const trade of trades) {
+      const key = String(trade.closed_at).slice(0, 7);
+      const month = months.get(key) || { month: key, pnl: 0, trades: 0, wins: 0 };
+      month.pnl += trade.pnl; month.trades += 1; if (trade.pnl > 0) month.wins += 1;
+      months.set(key, month);
+    }
+    return {
+      market: id,
+      currency_symbol: MARKETS[id].symbolPrefix,
+      closed_trades: trades.length,
+      wins: wins.length,
+      losses: losses.length,
+      win_rate: round(wins.length / trades.length * 100, 1),
+      realized_pnl: round(trades.reduce((sum, trade) => sum + trade.pnl, 0), 2),
+      avg_return_pct: round(mean(trades.map(trade => trade.pct)), 2),
+      avg_win_pct: round(mean(wins.map(trade => trade.pct)), 2),
+      avg_loss_pct: round(mean(losses.map(trade => trade.pct)), 2),
+      profit_factor: grossLoss > 0 ? round(grossWin / grossLoss, 2) : null,
+      best: { symbol: best.symbol, pct: round(best.pct, 2), pnl: round(best.pnl, 2) },
+      worst: { symbol: worst.symbol, pct: round(worst.pct, 2), pnl: round(worst.pnl, 2) },
+      avg_hold_days: round(mean(trades.map(trade => trade.days)), 1),
+      months: [...months.values()].sort((a, b) => b.month.localeCompare(a.month)).slice(0, 12).map(month => ({ ...month, pnl: round(month.pnl, 2) })),
+    };
+  });
+}
+
+async function holdingStats(request, env) {
+  const user = await holdingsUser(request, env);
+  const closed = (await env.DB.prepare("SELECT * FROM holdings WHERE user_id = ? AND closed_at IS NOT NULL ORDER BY closed_at DESC LIMIT 500").bind(user.id).all()).results || [];
+  const trades = (await env.DB.prepare("SELECT * FROM holding_trades WHERE user_id = ? ORDER BY at DESC LIMIT 200").bind(user.id).all()).results || [];
+  return {
+    updated_at: new Date().toISOString(),
+    markets: computeHoldingStats(closed),
+    history: trades.map(trade => ({
+      id: trade.id, at: trade.at, symbol: trade.symbol, market: trade.market, side: trade.side, shares: trade.shares, price: trade.price,
+      currency_symbol: MARKETS[trade.market]?.symbolPrefix || "$", price_decimals: MARKETS[trade.market]?.decimals(trade.price) ?? 2,
+      realized_pnl: trade.realized_pnl == null ? null : round(trade.realized_pnl, 2),
+    })),
+    disclaimer: "Your own record of trades you entered. Past results do not predict future ones, and this is not personal financial advice.",
+  };
 }
 
 async function removeHolding(request, env) {
   const user = await holdingsUser(request, env);
   const id = String((await readBody(request)).id || "");
   if (!/^[A-Za-z0-9_-]{6,40}$/.test(id)) throw Object.assign(new Error("Holding not found"), { status: 404 });
-  await env.DB.prepare("DELETE FROM holdings WHERE id = ? AND user_id = ?").bind(id, user.id).run();
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM holdings WHERE id = ? AND user_id = ?").bind(id, user.id),
+    env.DB.prepare("DELETE FROM holding_trades WHERE holding_id = ? AND user_id = ?").bind(id, user.id),
+  ]);
   return { removed: true };
 }
 
@@ -1815,6 +1901,7 @@ async function handle(request, env, ctx) {
       return json(await approveMobilePairing(request, env, await readBody(request)));
     }
     if (url.pathname === "/api/holdings") return json(await listHoldings(request, env));
+    if (url.pathname === "/api/holdings/stats") return json(await holdingStats(request, env));
     if (url.pathname === "/api/holdings/add") return json(await addHolding(request, env));
     if (url.pathname === "/api/holdings/increase") return json(await increaseHolding(request, env));
     if (url.pathname === "/api/holdings/sell") return json(await sellHolding(request, env));

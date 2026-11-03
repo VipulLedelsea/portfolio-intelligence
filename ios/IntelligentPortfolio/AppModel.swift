@@ -23,6 +23,7 @@ final class AppModel: ObservableObject {
     @Published var isGuest = false
     @Published var holdings: HoldingsResponse?
     @Published var isLoadingHoldings = false
+    @Published var holdingStats: HoldingStatsResponse?
     @Published var disclaimerAccepted = UserDefaults.standard.bool(forKey: AppModel.disclaimerKey)
 
     private static let disclaimerKey = "disclaimerAcceptedV1"
@@ -91,6 +92,7 @@ final class AppModel: ObservableObject {
         analysis = nil
         memory = nil
         holdings = nil
+        holdingStats = nil
         connectionState = .disconnected
     }
 
@@ -159,12 +161,19 @@ final class AppModel: ObservableObject {
     /// How long the Holdings tab waits before re-checking: a minute while a market is open, ten when closed.
     var holdingsRefreshInterval: Duration { .seconds(max(30, holdings?.refreshAfterSeconds ?? 300)) }
 
+    func refreshHoldingStats() async {
+        guard let token else { holdingStats = nil; return }
+        do { holdingStats = try await api.holdingStats(token: token) }
+        catch { report(error) }
+    }
+
     /// Returns true when the holding was saved, so the entry sheet can close.
     func addHolding(symbol: String, market: String, shares: Double, price: Double, boughtAt: String) async -> Bool {
         guard let token else { return false }
         do {
             try await api.addHolding(AddHoldingBody(symbol: symbol, market: market, shares: shares, price: price, boughtAt: boughtAt), token: token)
             await refreshHoldings()
+            await refreshHoldingStats()
             return true
         } catch {
             report(error)
@@ -178,6 +187,7 @@ final class AppModel: ObservableObject {
         do {
             try await api.increaseHolding(IncreaseHoldingBody(id: id, shares: shares, price: price), token: token)
             await refreshHoldings()
+            await refreshHoldingStats()
             return true
         } catch {
             report(error)
@@ -191,6 +201,7 @@ final class AppModel: ObservableObject {
         do {
             try await api.sellHolding(SellHoldingBody(id: id, shares: shares, price: price), token: token)
             await refreshHoldings()
+            await refreshHoldingStats()
             return true
         } catch {
             report(error)
@@ -203,6 +214,7 @@ final class AppModel: ObservableObject {
         do {
             try await api.removeHolding(id: id, token: token)
             await refreshHoldings()
+            await refreshHoldingStats()
         } catch { report(error) }
     }
 
@@ -267,6 +279,7 @@ final class AppModel: ObservableObject {
         analysis = nil
         memory = nil
         holdings = nil
+        holdingStats = nil
         connectionState = .disconnected
     }
 
@@ -283,6 +296,7 @@ final class AppModel: ObservableObject {
             analysis = nil
             memory = nil
         holdings = nil
+        holdingStats = nil
             connectionState = .disconnected
         } catch { report(error) }
     }

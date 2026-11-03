@@ -314,3 +314,56 @@ struct HoldingsBody: Encodable, Sendable {
 }
 
 struct HoldingChangeResponse: Decodable, Sendable {}
+
+struct HoldingStatsResponse: Decodable, Sendable {
+    let updatedAt: String
+    let markets: [MarketStats]
+    let history: [TradeEntry]
+    let disclaimer: String
+}
+
+struct MarketStats: Decodable, Identifiable, Sendable {
+    let market: String
+    let currencySymbol: String
+    let closedTrades: Int
+    let wins: Int
+    let losses: Int
+    let winRate: Double
+    let realizedPnl: Double
+    let avgReturnPct: Double
+    let avgWinPct: Double
+    let avgLossPct: Double
+    let profitFactor: Double?
+    let best: TradeExtreme
+    let worst: TradeExtreme
+    let avgHoldDays: Double
+    let months: [MonthStats]
+    var id: String { market }
+}
+
+struct TradeExtreme: Decodable, Sendable {
+    let symbol: String
+    let pct: Double
+    let pnl: Double
+}
+
+struct MonthStats: Decodable, Identifiable, Sendable {
+    let month: String
+    let pnl: Double
+    let trades: Int
+    let wins: Int
+    var id: String { month }
+}
+
+struct TradeEntry: Decodable, Identifiable, Sendable {
+    let id: String
+    let at: String
+    let symbol: String
+    let market: String
+    let side: String
+    let shares: Double
+    let price: Double
+    let currencySymbol: String
+    let priceDecimals: Int
+    let realizedPnl: Double?
+}
