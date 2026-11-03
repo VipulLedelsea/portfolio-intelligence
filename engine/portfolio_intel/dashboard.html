@@ -48,7 +48,7 @@ function trendCardHtml(t){if(!t)return'';const col={DOWN:'#ff6f61',MIXED:'#ffb85
  const chip=x=>`<span style="display:inline-block;border:1px solid var(--line);padding:2px 8px;margin:6px 6px 0 0;font-size:11px;color:var(--muted)">${esc(x)}</span>`;
  return `<div role="group" aria-label="Market trend: ${esc(t.headline)}" style="border:1px solid var(--line);background:var(--panel);padding:14px;margin:14px 0"><div style="font-size:11px;letter-spacing:.06em;color:var(--muted)">MARKET TREND · ${esc(String(t.label).toUpperCase())}</div><div style="display:flex;gap:3px;margin:10px 0 4px">${seg}</div><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted)"><span style="${t.state==='DOWN'?'color:'+c:''}">Down</span><span style="${t.state==='MIXED'?'color:'+c:''}">Mixed</span><span style="${t.state==='UP'?'color:'+c:''}">Up</span></div><div style="font-size:15px;font-weight:500;margin-top:10px">${esc(t.headline)}</div><div>${chip('Daily '+dir(t.daily))}${chip('4H '+dir(t.four_hour))}${chip('ADX '+t.adx)}${t.breadth_daily_pct==null?'':chip(t.breadth_daily_pct+'% of stocks up (daily)')}</div><div style="margin-top:8px;font-size:12px;line-height:1.45;color:var(--muted)">${esc(t.note)}</div></div>`}
 let trendList=[],trendIdx=0,trendChartOpen=false,trendChartInterval='240';
-const TREND_TV={SPY:'SPY',QQQ:'QQQ',DIA:'DIA',IWM:'IWM','^BSESN':'BSE:SENSEX'};
+const TREND_TV={SPY:'SPY',QQQ:'QQQ',DIA:'DIA',IWM:'IWM','^BSESN':'BSE:SENSEX','DX-Y.NYB':'TVC:DXY'};
 function trendBlock(){if(!trendList.length)return'';const t=trendList[trendIdx];
  const tabs=trendList.length>1?`<div class="chart-tabs" style="margin:10px 0 0" role="tablist">${trendList.map((x,i)=>`<button type="button" role="tab" data-trend="${i}" class="${i===trendIdx?'active':''}">${esc(x.label)}</button>`).join('')}</div>`:'';
  const bar=`<div class="chart-tabs" style="margin:0 0 10px"><button type="button" data-trend-chart="toggle">${trendChartOpen?'Hide chart':'Show chart'}</button>${trendChartOpen?['240','D'].map(v=>`<button type="button" data-trend-chart="${v}" class="${trendChartInterval===v?'active':''}">${v==='240'?'4H':'Daily'}</button>`).join(''):''}</div>${trendChartOpen?'<div id="trend-tv" style="height:380px;margin-bottom:14px"></div>':''}`;
@@ -57,7 +57,7 @@ function mountTrendTV(){const host=document.getElementById('trend-tv'),t=trendLi
  const container=document.createElement('div');container.className='tradingview-widget-container';container.style.cssText='height:100%;width:100%';
  const inner=document.createElement('div');inner.className='tradingview-widget-container__widget';inner.style.cssText='height:100%;width:100%';
  const script=document.createElement('script');script.async=true;script.src='https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
- script.textContent=JSON.stringify({autosize:true,symbol:TREND_TV[t.index_symbol]||t.index_symbol,interval:trendChartInterval,timezone:market==='IN'?'Asia/Kolkata':'America/New_York',theme:'dark',style:'1',locale:'en',hide_side_toolbar:true,allow_symbol_change:false,studies:['STD;Supertrend','STD;SMA'],support_host:'https://www.tradingview.com'});
+ script.textContent=JSON.stringify({autosize:true,symbol:TREND_TV[t.index_symbol]||t.index_symbol,interval:trendChartInterval,timezone:t.market==='IN'?'Asia/Kolkata':t.market==='FX'?'Etc/UTC':'America/New_York',theme:'dark',style:'1',locale:'en',hide_side_toolbar:true,allow_symbol_change:false,studies:['STD;Supertrend','STD;SMA'],support_host:'https://www.tradingview.com'});
  container.append(inner,script);host.append(container)}
 function renderTrend(){document.getElementById('trend-card').innerHTML=trendBlock();mountTrendTV()}
 function setTrends(list){trendList=(list||[]).filter(Boolean);if(trendIdx>=trendList.length)trendIdx=0;renderTrend()}
@@ -86,7 +86,7 @@ async function scan(manual=false){
     if(requested!==market)return;
     if(!response.ok)throw new Error(d.error||'Discovery failed');
     if(d.warming_up){scanStatus.textContent=d.message;clearTimeout(autoTimer);autoTimer=setTimeout(scan,15000);return}
-    discoveryData=d;setTrends(d.market_trends&&d.market_trends.length?d.market_trends:[d.market_trend]);
+    discoveryData=d;setTrends(d.all_market_trends&&d.all_market_trends.length?d.all_market_trends:d.market_trends&&d.market_trends.length?d.market_trends:[d.market_trend]);
     renderCandidates(d.candidates,'all');
     document.getElementById('method').textContent=d.method+' '+d.next_step;
     discovery.classList.remove('hidden');

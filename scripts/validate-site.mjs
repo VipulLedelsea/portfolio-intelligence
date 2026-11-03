@@ -224,7 +224,7 @@ const fxCandidate = [...fxScan.candidates, ...fxScan.late_candidates][0];
 assert.equal(fxCandidate.price_decimals, 5, "Forex prices need five decimals");
 assert.equal(fxCandidate.currency_symbol, "");
 const callsAfterFirstScan = fetchLog.length;
-assert.equal(callsAfterFirstScan, 13, "A forex scan must use one request per pair");
+assert.equal(callsAfterFirstScan, 14, "A forex scan must use one request per pair plus one for the dollar index");
 for (let index = 0; index < 5; index += 1) await post("/api/discover", { market: "FX" });
 assert.equal(fetchLog.length, callsAfterFirstScan, "Repeated requests must be served from storage with no upstream calls");
 
@@ -241,6 +241,10 @@ assert.ok(fetchLog.length - usCalls - callsPerUsScan <= callsPerUsScan * 2, "Sim
 assert.equal(usScan.auto_refresh, false, "US keeps a manual refresh control");
 assert.ok(usScan.market_trend && ["UP", "MIXED", "DOWN"].includes(usScan.market_trend.state), "The US scan must report the market trend");
 assert.equal(usScan.market_trend.index_symbol, "SPY");
+assert.ok(usScan.market_trends.every(item => item.market === "US"), "Each trend must say which market it belongs to");
+assert.ok(Array.isArray(usScan.all_market_trends) && usScan.all_market_trends.some(item => item.label === "S&P 500"), "The response must carry the trends of every market");
+assert.ok(fxScan.market_trends.some(item => item.label === "US Dollar Index" && item.market === "FX"), "The forex scan must report the dollar index");
+assert.equal(fxScan.successful, 13, "The dollar index must not count as a forex pair");
 assert.deepEqual(usScan.market_trends.map(item => item.label), ["S&P 500", "Nasdaq-100", "Dow Jones", "Russell 2000"], "The US scan must report each major index");
 assert.ok(usScan.market_trends.slice(1).every(item => item.breadth_daily_pct === null), "Only the S&P 500 carries breadth");
 assert.equal(usScan.market_trend.label, "S&P 500");

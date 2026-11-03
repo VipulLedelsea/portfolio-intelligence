@@ -17,6 +17,7 @@ private extension MarketTrend {
         case "DIA": "DOW"
         case "IWM": "RUSSELL"
         case "^BSESN": "SENSEX"
+        case "DX-Y.NYB": "DOLLAR"
         default: label.uppercased()
         }
     }
@@ -42,6 +43,8 @@ private struct TrendRing: View {
     let trend: MarketTrend
     /// Grows by a full turn on every swipe, so the ring visibly spins even when two neighbours share a reading.
     let spin: Double
+    /// Also grows by a full turn: the arrow flips like a coin, so it visibly changes even when the next index points the same way.
+    let flip: Double
 
     var body: some View {
         ZStack {
@@ -61,6 +64,7 @@ private struct TrendRing: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(trendColour(trend.state))
                 .contentTransition(.symbolEffect(.replace))
+                .rotation3DEffect(.degrees(flip), axis: (x: 0, y: 1, z: 0))
         }
         .frame(width: 54, height: 54)
     }
@@ -71,8 +75,15 @@ private struct TrendRing: View {
 struct MarketTrendStrip: View {
     let trends: [MarketTrend]
     let onTap: (Int) -> Void
-    @State private var page = 0
+    @State private var page: Int
     @State private var spin = 0.0
+    @State private var flip = 0.0
+
+    init(trends: [MarketTrend], start: Int = 0, onTap: @escaping (Int) -> Void) {
+        self.trends = trends
+        self.onTap = onTap
+        _page = State(initialValue: min(max(start, 0), max(trends.count - 1, 0)))
+    }
 
     private var trend: MarketTrend { trends[min(page, trends.count - 1)] }
 
@@ -84,7 +95,7 @@ struct MarketTrendStrip: View {
                     .foregroundStyle(AppTheme.muted)
                     .id("label-\(page)")
                     .transition(.opacity.combined(with: .scale(scale: 0.7)))
-                TrendRing(trend: trend, spin: spin)
+                TrendRing(trend: trend, spin: spin, flip: flip)
                 VStack(spacing: 2) {
                     Text(trend.stateWord)
                         .font(.system(size: 11, weight: .semibold))
@@ -111,6 +122,7 @@ struct MarketTrendStrip: View {
         .frame(maxWidth: .infinity)
         .animation(.snappy(duration: 0.28), value: page)
         .animation(.snappy(duration: 0.5), value: spin)
+        .animation(.snappy(duration: 0.55), value: flip)
         .contentShape(Rectangle())
         .onTapGesture { onTap(page) }
         .gesture(
@@ -118,6 +130,7 @@ struct MarketTrendStrip: View {
                 guard trends.count > 1, abs(drag.translation.width) > 18, abs(drag.translation.width) > abs(drag.translation.height) else { return }
                 let forward = drag.translation.width < 0
                 spin += forward ? 360 : -360
+                flip += forward ? 360 : -360
                 page = (page + (forward ? 1 : trends.count - 1)) % trends.count
             }
         )
@@ -128,6 +141,7 @@ struct MarketTrendStrip: View {
         .accessibilityAdjustableAction { direction in
             guard trends.count > 1 else { return }
             spin += direction == .increment ? 360 : -360
+            flip += direction == .increment ? 360 : -360
             page = direction == .increment ? (page + 1) % trends.count : (page + trends.count - 1) % trends.count
         }
     }
@@ -174,7 +188,11 @@ struct MarketTrendSheet: View {
 
     private var chartSymbol: String {
         guard trends.indices.contains(selection) else { return "SPY" }
-        return trends[selection].indexSymbol == "^BSESN" ? "BSE:SENSEX" : trends[selection].indexSymbol
+        switch trends[selection].indexSymbol {
+        case "^BSESN": return "BSE:SENSEX"
+        case "DX-Y.NYB": return "TVC:DXY"
+        default: return trends[selection].indexSymbol
+        }
     }
 
     var body: some View {
@@ -182,10 +200,21 @@ struct MarketTrendSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if trends.count > 1 {
-                        Picker("Index", selection: $selection) {
-                            ForEach(Array(trends.enumerated()), id: \.offset) { index, trend in Text(trend.label).tag(index) }
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(Array(trends.enumerated()), id: \.offset) { index, trend in
+                                    Button { selection = index } label: {
+                                        Text(trend.label)
+                                            .font(.footnote.bold())
+                                            .padding(.horizontal, 12).padding(.vertical, 7)
+                                            .foregroundStyle(index == selection ? AppTheme.background : .primary)
+                                            .background(index == selection ? AppTheme.amber : AppTheme.panel)
+                                            .overlay(Rectangle().stroke(AppTheme.line))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
                         }
-                        .pickerStyle(.segmented)
                     }
                     if trends.indices.contains(selection) {
                         MarketTrendCard(trend: trends[selection])

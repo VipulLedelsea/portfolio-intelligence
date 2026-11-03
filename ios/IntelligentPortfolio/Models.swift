@@ -87,6 +87,7 @@ struct DiscoveryResponse: Decodable, Sendable {
     let market: String?
     let marketTrend: MarketTrend?
     let marketTrends: [MarketTrend]?
+    let allMarketTrends: [MarketTrend]?
     let autoRefresh: Bool?
     let refreshedAt: String?
     let warmingUp: Bool?
@@ -457,6 +458,7 @@ struct PortfolioConcentrated: Decodable, Sendable {
 
 /// How the market's main index is trending, from the same Supertrend and ADX the scanner uses.
 struct MarketTrend: Decodable, Sendable {
+    let market: String?
     let indexSymbol: String
     let state: String
     let headline: String

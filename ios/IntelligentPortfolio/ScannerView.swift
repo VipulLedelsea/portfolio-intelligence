@@ -9,7 +9,14 @@ struct ScannerView: View {
 
     /// iPhone Duo reserves a trailing strip for system status; when it is wide enough the market trend lives in it.
     private var trendInStrip: Bool { trailingInset >= 56 }
-    private var trends: [MarketTrend] { model.discovery?.marketTrends ?? model.discovery?.marketTrend.map { [$0] } ?? [] }
+    /// Every market's indexes in one list, so a single swipe-through covers US, India and forex.
+    private var trends: [MarketTrend] {
+        model.discovery?.allMarketTrends.flatMap { $0.isEmpty ? nil : $0 }
+            ?? model.discovery?.marketTrends
+            ?? model.discovery?.marketTrend.map { [$0] }
+            ?? []
+    }
+    private var trendStartPage: Int { trends.firstIndex { $0.market == model.market.rawValue } ?? 0 }
 
     var body: some View {
         GeometryReader { proxy in
@@ -20,7 +27,9 @@ struct ScannerView: View {
                 if trendInStrip, !trends.isEmpty, !(wide && selected != nil) {
                     HStack(spacing: 0) {
                         Spacer(minLength: 0)
-                        MarketTrendStrip(trends: trends) { index in trendStart = index; showingTrend = true }.frame(width: trailingInset)
+                        MarketTrendStrip(trends: trends, start: trendStartPage) { index in trendStart = index; showingTrend = true }
+                            .id(model.market.rawValue)
+                            .frame(width: trailingInset)
                     }
                     .padding(.top, 175)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -94,7 +103,7 @@ struct ScannerView: View {
                     .font(.caption.monospaced())
                     .foregroundStyle(AppTheme.muted)
 
-                    if !trendInStrip, let trend = trends.first { MarketTrendLine(trend: trend) { trendStart = 0; showingTrend = true } }
+                    if !trendInStrip, let trend = model.discovery?.marketTrend ?? trends.first { MarketTrendLine(trend: trend) { trendStart = trendStartPage; showingTrend = true } }
 
                     ForEach(discovery.candidates) { candidate in
                         Button { selected = candidate } label: {

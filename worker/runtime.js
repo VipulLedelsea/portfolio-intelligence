@@ -49,7 +49,7 @@ const FOREX_PAIRS = [
 const MARKETS = {
   US: { id: "US", name: "S&P 500", label: "US stocks", provider: "robinhood", auto: false, tz: "America/New_York", dailyCloseMinutes: 16 * 60, currency: "USD", symbolPrefix: "$", decimals: () => 2 },
   IN: { id: "IN", name: "Sensex 30", label: "India (BSE)", provider: "external", auto: true, tz: "Asia/Kolkata", dailyCloseMinutes: 15 * 60 + 35, currency: "INR", symbolPrefix: "₹", decimals: () => 2, universe: SENSEX_30, yahoo: symbol => symbol.startsWith("^") ? symbol : `${symbol}.BO`, twelve: symbol => symbol, twelveExchange: "BSE", tradingView: symbol => `BSE:${symbol.replace(/[^A-Z0-9_-]/g, "_")}` },
-  FX: { id: "FX", name: "Major forex pairs", label: "Forex", provider: "external", auto: true, tz: "UTC", dailyCloseMinutes: Infinity, currency: "", symbolPrefix: "", decimals: value => value >= 20 ? 3 : 5, universe: FOREX_PAIRS, yahoo: symbol => `${symbol}=X`, twelve: symbol => `${symbol.slice(0, 3)}/${symbol.slice(3)}`, tradingView: symbol => `FX:${symbol}` },
+  FX: { id: "FX", name: "Major forex pairs", label: "Forex", provider: "external", auto: true, tz: "UTC", dailyCloseMinutes: Infinity, currency: "", symbolPrefix: "", decimals: value => value >= 20 ? 3 : 5, universe: FOREX_PAIRS, yahoo: symbol => symbol.includes("-") ? symbol : `${symbol}=X`, twelve: symbol => `${symbol.slice(0, 3)}/${symbol.slice(3)}`, tradingView: symbol => `FX:${symbol}` },
 };
 
 function marketFrom(body) {
@@ -1017,9 +1017,10 @@ function fetchSnapshots(symbols, market = MARKETS.US, env = {}) {
 const MARKET_INDEXES = {
   US: [{ symbol: "SPY", label: "S&P 500" }, { symbol: "QQQ", label: "Nasdaq-100" }, { symbol: "DIA", label: "Dow Jones" }, { symbol: "IWM", label: "Russell 2000" }],
   IN: [{ symbol: "^BSESN", label: "Sensex 30" }],
+  FX: [{ symbol: "DX-Y.NYB", label: "US Dollar Index" }],
 };
 
-function marketTrend(info, index, snapshots, withBreadth = true) {
+function marketTrend(info, index, snapshots, withBreadth = true, marketId = null) {
   if (!info || !index) return null;
   const daily = index.daily_supertrend?.direction === "LONG" ? "UP" : "DOWN";
   const fourHour = index.supertrend?.direction === "LONG" ? "UP" : "DOWN";
@@ -1034,7 +1035,7 @@ function marketTrend(info, index, snapshots, withBreadth = true) {
     : "A bounce inside a downtrend. Treat long entries with extra care.";
   return {
     state, headline, note,
-    index_symbol: info.symbol, label: info.label,
+    market: marketId, index_symbol: info.symbol, label: info.label,
     daily, four_hour: fourHour,
     adx: round(numeric(index.daily_adx?.value), 0),
     breadth_daily_pct: withBreadth ? share(snapshot => snapshot.daily_supertrend?.direction) : null,
@@ -1055,7 +1056,7 @@ async function discover(market = MARKETS.US, env = {}) {
   const snapshots = new Map(fetched.snapshots);
   const indexSnapshots = new Map(indexes.map(info => [info.symbol, snapshots.get(info.symbol)]));
   for (const symbol of indexSymbols) snapshots.delete(symbol);
-  const trends = indexes.map((info, position) => marketTrend(info, indexSnapshots.get(info.symbol), snapshots, position === 0)).filter(Boolean);
+  const trends = indexes.map((info, position) => marketTrend(info, indexSnapshots.get(info.symbol), snapshots, position === 0, market.id)).filter(Boolean);
   const allCandidates = [...snapshots.entries()].map(([symbol, snapshot]) => scoreCandidate(snapshot, metadata.get(symbol))).sort((a, b) => b.score - a.score || a.symbol.localeCompare(b.symbol));
   const candidates = allCandidates.filter(candidate => candidate.entry_eligible);
   const lateCandidates = allCandidates.filter(candidate => !candidate.entry_eligible);
@@ -2089,6 +2090,17 @@ async function removeHolding(request, env) {
   return { removed: true };
 }
 
+// Every market's index trends in one list (US, India, forex), read from the stored scans, so one swipe-through
+// covers all markets whichever one is being viewed.
+async function allMarketTrends(env, current, scan) {
+  const trends = [];
+  for (const id of ["US", "IN", "FX"]) {
+    const list = id === current.id ? scan.market_trends : (await readStoredScan(env, MARKETS[id]))?.payload?.market_trends;
+    if (Array.isArray(list)) trends.push(...list);
+  }
+  return trends;
+}
+
 async function handle(request, env, ctx) {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/") {
@@ -2168,7 +2180,8 @@ async function handle(request, env, ctx) {
       // A US manual refresh always rescans and waits for new data (there is no cooldown); simultaneous
       // refreshes share one scan through the lock, so extra clicks never multiply upstream calls.
       const manual = !market.auto && body.refresh === true;
-      return json(await autoScanResponse(env, market, ctx, { wait: manual, force: manual }));
+      const scan = await autoScanResponse(env, market, ctx, { wait: manual, force: manual });
+      return json({ ...scan, all_market_trends: await allMarketTrends(env, market, scan) });
     }
     if (url.pathname === "/api/memory") {
       await requireSubscription(request, env);
