@@ -40,18 +40,23 @@ private struct ArcShape: Shape {
 /// It stays put when the index changes: the lit third and the colours animate instead of a panel sliding away.
 private struct TrendRing: View {
     let trend: MarketTrend
+    /// Grows by a full turn on every swipe, so the ring visibly spins even when two neighbours share a reading.
+    let spin: Double
 
     var body: some View {
         ZStack {
             Circle().fill(.ultraThinMaterial)
             Circle().stroke(AppTheme.line, lineWidth: 1)
-            ForEach(["DOWN", "MIXED", "UP"], id: \.self) { state in
-                let angles: (Double, Double) = state == "DOWN" ? (100, 215) : state == "MIXED" ? (225, 315) : (325, 440)
-                ArcShape(from: angles.0, to: angles.1)
-                    .stroke(trendColour(state), style: StrokeStyle(lineWidth: 4, lineCap: .butt))
-                    .padding(5)
-                    .opacity(state == trend.state ? 1 : 0.3)
+            ZStack {
+                ForEach(["DOWN", "MIXED", "UP"], id: \.self) { state in
+                    let angles: (Double, Double) = state == "DOWN" ? (100, 215) : state == "MIXED" ? (225, 315) : (325, 440)
+                    ArcShape(from: angles.0, to: angles.1)
+                        .stroke(trendColour(state), style: StrokeStyle(lineWidth: 4, lineCap: .butt))
+                        .padding(5)
+                        .opacity(state == trend.state ? 1 : 0.3)
+                }
             }
+            .rotationEffect(.degrees(spin))
             Image(systemName: trend.symbolName)
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(trendColour(trend.state))
@@ -67,6 +72,7 @@ struct MarketTrendStrip: View {
     let trends: [MarketTrend]
     let onTap: (Int) -> Void
     @State private var page = 0
+    @State private var spin = 0.0
 
     private var trend: MarketTrend { trends[min(page, trends.count - 1)] }
 
@@ -77,8 +83,8 @@ struct MarketTrendStrip: View {
                     .font(.system(size: 9, weight: .semibold)).tracking(0.4)
                     .foregroundStyle(AppTheme.muted)
                     .id("label-\(page)")
-                    .transition(.opacity)
-                TrendRing(trend: trend)
+                    .transition(.opacity.combined(with: .scale(scale: 0.7)))
+                TrendRing(trend: trend, spin: spin)
                 VStack(spacing: 2) {
                     Text(trend.stateWord)
                         .font(.system(size: 11, weight: .semibold))
@@ -91,7 +97,7 @@ struct MarketTrendStrip: View {
                     .foregroundStyle(AppTheme.muted)
                 }
                 .id("state-\(page)")
-                .transition(.opacity)
+                .transition(.opacity.combined(with: .scale(scale: 0.7)))
             }
             .frame(height: 112)
             if trends.count > 1 {
@@ -104,13 +110,15 @@ struct MarketTrendStrip: View {
         }
         .frame(maxWidth: .infinity)
         .animation(.snappy(duration: 0.28), value: page)
+        .animation(.snappy(duration: 0.5), value: spin)
         .contentShape(Rectangle())
         .onTapGesture { onTap(page) }
         .gesture(
             DragGesture(minimumDistance: 10).onEnded { drag in
                 guard trends.count > 1, abs(drag.translation.width) > 18, abs(drag.translation.width) > abs(drag.translation.height) else { return }
-                let step = drag.translation.width < 0 ? 1 : trends.count - 1
-                page = (page + step) % trends.count
+                let forward = drag.translation.width < 0
+                spin += forward ? 360 : -360
+                page = (page + (forward ? 1 : trends.count - 1)) % trends.count
             }
         )
         .sensoryFeedback(.selection, trigger: page)
@@ -119,6 +127,7 @@ struct MarketTrendStrip: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAdjustableAction { direction in
             guard trends.count > 1 else { return }
+            spin += direction == .increment ? 360 : -360
             page = direction == .increment ? (page + 1) % trends.count : (page + trends.count - 1) % trends.count
         }
     }
