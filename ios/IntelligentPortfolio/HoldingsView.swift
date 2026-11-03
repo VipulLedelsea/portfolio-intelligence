@@ -11,15 +11,9 @@ struct HoldingsView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    if !model.isGuest {
-                        Picker("View", selection: $section) {
-                            ForEach(HoldingsSection.allCases) { Text($0.rawValue).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                    if model.isGuest {
+            Group {
+                if model.isGuest {
+                    ScrollView {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Connect an account to track holdings.").font(.headline)
                             Text("Your positions are saved to your account so they can be checked against the market.")
@@ -29,70 +23,34 @@ struct HoldingsView: View {
                                 .tint(AppTheme.amber)
                         }
                         .panel()
-                    } else if section == .portfolio {
-                        PortfolioPanel()
-                    } else if section == .performance {
-                        PerformancePanel()
-                    } else if section == .history {
-                        HistoryPanel()
-                    } else if let data = model.holdings {
-                        HStack(spacing: 6) {
-                            if model.isLoadingHoldings { ProgressView().controlSize(.small) }
-                            Text(updatedText(data))
+                        .padding(16)
+                        .readableWidth()
+                    }
+                } else {
+                    VStack(spacing: 0) {
+                        Picker("View", selection: $section) {
+                            ForEach(HoldingsSection.allCases) { Text($0.rawValue).tag($0) }
                         }
-                        .font(.caption)
-                        .foregroundStyle(AppTheme.muted)
-                        ForEach(data.totals) { total in
-                            HStack {
-                                Text("\(total.market) value \(money(total.currencySymbol, 2, total.value))")
-                                Spacer()
-                                Text("\(signed(total.currencySymbol, total.pnlValue)) (\(String(format: "%+.2f", total.pnlPct))%)")
-                                    .foregroundStyle(total.pnlValue >= 0 ? AppTheme.mint : AppTheme.red)
-                            }
-                            .font(.subheadline.bold())
-                            .panel()
-                        }
-                        if data.open.isEmpty {
-                            Text("No holdings yet. Tap + to add a stock you bought, with the price and number of shares.")
-                                .foregroundStyle(AppTheme.muted)
-                                .panel()
-                        }
-                        ForEach(data.open) { holding in
-                            HoldingCard(holding: holding, onBuyMore: { positionEdit = PositionEdit(holding: holding, sell: false) }, onSell: { positionEdit = PositionEdit(holding: holding, sell: true) }, onUndo: { undoTarget = holding })
-                        }
-                        if !data.closed.isEmpty {
-                            Text("CLOSED").font(.caption.monospaced().bold()).foregroundStyle(AppTheme.amber)
-                            ForEach(data.closed) { item in
-                                HStack {
-                                    Text("\(item.symbol) · \(shareText(item.shares)) sh")
-                                    Spacer()
-                                    Text("\(signed(item.currencySymbol, item.pnlValue)) (\(String(format: "%+.2f", item.pnlPct))%)")
-                                        .foregroundStyle(item.pnlValue >= 0 ? AppTheme.mint : AppTheme.red)
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        // Real paging: each tab is its own page, so swiping works anywhere on screen and follows the finger.
+                        TabView(selection: $section) {
+                            ForEach(HoldingsSection.allCases) { tab in
+                                ScrollView {
+                                    VStack(alignment: .leading, spacing: 14) { page(for: tab) }
+                                        .padding(16)
+                                        .readableWidth()
+                                        .frame(maxWidth: .infinity, alignment: .topLeading)
                                 }
-                                .font(.footnote)
+                                .refreshable { await Task { await model.refreshHoldings(manual: true) }.value }
+                                .tag(tab)
                             }
                         }
-                        Text(data.disclaimer)
-                            .font(.caption)
-                            .foregroundStyle(AppTheme.muted)
-                    } else {
-                        ProgressView("Checking your holdings…").tint(AppTheme.amber)
+                        .tabViewStyle(.page(indexDisplayMode: .never))
+                        .ignoresSafeArea(.container, edges: .bottom)
                     }
                 }
-                .padding(16)
-                .readableWidth()
-                .contentShape(Rectangle())
-                .simultaneousGesture(
-                    // A mostly-horizontal swipe moves to the neighbouring tab; vertical scrolling is untouched.
-                    DragGesture(minimumDistance: 40).onEnded { drag in
-                        guard !model.isGuest, abs(drag.translation.width) > 70, abs(drag.translation.width) > abs(drag.translation.height) * 2 else { return }
-                        let all = HoldingsSection.allCases
-                        guard let index = all.firstIndex(of: section) else { return }
-                        let next = drag.translation.width < 0 ? index + 1 : index - 1
-                        guard all.indices.contains(next) else { return }
-                        withAnimation(.snappy) { section = all[next] }
-                    }
-                )
             }
             .sensoryFeedback(.selection, trigger: section)
             .background(AppTheme.background)
@@ -110,7 +68,6 @@ struct HoldingsView: View {
                     }
                 }
             }
-            .refreshable { await Task { await model.refreshHoldings(manual: true) }.value }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { Task { await model.refreshHoldings() } }
             }
@@ -134,6 +91,62 @@ struct HoldingsView: View {
                     try? await Task.sleep(for: model.holdingsRefreshInterval)
                 }
             }
+        }
+    }
+    @ViewBuilder
+    private func page(for tab: HoldingsSection) -> some View {
+        switch tab {
+        case .portfolio: PortfolioPanel()
+        case .performance: PerformancePanel()
+        case .history: HistoryPanel()
+        case .positions: positionsPage
+        }
+    }
+
+    @ViewBuilder
+    private var positionsPage: some View {
+        if let data = model.holdings {
+            HStack(spacing: 6) {
+                if model.isLoadingHoldings { ProgressView().controlSize(.small) }
+                Text(updatedText(data))
+            }
+            .font(.caption)
+            .foregroundStyle(AppTheme.muted)
+            ForEach(data.totals) { total in
+                HStack {
+                    Text("\(total.market) value \(money(total.currencySymbol, 2, total.value))")
+                    Spacer()
+                    Text("\(signed(total.currencySymbol, total.pnlValue)) (\(String(format: "%+.2f", total.pnlPct))%)")
+                        .foregroundStyle(total.pnlValue >= 0 ? AppTheme.mint : AppTheme.red)
+                }
+                .font(.subheadline.bold())
+                .panel()
+            }
+            if data.open.isEmpty {
+                Text("No holdings yet. Tap + to add a stock you bought, with the price and number of shares.")
+                    .foregroundStyle(AppTheme.muted)
+                    .panel()
+            }
+            ForEach(data.open) { holding in
+                HoldingCard(holding: holding, onBuyMore: { positionEdit = PositionEdit(holding: holding, sell: false) }, onSell: { positionEdit = PositionEdit(holding: holding, sell: true) }, onUndo: { undoTarget = holding })
+            }
+            if !data.closed.isEmpty {
+                Text("CLOSED").font(.caption.monospaced().bold()).foregroundStyle(AppTheme.amber)
+                ForEach(data.closed) { item in
+                    HStack {
+                        Text("\(item.symbol) · \(shareText(item.shares)) sh")
+                        Spacer()
+                        Text("\(signed(item.currencySymbol, item.pnlValue)) (\(String(format: "%+.2f", item.pnlPct))%)")
+                            .foregroundStyle(item.pnlValue >= 0 ? AppTheme.mint : AppTheme.red)
+                    }
+                    .font(.footnote)
+                }
+            }
+            Text(data.disclaimer)
+                .font(.caption)
+                .foregroundStyle(AppTheme.muted)
+        } else {
+            ProgressView("Checking your holdings…").tint(AppTheme.amber)
         }
     }
 }
