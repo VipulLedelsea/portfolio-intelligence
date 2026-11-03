@@ -277,6 +277,7 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
         const a = statement.args;
         if (sql.startsWith("INSERT INTO holdings")) this.rows.push({ id: a[0], user_id: a[1], symbol: a[2], market: a[3], shares: a[4], buy_price: a[5], bought_at: a[6], created_at: a[7], closed_at: null, sell_price: null, last_action: null, last_action_at: null });
         else if (sql.startsWith("UPDATE holdings SET last_action")) { const row = this.rows.find(r => r.id === a[2] && r.user_id === a[3]); if (row) { row.last_action = a[0]; row.last_action_at = a[1]; } }
+        else if (sql.startsWith("UPDATE holdings SET buy_price")) { const row = this.rows.find(r => r.id === a[4] && r.user_id === a[5] && !r.closed_at); if (row) { row.buy_price = (row.shares * row.buy_price + a[0] * a[1]) / (row.shares + a[2]); row.shares += a[3]; } }
         else if (sql.startsWith("UPDATE holdings SET closed_at")) { const row = this.rows.find(r => r.id === a[2] && r.user_id === a[3] && !r.closed_at); if (row) { row.closed_at = a[0]; row.sell_price = a[1]; } }
         else if (sql.startsWith("DELETE FROM holdings")) this.rows = this.rows.filter(r => !(r.id === a[0] && r.user_id === a[1]));
         return { success: true };
@@ -317,6 +318,14 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
   assert.ok([60, 600].includes(list.refresh_after_seconds), "The response must tell clients how soon to re-check");
   assert.equal(db.rows.find(row => row.symbol === "NVDA").last_action, "EXIT", "The latest decision must be remembered so changes can be shown");
   assert.equal((await (await as("bob", "/api/holdings")).json()).open.length, 0, "Holdings must stay private to their owner");
+  const aapl = bySymbol.AAPL.id;
+  assert.equal((await as("alice", "/api/holdings/increase", { id: aapl, shares: 0, price: 110 })).status, 400, "Adding zero shares must be rejected");
+  assert.equal((await as("alice", "/api/holdings/increase", { id: aapl, shares: 10, price: 110 })).status, 200);
+  const grown = db.rows.find(row => row.id === aapl);
+  assert.equal(grown.shares, 20, "Buying more must add to the share count");
+  assert.equal(grown.buy_price, 100, "Buying more must keep a weighted-average buy price");
+  await as("bob", "/api/holdings/increase", { id: aapl, shares: 5, price: 1 });
+  assert.equal(db.rows.find(row => row.id === aapl).shares, 20, "Another user must not be able to change someone else's holding");
   const nvda = bySymbol.NVDA.id;
   await as("bob", "/api/holdings/remove", { id: nvda });
   assert.equal(db.rows.length, 3, "Another user must not be able to remove someone else's holding");

@@ -52,6 +52,10 @@ actor APIClient {
         let _: HoldingChangeResponse = try await request(path: "/api/holdings/add", token: token, body: body)
     }
 
+    func increaseHolding(_ body: IncreaseHoldingBody, token: String) async throws {
+        let _: HoldingChangeResponse = try await request(path: "/api/holdings/increase", token: token, body: body)
+    }
+
     func closeHolding(_ body: CloseHoldingBody, token: String) async throws {
         let _: HoldingChangeResponse = try await request(path: "/api/holdings/close", token: token, body: body)
     }

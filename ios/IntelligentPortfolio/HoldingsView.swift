@@ -5,6 +5,7 @@ struct HoldingsView: View {
     @EnvironmentObject private var model: AppModel
     @State private var showingAdd = false
     @State private var sellTarget: Holding?
+    @State private var buyMoreTarget: Holding?
     @State private var removeTarget: Holding?
     @Environment(\.scenePhase) private var scenePhase
 
@@ -45,7 +46,7 @@ struct HoldingsView: View {
                                 .panel()
                         }
                         ForEach(data.open) { holding in
-                            HoldingCard(holding: holding, onSell: { sellTarget = holding }, onRemove: { removeTarget = holding })
+                            HoldingCard(holding: holding, onBuyMore: { buyMoreTarget = holding }, onSell: { sellTarget = holding }, onRemove: { removeTarget = holding })
                         }
                         if !data.closed.isEmpty {
                             Text("CLOSED").font(.caption.monospaced().bold()).foregroundStyle(AppTheme.amber)
@@ -89,6 +90,7 @@ struct HoldingsView: View {
                 if phase == .active { Task { await model.refreshHoldings() } }
             }
             .sheet(isPresented: $showingAdd) { AddHoldingSheet().environmentObject(model) }
+            .sheet(item: $buyMoreTarget) { holding in BuyMoreSheet(holding: holding).environmentObject(model) }
             .sheet(item: $sellTarget) { holding in SellSheet(holding: holding).environmentObject(model) }
             .confirmationDialog("Remove this holding?", isPresented: Binding(get: { removeTarget != nil }, set: { if !$0 { removeTarget = nil } }), titleVisibility: .visible) {
                 Button("Remove", role: .destructive) {
@@ -128,6 +130,7 @@ private func shareText(_ shares: Double) -> String {
 
 private struct HoldingCard: View {
     let holding: Holding
+    let onBuyMore: () -> Void
     let onSell: () -> Void
     let onRemove: () -> Void
 
@@ -180,6 +183,7 @@ private struct HoldingCard: View {
                     .foregroundStyle(tint)
             }
             HStack {
+                Button("Buy more", action: onBuyMore).buttonStyle(.bordered).tint(AppTheme.amber)
                 Button("Mark as sold", action: onSell).buttonStyle(.bordered)
                 Button("Remove", role: .destructive, action: onRemove).buttonStyle(.bordered)
             }
@@ -258,6 +262,59 @@ private struct AddHoldingSheet: View {
                         }
                     }
                     .disabled(!canSave)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
+/// Records an extra purchase of a stock already held; the server keeps a weighted-average buy price.
+private struct BuyMoreSheet: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    let holding: Holding
+    @State private var shares = ""
+    @State private var price = ""
+    @State private var saving = false
+
+    private var addShares: Double? { Double(shares.replacingOccurrences(of: ",", with: ".")) }
+    private var addPrice: Double? { Double(price.replacingOccurrences(of: ",", with: ".")) }
+    private var preview: (shares: Double, average: Double)? {
+        guard let add = addShares, add > 0, let paid = addPrice, paid > 0 else { return nil }
+        let total = holding.shares + add
+        return (total, (holding.shares * holding.buyPrice + add * paid) / total)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Text("You hold \(shareText(holding.shares)) shares of \(holding.symbol) at an average of \(money(holding.currencySymbol, holding.priceDecimals, holding.buyPrice)).")
+                TextField("Extra shares bought", text: $shares).keyboardType(.decimalPad)
+                TextField("Price paid per share", text: $price).keyboardType(.decimalPad)
+                if let preview {
+                    Text("New position: \(shareText(preview.shares)) shares at an average of \(money(holding.currencySymbol, holding.priceDecimals, preview.average)).")
+                        .font(.footnote.bold())
+                }
+                Text("Only recorded here for research. The protective level and targets follow the new average price.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .navigationTitle("Buy more \(holding.symbol)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        guard let add = addShares, let paid = addPrice else { return }
+                        saving = true
+                        Task {
+                            let saved = await model.increaseHolding(id: holding.id, shares: add, price: paid)
+                            saving = false
+                            if saved { dismiss() }
+                        }
+                    }
+                    .disabled(preview == nil || saving)
                 }
             }
         }

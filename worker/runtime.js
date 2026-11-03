@@ -1705,6 +1705,21 @@ async function listHoldings(request, env) {
   };
 }
 
+// Buying more of a stock you already hold: shares add up and the buy price becomes the weighted average.
+// One UPDATE does both so two quick taps can never overwrite each other.
+async function increaseHolding(request, env) {
+  const user = await holdingsUser(request, env);
+  const body = await readBody(request);
+  const id = String(body.id || ""), shares = Number(body.shares), price = Number(body.price);
+  if (!/^[A-Za-z0-9_-]{6,40}$/.test(id)) throw Object.assign(new Error("Holding not found"), { status: 404 });
+  if (!Number.isFinite(shares) || shares <= 0 || shares > 1e9) throw Object.assign(new Error("Enter how many more shares you bought"), { status: 400 });
+  if (!Number.isFinite(price) || price <= 0 || price > 1e8) throw Object.assign(new Error("Enter the price you paid per share"), { status: 400 });
+  const result = await env.DB.prepare("UPDATE holdings SET buy_price = (shares * buy_price + ? * ?) / (shares + ?), shares = shares + ? WHERE id = ? AND user_id = ? AND closed_at IS NULL")
+    .bind(shares, price, shares, shares, id, user.id).run();
+  if (result?.meta && Number(result.meta.changes) === 0) throw Object.assign(new Error("Holding not found"), { status: 404 });
+  return { increased: true };
+}
+
 async function closeHolding(request, env) {
   const user = await holdingsUser(request, env);
   const body = await readBody(request);
@@ -1773,6 +1788,7 @@ async function handle(request, env, ctx) {
     }
     if (url.pathname === "/api/holdings") return json(await listHoldings(request, env));
     if (url.pathname === "/api/holdings/add") return json(await addHolding(request, env));
+    if (url.pathname === "/api/holdings/increase") return json(await increaseHolding(request, env));
     if (url.pathname === "/api/holdings/close") return json(await closeHolding(request, env));
     if (url.pathname === "/api/holdings/remove") return json(await removeHolding(request, env));
     if (url.pathname === "/api/mobile/account/delete") {

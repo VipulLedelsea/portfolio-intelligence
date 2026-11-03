@@ -293,6 +293,12 @@ struct AddHoldingBody: Encodable, Sendable {
     }
 }
 
+struct IncreaseHoldingBody: Encodable, Sendable {
+    let id: String
+    let shares: Double
+    let price: Double
+}
+
 struct CloseHoldingBody: Encodable, Sendable {
     let id: String
     let sellPrice: Double

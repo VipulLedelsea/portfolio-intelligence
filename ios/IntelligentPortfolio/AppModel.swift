@@ -172,6 +172,19 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Returns true when the extra shares were recorded, so the entry sheet can close.
+    func increaseHolding(id: String, shares: Double, price: Double) async -> Bool {
+        guard let token else { return false }
+        do {
+            try await api.increaseHolding(IncreaseHoldingBody(id: id, shares: shares, price: price), token: token)
+            await refreshHoldings()
+            return true
+        } catch {
+            report(error)
+            return false
+        }
+    }
+
     func closeHolding(id: String, sellPrice: Double) async {
         guard let token else { return }
         do {
