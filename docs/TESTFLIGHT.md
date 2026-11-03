@@ -30,3 +30,23 @@ The app is read-only research. It stays free during the beta and only invited pe
 - **Finance apps.** Keep the "not advice" wording. Do not claim guaranteed returns.
 - **Support email.** Set `SUPPORT_EMAIL` in `wrangler.toml` `[vars]` and deploy, so the Privacy and Support pages show a real contact.
 - TestFlight builds expire after 90 days.
+
+## Pre-submission audit (3 November 2026)
+
+**Passed**
+- No secrets in tracked files or git history; no `.env`, key, certificate or provisioning files tracked.
+- Release archive: iOS 17 minimum, `ITSAppUsesNonExemptEncryption = false`, privacy manifest bundled (no tracking; email, user ID and other financial info for app functionality; UserDefaults reason `CA92.1`), 1024 px icon without transparency, no third-party frameworks, no private APIs, no plain `http` URLs.
+- The debug-only server override is compiled out of Release builds (verified in the binary).
+- Server: every query is bound (the one interpolated column list is a constant); user-controlled text in the dashboard is escaped; the CSP is strict; cookies are HttpOnly and SameSite; no CORS.
+- Public pairing endpoint now has a shared ceiling of 30 new codes a minute.
+
+**Answers to prepare for App Store Connect**
+- *Age rating, "Unrestricted web access":* No. The only web content is the TradingView chart widget.
+- *App Privacy:* besides email address, user ID and other financial info (linked, not for tracking), consider declaring that the embedded TradingView chart may collect usage data and identifiers as a third party. Declaring it is the cautious choice.
+- *Review notes:* use the text above ("Browse without an account"). Keep the paywall off while the beta is under review, because guest browsing only works then.
+
+**Risks that can still cause a rejection or a later problem**
+1. **Data provenance (guideline 5.2).** Prices come from Robinhood's and Yahoo's unofficial endpoints. Apple does not test this, but the owners could object. Move to a licensed provider before a public launch.
+2. **Turning the paywall on (guideline 3.1.1 / 3.1.3).** Selling access on the web and unlocking it in the app needs an in-app purchase or an approved external-purchase route. Browse-without-account also stops working then.
+3. **Brand names.** The app never names Robinhood or Yahoo; the website does. Keep it out of App Store metadata and screenshots.
+4. **No rate limit on market scans or holdings lookups.** Anyone can trigger repeated US rescans. Fine for a small beta; add a per-IP limit before opening it up.

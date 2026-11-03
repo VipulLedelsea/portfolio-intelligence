@@ -377,6 +377,8 @@ function cleanDeviceName(value) {
   return String(value || "iPhone").replace(/[^A-Za-z0-9 ._'-]/g, "").trim().slice(0, 60) || "iPhone";
 }
 
+const MAX_PAIRINGS_PER_MINUTE = 30;
+
 async function startMobilePairing(env, body) {
   if (!env.DB) throw new Error("Mobile pairing is not configured yet");
   const code = randomPairingCode();
@@ -384,6 +386,9 @@ async function startMobilePairing(env, body) {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + MOBILE_PAIRING_MINUTES * 60 * 1000);
   await env.DB.prepare("DELETE FROM mobile_pairings WHERE expires_at <= ?").bind(now.toISOString()).run();
+  // A shared ceiling on new pairing codes, so the open endpoint cannot be used to flood the database.
+  const recent = await env.DB.prepare("SELECT COUNT(*) AS n FROM mobile_pairings WHERE created_at > ?").bind(new Date(now.getTime() - 60000).toISOString()).first();
+  if (Number(recent?.n || 0) >= MAX_PAIRINGS_PER_MINUTE) throw Object.assign(new Error("Too many pairing requests right now. Try again in a minute."), { status: 429 });
   await env.DB.prepare(`INSERT INTO mobile_pairings
     (code_hash, secret_hash, device_name, created_at, expires_at)
     VALUES (?, ?, ?, ?, ?)`).bind(

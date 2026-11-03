@@ -102,6 +102,7 @@ class MobileFakeDb {
       },
       first: async () => {
         const a = statement.args;
+        if (sql.includes("COUNT(*)") && sql.includes("FROM mobile_pairings")) return { n: [...this.pairings.values()].filter(row => row.created_at > a[0]).length };
         if (sql.includes("FROM mobile_pairings")) return this.pairings.get(a[0]) || null;
         if (sql.includes("FROM mobile_sessions")) return this.sessions.get(a[0]) || null;
         return null;
@@ -121,6 +122,17 @@ assert.equal(pairingStartResponse.status, 200);
 const pairingStart = await pairingStartResponse.json();
 assert.match(pairingStart.code, /^[A-HJ-NP-Z2-9]{8}$/);
 assert.ok(pairingStart.pairing_secret.length >= 40);
+
+{
+  // The pairing start endpoint is public, so it has a shared ceiling per minute.
+  const floodDb = new MobileFakeDb();
+  let refused = 0;
+  for (let index = 0; index < 35; index += 1) {
+    const response = await workerModule.default.fetch(new Request("https://example.test/api/mobile/pair/start", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ device_name: `Flood ${index}` }) }), { DB: floodDb }, { waitUntil() {} });
+    if (response.status === 429) refused += 1;
+  }
+  assert.ok(refused >= 5 && refused <= 6, `Pairing codes must be capped at 30 a minute (refused ${refused} of 35)`);
+}
 
 const pairingApproveResponse = await workerModule.default.fetch(new Request("https://example.test/api/mobile/pair/approve", {
   method: "POST",
