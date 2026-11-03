@@ -3,6 +3,7 @@ import SwiftUI
 /// Shown once before anything else: the app is research only and gives no investment advice.
 struct DisclaimerView: View {
     @EnvironmentObject private var model: AppModel
+    @ScaledMetric(relativeTo: .largeTitle) private var titleSize = 36
 
     var body: some View {
         ScrollView {
@@ -11,7 +12,7 @@ struct DisclaimerView: View {
                     .font(.system(size: 34))
                     .foregroundStyle(AppTheme.amber)
                 Text("Research, not advice")
-                    .font(.system(size: 36, weight: .medium, design: .serif))
+                    .font(.system(size: titleSize, weight: .medium, design: .serif))
                 Text("IntelligentPortfolio shows market research and educational information from third-party data. It is not investment, financial, tax or legal advice, and it is not a recommendation to buy or sell anything.")
                     .foregroundStyle(AppTheme.muted)
                 Text("Signals, targets, stops and test results are scenarios. Data can be delayed or wrong, past results do not predict future ones, and trading can lose money. The app is read-only: it never connects to a brokerage or places orders.")

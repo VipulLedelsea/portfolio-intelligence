@@ -176,6 +176,8 @@ struct AnalysisContent: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("\(analysis.direction) · \(analysis.action)")
                 .font(.system(size: 30, weight: .bold, design: .monospaced))
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
                 .foregroundStyle(analysis.direction == "SHORT" ? AppTheme.red : AppTheme.mint)
             Text(analysis.entryStatus.replacingOccurrences(of: "_", with: " "))
                 .font(.caption.monospaced())

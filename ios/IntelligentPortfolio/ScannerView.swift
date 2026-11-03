@@ -6,6 +6,7 @@ struct ScannerView: View {
     @State private var trailingInset: CGFloat = 0
     @State private var showingTrend = false
     @State private var trendStart = 0
+    @ScaledMetric(relativeTo: .largeTitle) private var heroSize = 34
 
     /// iPhone Duo reserves a trailing strip for system status; when it is wide enough the market trend lives in it.
     private var trendInStrip: Bool { trailingInset >= 56 }
@@ -143,7 +144,7 @@ struct ScannerView: View {
                 Image(systemName: "chevron.up.chevron.down").font(.caption)
             }
             .padding(.horizontal, 16)
-            .frame(height: 44)
+            .frame(minHeight: 44)
             .foregroundStyle(.white)
             .contentShape(Capsule())
         }
@@ -161,7 +162,7 @@ struct ScannerView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Daily direction.\nFour-hour timing.")
-                .font(.system(size: 34, weight: .medium, design: .serif))
+                .font(.system(size: heroSize, weight: .medium, design: .serif))
             marketMenu
             Text("Confirmed daily and 4-hour Supertrend, strengthening ADX, and entry-extension controls rank the \(model.market.scanTitle).")
                 .foregroundStyle(AppTheme.muted)
@@ -190,6 +191,20 @@ private struct CandidateCard: View {
     var isSelected = false
     private var directionColor: Color { candidate.direction == "SHORT" ? AppTheme.red : AppTheme.mint }
 
+    private var directionText: some View {
+        Text("\(candidate.direction) · \(candidate.label)")
+            .font(.caption.monospaced().bold())
+            .foregroundStyle(directionColor)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var statusText: some View {
+        Text(candidate.entryStatus.replacingOccurrences(of: "_", with: " "))
+            .font(.caption2.monospaced())
+            .foregroundStyle(candidate.entryEligible ? AppTheme.mint : AppTheme.red)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
@@ -203,14 +218,16 @@ private struct CandidateCard: View {
                     Text("\(Int(candidate.score))/100").font(.caption.monospaced()).foregroundStyle(AppTheme.muted)
                 }
             }
-            HStack {
-                Text("\(candidate.direction) · \(candidate.label)")
-                    .font(.caption.monospaced().bold())
-                    .foregroundStyle(directionColor)
-                Spacer()
-                Text(candidate.entryStatus.replacingOccurrences(of: "_", with: " "))
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(candidate.entryEligible ? AppTheme.mint : AppTheme.red)
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    directionText
+                    Spacer()
+                    statusText
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    directionText
+                    statusText
+                }
             }
             ProgressView(value: candidate.score, total: 100).tint(AppTheme.amber)
             Text("Daily \(candidate.dailySupertrendDirection) · ADX \(candidate.dailyAdx, specifier: "%.1f") \(candidate.dailyAdxRising ? "rising" : "fading") · \(candidate.extensionAtr, specifier: "%+.2f") ATR")

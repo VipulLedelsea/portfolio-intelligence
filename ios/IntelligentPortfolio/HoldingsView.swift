@@ -28,10 +28,7 @@ struct HoldingsView: View {
                     }
                 } else {
                     VStack(spacing: 0) {
-                        Picker("View", selection: $section) {
-                            ForEach(HoldingsSection.allCases) { Text($0.rawValue).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
+                        SectionTabs(selection: $section)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                         // Real paging: each tab is its own page, so swiping works anywhere on screen and follows the finger.
@@ -148,6 +145,40 @@ struct HoldingsView: View {
         } else {
             ProgressView("Checking your holdings…").tint(AppTheme.amber)
         }
+    }
+}
+
+/// The four Holdings tabs. They share the width equally when they fit; on narrow screens or with large text they
+/// become a row that scrolls sideways instead of truncating.
+private struct SectionTabs: View {
+    @Binding var selection: HoldingsSection
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) { ForEach(HoldingsSection.allCases) { tab in chip(tab).frame(maxWidth: .infinity) } }
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) { ForEach(HoldingsSection.allCases) { tab in chip(tab).id(tab) } }
+                }
+                .onChange(of: selection) { _, tab in withAnimation(.snappy) { proxy.scrollTo(tab, anchor: .center) } }
+            }
+        }
+    }
+
+    private func chip(_ tab: HoldingsSection) -> some View {
+        let selected = selection == tab
+        return Button { withAnimation(.snappy) { selection = tab } } label: {
+            Text(tab.rawValue)
+                .font(.subheadline.weight(selected ? .semibold : .regular))
+                .lineLimit(1)
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .foregroundStyle(selected ? AppTheme.background : Color.primary)
+                .background(selected ? AppTheme.amber : AppTheme.panel)
+                .overlay(Rectangle().stroke(selected ? AppTheme.amber : AppTheme.line))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -456,7 +487,7 @@ private struct PerformancePanel: View {
         VStack(spacing: 6) {
             ForEach(m.months) { month in
                 HStack(spacing: 10) {
-                    Text(month.month).font(.caption.monospaced()).foregroundStyle(AppTheme.muted).frame(width: 64, alignment: .leading)
+                    Text(month.month).font(.caption.monospaced()).foregroundStyle(AppTheme.muted).lineLimit(1).fixedSize()
                     GeometryReader { proxy in
                         Rectangle()
                             .fill(month.pnl >= 0 ? AppTheme.mint.opacity(0.55) : AppTheme.red.opacity(0.55))
@@ -466,6 +497,9 @@ private struct PerformancePanel: View {
                     .frame(height: 14)
                     Text("\(signed(m.currencySymbol, month.pnl)) · \(month.trades)")
                         .font(.caption.monospaced())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .fixedSize()
                         .foregroundStyle(month.pnl >= 0 ? AppTheme.mint : AppTheme.red)
                 }
             }
@@ -868,13 +902,13 @@ private struct AllocationDonut: View {
     private func centre(chosen: DonutSlice?, total: Double) -> some View {
         VStack(spacing: 2) {
             if let chosen {
-                Text(chosen.name).font(.caption).foregroundStyle(AppTheme.muted).lineLimit(1)
-                Text("\(String(format: "%.1f", chosen.weight))%").font(.title2.bold())
-                Text(money(market.currencySymbol, 0, chosen.value)).font(.caption).foregroundStyle(AppTheme.muted)
-                if let reading = readingName(chosen.action) { Text(reading).font(.caption2).foregroundStyle(AppTheme.muted) }
+                Text(chosen.name).font(.caption).foregroundStyle(AppTheme.muted).lineLimit(1).minimumScaleFactor(0.6)
+                Text("\(String(format: "%.1f", chosen.weight))%").font(.title2.bold()).lineLimit(1).minimumScaleFactor(0.6)
+                Text(money(market.currencySymbol, 0, chosen.value)).font(.caption).foregroundStyle(AppTheme.muted).lineLimit(1).minimumScaleFactor(0.6)
+                if let reading = readingName(chosen.action) { Text(reading).font(.caption2).foregroundStyle(AppTheme.muted).lineLimit(1).minimumScaleFactor(0.6) }
             } else {
                 Text("Total").font(.caption).foregroundStyle(AppTheme.muted)
-                Text(money(market.currencySymbol, 0, total)).font(.title3.bold())
+                Text(money(market.currencySymbol, 0, total)).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.5)
             }
         }
         .frame(width: 130)

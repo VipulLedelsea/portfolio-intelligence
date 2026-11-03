@@ -3,6 +3,8 @@ import SwiftUI
 struct ConnectionView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.openURL) private var openURL
+    @ScaledMetric(relativeTo: .largeTitle) private var titleSize = 42
+    @ScaledMetric(relativeTo: .title) private var codeSize = 38
     private let webURL = APIClient.productionOrigin
 
     var body: some View {
@@ -17,7 +19,7 @@ struct ConnectionView: View {
 
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Your research desk, now on iPhone.")
-                        .font(.system(size: 42, weight: .medium, design: .serif))
+                        .font(.system(size: titleSize, weight: .medium, design: .serif))
                     Text("Connect your existing web subscription with a one-time code. No brokerage login or order access is requested.")
                         .foregroundStyle(AppTheme.muted)
                 }
@@ -28,8 +30,10 @@ struct ConnectionView: View {
                             .font(.caption.monospaced().bold())
                             .foregroundStyle(AppTheme.amber)
                         Text(pairing.code)
-                            .font(.system(size: 38, weight: .bold, design: .monospaced))
+                            .font(.system(size: codeSize, weight: .bold, design: .monospaced))
                             .tracking(5)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
                             .textSelection(.enabled)
                         Text("Open the website, tap Pair iPhone, and enter this code. This screen will connect automatically after approval.")
                             .foregroundStyle(AppTheme.muted)
