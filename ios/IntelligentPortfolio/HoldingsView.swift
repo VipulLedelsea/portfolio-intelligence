@@ -81,7 +81,20 @@ struct HoldingsView: View {
                 }
                 .padding(16)
                 .readableWidth()
+                .contentShape(Rectangle())
+                .simultaneousGesture(
+                    // A mostly-horizontal swipe moves to the neighbouring tab; vertical scrolling is untouched.
+                    DragGesture(minimumDistance: 40).onEnded { drag in
+                        guard !model.isGuest, abs(drag.translation.width) > 70, abs(drag.translation.width) > abs(drag.translation.height) * 2 else { return }
+                        let all = HoldingsSection.allCases
+                        guard let index = all.firstIndex(of: section) else { return }
+                        let next = drag.translation.width < 0 ? index + 1 : index - 1
+                        guard all.indices.contains(next) else { return }
+                        withAnimation(.snappy) { section = all[next] }
+                    }
+                )
             }
+            .sensoryFeedback(.selection, trigger: section)
             .background(AppTheme.background)
             .navigationTitle("My holdings")
             .toolbar {
@@ -641,7 +654,7 @@ private struct PortfolioPanel: View {
             tile("Positions", "\(m.positions.count)")
             if let largest = m.positions.first { tile("Largest", "\(largest.symbol) \(String(format: "%.1f", largest.weightPct))%") }
         }
-        Text("WHERE YOUR MONEY IS").font(.caption2).foregroundStyle(AppTheme.muted)
+        Text("ALLOCATIONS").font(.caption2).foregroundStyle(AppTheme.muted)
         ForEach(m.positions) { position in
             row(title: position.symbol, subtitle: position.sector, weight: position.weightPct,
                 over: m.positions.count > 1 && position.weightPct > limit,
