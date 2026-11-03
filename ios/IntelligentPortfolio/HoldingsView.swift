@@ -84,7 +84,7 @@ struct HoldingsView: View {
                     }
                 }
             }
-            .refreshable { await model.refreshHoldings(manual: true) }
+            .refreshable { await Task { await model.refreshHoldings(manual: true) }.value }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { Task { await model.refreshHoldings() } }
             }

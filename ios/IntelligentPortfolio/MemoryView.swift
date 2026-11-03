@@ -42,7 +42,7 @@ struct MemoryView: View {
             }
             .background(AppTheme.background)
             .navigationTitle("Learning memory")
-            .refreshable { await model.refreshMemory() }
+            .refreshable { await Task { await model.refreshMemory() }.value }
         }
     }
 

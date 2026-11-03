@@ -88,7 +88,7 @@ struct ScannerView: View {
             .padding(16)
         }
         .background(AppTheme.background)
-        .refreshableIf(!model.market.isAutomatic) { await model.refreshScanner(manual: true) }
+        .refreshableIf(!model.market.isAutomatic) { await Task { await model.refreshScanner(manual: true) }.value }
     }
 
     private var marketMenu: some View {

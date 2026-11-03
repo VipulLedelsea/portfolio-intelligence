@@ -50,6 +50,12 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Shows an error unless it only means a request was cancelled (view refreshed, pull-to-refresh released, task replaced).
+    private func report(_ error: Error) {
+        if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
+        errorMessage = error.localizedDescription
+    }
+
     func acceptDisclaimer() {
         UserDefaults.standard.set(true, forKey: Self.disclaimerKey)
         disclaimerAccepted = true
@@ -72,7 +78,7 @@ final class AppModel: ObservableObject {
             connectionState = .connected
             await refreshScanner()
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
             connectionState = .disconnected
         }
     }
@@ -97,7 +103,7 @@ final class AppModel: ObservableObject {
             connectionState = .pairing
             pairingTask = Task { [weak self] in await self?.pollPairing(request) }
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
             connectionState = .disconnected
         }
     }
@@ -147,7 +153,7 @@ final class AppModel: ObservableObject {
         isLoadingHoldings = true
         defer { isLoadingHoldings = false }
         do { holdings = try await api.holdings(token: token, refresh: manual) }
-        catch { errorMessage = error.localizedDescription }
+        catch { report(error) }
     }
 
     /// How long the Holdings tab waits before re-checking: a minute while a market is open, ten when closed.
@@ -161,7 +167,7 @@ final class AppModel: ObservableObject {
             await refreshHoldings()
             return true
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
             return false
         }
     }
@@ -171,7 +177,7 @@ final class AppModel: ObservableObject {
         do {
             try await api.closeHolding(CloseHoldingBody(id: id, sellPrice: sellPrice), token: token)
             await refreshHoldings()
-        } catch { errorMessage = error.localizedDescription }
+        } catch { report(error) }
     }
 
     func removeHolding(id: String) async {
@@ -179,7 +185,7 @@ final class AppModel: ObservableObject {
         do {
             try await api.removeHolding(id: id, token: token)
             await refreshHoldings()
-        } catch { errorMessage = error.localizedDescription }
+        } catch { report(error) }
     }
 
     func selectMarket(_ newMarket: Market) async {
@@ -192,8 +198,9 @@ final class AppModel: ObservableObject {
 
     /// Reads the latest scan. BSE and forex scans are produced by the server on its own
     /// schedule, so this only reads the stored result and re-checks every few minutes.
-    func refreshScanner(manual: Bool = false) async {
-        autoRefreshTask?.cancel()
+    func refreshScanner(manual: Bool = false, fromTimer: Bool = false) async {
+        // The timer calls this from inside autoRefreshTask, so cancelling it here would cancel the request itself.
+        if !fromTimer { autoRefreshTask?.cancel() }
         let requested = market
         isScanning = true
         defer { isScanning = false }
@@ -204,14 +211,14 @@ final class AppModel: ObservableObject {
             errorMessage = nil
         } catch {
             guard requested == market else { return }
-            errorMessage = error.localizedDescription
+            report(error)
         }
         if requested.isAutomatic {
             let warming = discovery?.warmingUp == true
             autoRefreshTask = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(warming ? 15 : 300))
                 guard !Task.isCancelled else { return }
-                await self?.refreshScanner()
+                await self?.refreshScanner(fromTimer: true)
             }
         }
     }
@@ -223,13 +230,13 @@ final class AppModel: ObservableObject {
         do {
             analysis = try await api.analyze(symbol: symbol, market: market, token: token)
             await refreshMemory()
-        } catch { errorMessage = error.localizedDescription }
+        } catch { report(error) }
     }
 
     func refreshMemory() async {
         guard let token else { memory = nil; return }
         do { memory = try await api.memory(token: token) }
-        catch { errorMessage = error.localizedDescription }
+        catch { report(error) }
     }
 
     func disconnect() async {
@@ -259,7 +266,7 @@ final class AppModel: ObservableObject {
             memory = nil
         holdings = nil
             connectionState = .disconnected
-        } catch { errorMessage = error.localizedDescription }
+        } catch { report(error) }
     }
 }
 
