@@ -64,8 +64,8 @@ actor APIClient {
         let _: HoldingChangeResponse = try await request(path: "/api/holdings/sell", token: token, body: body)
     }
 
-    func removeHolding(id: String, token: String) async throws {
-        let _: HoldingChangeResponse = try await request(path: "/api/holdings/remove", token: token, body: RemoveHoldingBody(id: id))
+    func undoEntry(id: String, token: String) async throws {
+        let _: HoldingChangeResponse = try await request(path: "/api/holdings/undo", token: token, body: UndoEntryBody(id: id))
     }
 
     func deleteAccountData(token: String) async throws {

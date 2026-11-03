@@ -43,6 +43,13 @@
       "when": 1793719667186,
       "tag": "0005_trade_history",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793720094694,
+      "tag": "0006_undo_entries",
+      "breakpoints": true
     }
   ]
 }

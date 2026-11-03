@@ -275,7 +275,13 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
       const statement = { args: [], bind: (...args) => { statement.args = args; return statement; } };
       statement.run = async () => {
         const a = statement.args;
-        if (sql.startsWith("INSERT INTO holding_trades")) this.trades.push({ id: a[0], user_id: a[1], holding_id: a[2], symbol: a[3], market: a[4], side: a[5], shares: a[6], price: a[7], at: a[8], realized_pnl: a[9] });
+        if (sql.startsWith("INSERT INTO holding_trades")) this.trades.push({ id: a[0], user_id: a[1], holding_id: a[2], chain_id: a[3], symbol: a[4], market: a[5], side: a[6], shares: a[7], price: a[8], at: a[9], realized_pnl: a[10], voided_at: null, seq: this.trades.length });
+        else if (sql.startsWith("UPDATE holding_trades SET voided_at")) { const t = this.trades.find(x => x.id === a[1] && x.user_id === a[2]); if (t) t.voided_at = a[0]; }
+        else if (sql.startsWith("UPDATE holdings SET shares = ?, buy_price = ?")) { const r = this.rows.find(x => x.id === a[2] && x.user_id === a[3] && !x.closed_at); if (r) { r.shares = a[0]; r.buy_price = a[1]; } }
+        else if (sql.startsWith("UPDATE holdings SET closed_at = NULL")) { const r = this.rows.find(x => x.id === a[0] && x.user_id === a[1]); if (r) { r.closed_at = null; r.sell_price = null; } }
+        else if (sql.startsWith("UPDATE holdings SET closed_at = ?, sell_price = NULL")) { const r = this.rows.find(x => x.id === a[1] && x.user_id === a[2]); if (r) { r.closed_at = a[0]; r.sell_price = null; } }
+        else if (sql.startsWith("UPDATE holdings SET shares = shares +")) { const r = this.rows.find(x => x.id === a[1] && x.user_id === a[2] && !x.closed_at); if (r) r.shares += a[0]; }
+        else if (sql.startsWith("UPDATE holdings SET sell_price = NULL")) { const r = this.rows.find(x => x.id === a[0] && x.user_id === a[1]); if (r) r.sell_price = null; }
         else if (sql.startsWith("DELETE FROM holding_trades WHERE holding_id")) this.trades = this.trades.filter(t => !(t.holding_id === a[0] && t.user_id === a[1]));
         else if (sql.startsWith("INSERT INTO holdings")) this.rows.push({ id: a[0], user_id: a[1], symbol: a[2], market: a[3], shares: a[4], buy_price: a[5], bought_at: a[6], created_at: a[7], closed_at: sql.includes("closed_at, sell_price") ? a[8] : null, sell_price: sql.includes("closed_at, sell_price") ? a[9] : null, last_action: null, last_action_at: null });
         else if (sql.startsWith("UPDATE holdings SET shares = shares -")) { const row = this.rows.find(r => r.id === a[1] && r.user_id === a[2] && !r.closed_at && r.shares > a[3]); if (row) row.shares -= a[0]; }
@@ -285,8 +291,8 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
         else if (sql.startsWith("DELETE FROM holdings")) this.rows = this.rows.filter(r => !(r.id === a[0] && r.user_id === a[1]));
         return { success: true };
       };
-      statement.first = async () => sql.startsWith("SELECT * FROM holdings WHERE id") ? (this.rows.find(r => r.id === statement.args[0] && r.user_id === statement.args[1]) || null) : sql.includes("COUNT(*)") ? { n: this.rows.filter(r => r.user_id === statement.args[0] && !r.closed_at).length } : null;
-      statement.all = async () => sql.includes("FROM holding_trades") ? { results: this.trades.filter(t => t.user_id === statement.args[0]).sort((x, y) => y.at.localeCompare(x.at)) }
+      statement.first = async () => sql.startsWith("SELECT * FROM holding_trades WHERE id") ? (this.trades.find(t => t.id === statement.args[0] && t.user_id === statement.args[1]) || null) : sql.startsWith("SELECT * FROM holdings WHERE id") ? (this.rows.find(r => r.id === statement.args[0] && r.user_id === statement.args[1]) || null) : sql.includes("COUNT(*)") ? { n: this.rows.filter(r => r.user_id === statement.args[0] && !r.closed_at).length } : null;
+      statement.all = async () => sql.includes("FROM holding_trades") ? { results: this.trades.filter(t => t.user_id === statement.args[0] && (!sql.includes("chain_id = ?") || t.chain_id === statement.args[1]) && (!sql.includes("voided_at IS NULL") || !t.voided_at)).sort((x, y) => y.at.localeCompare(x.at) || y.seq - x.seq) }
         : sql.includes("closed_at IS NOT NULL") ? { results: this.rows.filter(r => r.user_id === statement.args[0] && r.closed_at) }
         : { results: this.rows.filter(r => r.user_id === statement.args[0]) };
       return statement;
@@ -331,17 +337,38 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
   assert.equal(grown.buy_price, 100, "Buying more must keep a weighted-average buy price");
   await as("bob", "/api/holdings/increase", { id: aapl, shares: 5, price: 1 });
   assert.equal(db.rows.find(row => row.id === aapl).shares, 20, "Another user must not be able to change someone else's holding");
+  // Undo reverses the newest entry, keeps it in History as undone, and must go newest-first.
+  const aaplBuys = db.trades.filter(t => t.holding_id === aapl).sort((x, y) => y.at.localeCompare(x.at) || y.seq - x.seq);
+  assert.equal((await as("alice", "/api/holdings/undo", { id: aaplBuys[1].id })).status, 400, "An older entry cannot be undone while a newer one is active");
+  assert.equal((await as("bob", "/api/holdings/undo", { id: aaplBuys[0].id })).status, 404, "Another user must not be able to undo someone else's entry");
+  assert.equal((await as("alice", "/api/holdings/undo", { id: aaplBuys[0].id })).status, 200);
+  assert.equal(db.rows.find(row => row.id === aapl).shares, 10, "Undoing a purchase must take the shares back out");
+  assert.equal(db.rows.find(row => row.id === aapl).buy_price, 90, "Undoing a purchase must restore the earlier average price");
+  assert.ok(db.trades.find(t => t.id === aaplBuys[0].id).voided_at, "An undone entry must stay in the record, marked as undone");
+  assert.equal((await as("alice", "/api/holdings/undo", { id: aaplBuys[0].id })).status, 404, "An entry cannot be undone twice");
+  assert.equal((await as("alice", "/api/holdings/increase", { id: aapl, shares: 10, price: 110 })).status, 200);
   assert.equal((await as("alice", "/api/holdings/sell", { id: aapl, shares: 25, price: 120 })).status, 400, "Selling more shares than held must be rejected");
   assert.equal((await as("bob", "/api/holdings/sell", { id: aapl, shares: 5, price: 120 })).status, 404, "Another user must not be able to sell someone else's holding");
   assert.equal((await as("alice", "/api/holdings/sell", { id: aapl, shares: 5, price: 120 })).status, 200);
   assert.equal(db.rows.find(row => row.id === aapl).shares, 15, "A partial sale must reduce the open position");
   const partial = db.rows.find(row => row.closed_at && row.symbol === "AAPL");
   assert.ok(partial && partial.shares === 5 && partial.sell_price === 120 && partial.buy_price === 100, "A partial sale must be recorded as its own closed entry");
+  // Undo a partial sale: the shares return to the position and the sold piece drops out of the closed list.
+  const partialSale = db.trades.find(t => t.side === "SELL" && t.holding_id === partial.id);
+  assert.equal(partialSale.chain_id, aapl, "A partial sale must stay in its position's chain");
+  assert.equal((await as("alice", "/api/holdings/undo", { id: partialSale.id })).status, 200);
+  assert.equal(db.rows.find(row => row.id === aapl).shares, 20, "Undoing a partial sale must return the shares");
+  assert.equal(partial.sell_price, null, "The undone sale piece must stop counting as a closed sale");
+  assert.equal((await as("alice", "/api/holdings/sell", { id: aapl, shares: 5, price: 120 })).status, 200);
   assert.equal((await as("alice", "/api/holdings/sell", { id: aapl, price: 130 })).status, 200);
   assert.ok(db.rows.find(row => row.id === aapl).closed_at, "Selling without a share count must close the whole position");
   const nvda = bySymbol.NVDA.id;
   await as("bob", "/api/holdings/remove", { id: nvda });
-  assert.equal(db.rows.length, 4, "Another user must not be able to remove someone else's holding");
+  assert.equal(db.rows.length, 5, "Another user must not be able to remove someone else's holding");
+  assert.equal((await as("alice", "/api/holdings/sell", { id: nvda, shares: 10, price: 900 })).status, 200);
+  const nvdaSale = db.trades.find(t => t.holding_id === nvda && t.side === "SELL");
+  assert.equal((await as("alice", "/api/holdings/undo", { id: nvdaSale.id })).status, 200);
+  assert.equal(db.rows.find(row => row.id === nvda).closed_at, null, "Undoing a full sale must reopen the position");
   assert.equal((await as("alice", "/api/holdings/sell", { id: nvda, shares: 10, price: 900 })).status, 200);
   const afterClose = await (await as("alice", "/api/holdings")).json();
   assert.equal(afterClose.open.length, 1);
@@ -357,9 +384,19 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
   assert.equal(us.profit_factor, 1.35);
   assert.equal(us.worst.symbol, "NVDA");
   assert.ok(us.months.length >= 1 && us.months[0].trades === 4);
-  assert.equal(stats.history.filter(item => item.side === "BUY").length, 4, "Every purchase, including buying more, must be in the history");
-  assert.equal(stats.history.filter(item => item.side === "SELL").length, 4, "Every sale must be in the history");
+  assert.equal(stats.history.filter(item => item.side === "BUY" && !item.voided).length, 4, "Every purchase, including buying more, must be in the history");
+  assert.equal(stats.history.filter(item => item.side === "SELL" && !item.voided).length, 4, "Every sale must be in the history");
+  assert.equal(stats.history.filter(item => item.voided).length, 3, "Undone entries must stay in the history, marked as undone");
+  assert.ok(stats.history.filter(item => item.can_undo).length >= 1 && stats.history.every(item => !item.voided || !item.can_undo), "Only the newest active entry of a position can be undone");
   assert.ok(stats.history.filter(item => item.side === "SELL").every(item => typeof item.realized_pnl === "number"));
+  assert.equal(stats.markets.find(item => item.market === "US").closed_trades, 4, "Undone sales must not count in Performance");
+  // Undoing the opening purchase removes the position without erasing the record.
+  assert.equal((await as("alice", "/api/holdings/add", { symbol: "GOOGL", shares: 5, price: 10 })).status, 200);
+  const googl = db.rows.find(row => row.symbol === "GOOGL");
+  assert.equal((await as("alice", "/api/holdings/undo", { id: db.trades.find(t => t.holding_id === googl.id).id })).status, 200);
+  const afterUndo = await (await as("alice", "/api/holdings")).json();
+  assert.ok(!afterUndo.open.some(item => item.symbol === "GOOGL") && !afterUndo.closed.some(item => item.symbol === "GOOGL"), "An undone opening purchase must disappear from positions");
+  assert.ok(db.trades.some(t => t.holding_id === googl.id && t.voided_at), "...but stay in the record");
   assert.equal((await (await as("bob", "/api/holdings/stats")).json()).history.length, 0, "History must stay private to its owner");
 }
 globalThis.fetch = realFetch;

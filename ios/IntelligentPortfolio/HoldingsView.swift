@@ -6,7 +6,7 @@ struct HoldingsView: View {
     @State private var showingAdd = false
     @State private var positionEdit: PositionEdit?
     @State private var section = HoldingsSection.positions
-    @State private var removeTarget: Holding?
+    @State private var undoTarget: Holding?
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -56,7 +56,7 @@ struct HoldingsView: View {
                                 .panel()
                         }
                         ForEach(data.open) { holding in
-                            HoldingCard(holding: holding, onBuyMore: { positionEdit = PositionEdit(holding: holding, sell: false) }, onSell: { positionEdit = PositionEdit(holding: holding, sell: true) }, onRemove: { removeTarget = holding })
+                            HoldingCard(holding: holding, onBuyMore: { positionEdit = PositionEdit(holding: holding, sell: false) }, onSell: { positionEdit = PositionEdit(holding: holding, sell: true) }, onUndo: { undoTarget = holding })
                         }
                         if !data.closed.isEmpty {
                             Text("CLOSED").font(.caption.monospaced().bold()).foregroundStyle(AppTheme.amber)
@@ -101,13 +101,17 @@ struct HoldingsView: View {
             }
             .sheet(isPresented: $showingAdd) { AddHoldingSheet().environmentObject(model) }
             .sheet(item: $positionEdit) { edit in PositionSheet(holding: edit.holding, startsAsSell: edit.sell).environmentObject(model) }
-            .confirmationDialog("Remove this holding?", isPresented: Binding(get: { removeTarget != nil }, set: { if !$0 { removeTarget = nil } }), titleVisibility: .visible) {
-                Button("Remove", role: .destructive) {
-                    if let target = removeTarget { Task { await model.removeHolding(id: target.id) } }
-                    removeTarget = nil
+            .confirmationDialog("Undo last entry?", isPresented: Binding(get: { undoTarget != nil }, set: { if !$0 { undoTarget = nil } }), titleVisibility: .visible) {
+                Button("Undo", role: .destructive) {
+                    if let entry = undoTarget?.lastEntry { Task { await model.undoEntry(id: entry.id) } }
+                    undoTarget = nil
                 }
-                Button("Cancel", role: .cancel) { removeTarget = nil }
-            } message: { Text("It will not be kept in your closed list.") }
+                Button("Cancel", role: .cancel) { undoTarget = nil }
+            } message: {
+                if let entry = undoTarget?.lastEntry {
+                    Text("\(entry.side == "BUY" ? "Bought" : "Sold") \(shareText(entry.shares)) shares at \(money(undoTarget?.currencySymbol ?? "$", undoTarget?.priceDecimals ?? 2, entry.price)). It stays in History marked as undone and no longer counts in Performance.")
+                }
+            }
             .task {
                 // Re-check automatically while this tab is on screen.
                 while !Task.isCancelled {
@@ -148,7 +152,7 @@ private struct HoldingCard: View {
     let holding: Holding
     let onBuyMore: () -> Void
     let onSell: () -> Void
-    let onRemove: () -> Void
+    let onUndo: () -> Void
 
     private var tint: Color {
         switch holding.action {
@@ -201,7 +205,9 @@ private struct HoldingCard: View {
             HStack {
                 Button("Buy more", action: onBuyMore).buttonStyle(.bordered).tint(AppTheme.amber)
                 Button("Sell", action: onSell).buttonStyle(.bordered)
-                Button("Remove", role: .destructive, action: onRemove).buttonStyle(.bordered)
+                if holding.lastEntry != nil {
+                    Button("Undo last entry", action: onUndo).buttonStyle(.bordered)
+                }
             }
             .font(.footnote)
         }
@@ -451,6 +457,7 @@ private struct PerformancePanel: View {
 /// Every purchase and sale the user recorded, newest first.
 private struct HistoryPanel: View {
     @EnvironmentObject private var model: AppModel
+    @State private var undoTarget: TradeEntry?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -462,9 +469,10 @@ private struct HistoryPanel: View {
                     let bought = trade.side == "BUY"
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(bought ? "Bought" : "Sold") \(trade.symbol)")
+                            Text("\(trade.voided ? "Undone · " : "")\(bought ? "Bought" : "Sold") \(trade.symbol)")
                                 .font(.subheadline.bold())
-                                .foregroundStyle(bought ? AppTheme.mint : AppTheme.red)
+                                .strikethrough(trade.voided)
+                                .foregroundStyle(trade.voided ? AppTheme.muted : bought ? AppTheme.mint : AppTheme.red)
                             Text("\(shareText(trade.shares)) sh at \(money(trade.currencySymbol, trade.priceDecimals, trade.price)) · \(dateText(trade.at))")
                                 .font(.caption)
                                 .foregroundStyle(AppTheme.muted)
@@ -473,12 +481,19 @@ private struct HistoryPanel: View {
                         if let pnl = trade.realizedPnl {
                             Text(signed(trade.currencySymbol, pnl))
                                 .font(.footnote.bold())
-                                .foregroundStyle(pnl >= 0 ? AppTheme.mint : AppTheme.red)
+                                .strikethrough(trade.voided)
+                                .foregroundStyle(trade.voided ? AppTheme.muted : pnl >= 0 ? AppTheme.mint : AppTheme.red)
+                        }
+                        if trade.canUndo {
+                            Button("Undo") { undoTarget = trade }
+                                .buttonStyle(.bordered)
+                                .font(.footnote)
                         }
                     }
+                    .opacity(trade.voided ? 0.55 : 1)
                     .panel()
                 }
-                Text("Removing a holding erases its own entries here. Your closed sales stay in Performance.")
+                Text("Only the newest entry for a stock can be undone, so averages stay exact. Undone entries stay here, marked as undone, and do not count in Performance.")
                     .font(.caption)
                     .foregroundStyle(AppTheme.muted)
             } else {
@@ -486,6 +501,15 @@ private struct HistoryPanel: View {
             }
         }
         .task { await model.refreshHoldingStats() }
+        .confirmationDialog("Undo this entry?", isPresented: Binding(get: { undoTarget != nil }, set: { if !$0 { undoTarget = nil } }), titleVisibility: .visible) {
+            Button("Undo", role: .destructive) {
+                if let entry = undoTarget { Task { await model.undoEntry(id: entry.id) } }
+                undoTarget = nil
+            }
+            Button("Cancel", role: .cancel) { undoTarget = nil }
+        } message: {
+            Text("It stays in History marked as undone and no longer counts in Performance.")
+        }
     }
 
     private func dateText(_ iso: String) -> String {

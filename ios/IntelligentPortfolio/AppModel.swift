@@ -209,10 +209,11 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func removeHolding(id: String) async {
+    /// Reverses the newest entry for a stock. It stays in History, marked as undone.
+    func undoEntry(id: String) async {
         guard let token else { return }
         do {
-            try await api.removeHolding(id: id, token: token)
+            try await api.undoEntry(id: id, token: token)
             await refreshHoldings()
             await refreshHoldingStats()
         } catch { report(error) }

@@ -1629,9 +1629,11 @@ function noDataEvaluation() {
   return { action: "NO_DATA", action_label: HOLDING_ACTIONS.NO_DATA, headline: "Market data is unavailable right now", reasons: ["The data provider did not return enough history for this symbol. It will be checked again on the next refresh."] };
 }
 
-const TRADE_SQL = "INSERT INTO holding_trades (id, user_id, holding_id, symbol, market, side, shares, price, at, realized_pnl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-const tradeStatement = (env, userId, holdingId, row, side, shares, price, at, pnl = null) =>
-  env.DB.prepare(TRADE_SQL).bind(randomBase64Url(9), userId, holdingId, row.symbol, row.market, side, shares, price, at, pnl);
+// Every entry belongs to a "chain": the original holding it came from. A partial sale is recorded against the
+// closed piece (holding_id) but stays in the chain of the position it was sold from, so undo can find its parent.
+const TRADE_SQL = "INSERT INTO holding_trades (id, user_id, holding_id, chain_id, symbol, market, side, shares, price, at, realized_pnl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+const tradeStatement = (env, userId, holdingId, row, side, shares, price, at, pnl = null, chainId = holdingId) =>
+  env.DB.prepare(TRADE_SQL).bind(randomBase64Url(9), userId, holdingId, chainId, row.symbol, row.market, side, shares, price, at, pnl);
 
 async function holdingsUser(request, env) {
   await requireSubscription(request, env);
@@ -1672,7 +1674,13 @@ async function listHoldings(request, env) {
   const user = await holdingsUser(request, env);
   const manual = (await readBody(request)).refresh === true;
   const rows = (await env.DB.prepare("SELECT * FROM holdings WHERE user_id = ? ORDER BY created_at DESC LIMIT 100").bind(user.id).all()).results || [];
-  const open = rows.filter(row => !row.closed_at), closed = rows.filter(row => row.closed_at);
+  // A closed row without a sale price is an undone entry, so it is hidden.
+  const open = rows.filter(row => !row.closed_at), closed = rows.filter(row => row.closed_at && row.sell_price != null);
+  const lastByChain = new Map();
+  for (const trade of (await env.DB.prepare("SELECT * FROM holding_trades WHERE user_id = ? AND voided_at IS NULL ORDER BY at DESC, rowid DESC LIMIT 300").bind(user.id).all()).results || []) {
+    const chain = trade.chain_id || trade.holding_id;
+    if (!lastByChain.has(chain)) lastByChain.set(chain, trade);
+  }
   const symbolsByMarket = new Map();
   for (const row of open) {
     if (!symbolsByMarket.has(row.market)) symbolsByMarket.set(row.market, new Set());
@@ -1694,7 +1702,11 @@ async function listHoldings(request, env) {
       since = now;
       updates.push(env.DB.prepare("UPDATE holdings SET last_action = ?, last_action_at = ? WHERE id = ? AND user_id = ?").bind(evaluation.action, now, row.id, user.id));
     }
-    return { ...base(row), ...evaluation, previous_action: row.last_action || null, action_since: since };
+    const last = lastByChain.get(row.id);
+    return {
+      ...base(row), ...evaluation, previous_action: row.last_action || null, action_since: since,
+      last_entry: last ? { id: last.id, side: last.side, shares: last.shares, price: last.price, at: last.at } : null,
+    };
   });
   if (updates.length) await env.DB.batch(updates).catch(() => {});
   const totals = new Map();
@@ -1760,7 +1772,7 @@ async function sellHolding(request, env) {
     env.DB.prepare("UPDATE holdings SET shares = shares - ? WHERE id = ? AND user_id = ? AND closed_at IS NULL AND shares > ?").bind(sold, id, user.id, sold),
     env.DB.prepare("INSERT INTO holdings (id, user_id, symbol, market, shares, buy_price, bought_at, created_at, closed_at, sell_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .bind(closedId, user.id, row.symbol, row.market, sold, row.buy_price, row.bought_at, now, now, price),
-    tradeStatement(env, user.id, closedId, row, "SELL", sold, price, now, (price - Number(row.buy_price)) * sold),
+    tradeStatement(env, user.id, closedId, row, "SELL", sold, price, now, (price - Number(row.buy_price)) * sold, id),
   ]);
   return { sold: true, closed: false, remaining: round(Number(row.shares) - sold, 6) };
 }
@@ -1828,7 +1840,14 @@ function computeHoldingStats(closed) {
 async function holdingStats(request, env) {
   const user = await holdingsUser(request, env);
   const closed = (await env.DB.prepare("SELECT * FROM holdings WHERE user_id = ? AND closed_at IS NOT NULL ORDER BY closed_at DESC LIMIT 500").bind(user.id).all()).results || [];
-  const trades = (await env.DB.prepare("SELECT * FROM holding_trades WHERE user_id = ? ORDER BY at DESC LIMIT 200").bind(user.id).all()).results || [];
+  const trades = (await env.DB.prepare("SELECT * FROM holding_trades WHERE user_id = ? ORDER BY at DESC, rowid DESC LIMIT 200").bind(user.id).all()).results || [];
+  const latest = new Set();
+  const seenChains = new Set();
+  for (const trade of trades) {
+    if (trade.voided_at) continue;
+    const chain = trade.chain_id || trade.holding_id;
+    if (!seenChains.has(chain)) { seenChains.add(chain); latest.add(trade.id); }
+  }
   return {
     updated_at: new Date().toISOString(),
     markets: computeHoldingStats(closed),
@@ -1836,9 +1855,52 @@ async function holdingStats(request, env) {
       id: trade.id, at: trade.at, symbol: trade.symbol, market: trade.market, side: trade.side, shares: trade.shares, price: trade.price,
       currency_symbol: MARKETS[trade.market]?.symbolPrefix || "$", price_decimals: MARKETS[trade.market]?.decimals(trade.price) ?? 2,
       realized_pnl: trade.realized_pnl == null ? null : round(trade.realized_pnl, 2),
+      voided: Boolean(trade.voided_at),
+      can_undo: latest.has(trade.id),
     })),
     disclaimer: "Your own record of trades you entered. Past results do not predict future ones, and this is not personal financial advice.",
   };
+}
+
+// Undo reverses the most recent entry of a position without deleting it: the entry stays in History marked as
+// undone and no longer counts in Performance. Older entries must be undone newest-first so averages stay exact.
+async function undoEntry(request, env) {
+  const user = await holdingsUser(request, env);
+  const id = String((await readBody(request)).id || "");
+  if (!/^[A-Za-z0-9_-]{6,40}$/.test(id)) throw Object.assign(new Error("Entry not found"), { status: 404 });
+  const trade = await env.DB.prepare("SELECT * FROM holding_trades WHERE id = ? AND user_id = ?").bind(id, user.id).first();
+  if (!trade || trade.voided_at) throw Object.assign(new Error("That entry was not found or is already undone"), { status: 404 });
+  const chain = trade.chain_id || trade.holding_id;
+  const active = ((await env.DB.prepare("SELECT * FROM holding_trades WHERE user_id = ? AND chain_id = ? ORDER BY at DESC, rowid DESC").bind(user.id, chain).all()).results || []).filter(entry => !entry.voided_at);
+  if (!active.length || active[0].id !== trade.id) throw Object.assign(new Error("Only the most recent entry for this stock can be undone. Undo the newer one first."), { status: 400 });
+  const now = new Date().toISOString();
+  const voidTrade = env.DB.prepare("UPDATE holding_trades SET voided_at = ? WHERE id = ? AND user_id = ?").bind(now, trade.id, user.id);
+  const holding = await env.DB.prepare("SELECT * FROM holdings WHERE id = ? AND user_id = ?").bind(trade.holding_id, user.id).first();
+  if (!holding) throw Object.assign(new Error("Holding not found"), { status: 404 });
+  const shares = Number(trade.shares), price = Number(trade.price);
+  if (trade.side === "BUY") {
+    if (active.length === 1) {
+      // The opening purchase: the position never existed, so hide it (closed without a sale price).
+      await env.DB.batch([env.DB.prepare("UPDATE holdings SET closed_at = ?, sell_price = NULL WHERE id = ? AND user_id = ?").bind(now, holding.id, user.id), voidTrade]);
+    } else {
+      const remaining = Number(holding.shares) - shares;
+      if (holding.closed_at || remaining <= 1e-9) throw Object.assign(new Error("This entry cannot be undone"), { status: 400 });
+      const average = (Number(holding.shares) * Number(holding.buy_price) - shares * price) / remaining;
+      await env.DB.batch([env.DB.prepare("UPDATE holdings SET shares = ?, buy_price = ? WHERE id = ? AND user_id = ? AND closed_at IS NULL").bind(remaining, average, holding.id, user.id), voidTrade]);
+    }
+  } else if (trade.holding_id === chain) {
+    if (!holding.closed_at || holding.sell_price == null) throw Object.assign(new Error("This entry cannot be undone"), { status: 400 });
+    await env.DB.batch([env.DB.prepare("UPDATE holdings SET closed_at = NULL, sell_price = NULL WHERE id = ? AND user_id = ?").bind(holding.id, user.id), voidTrade]);
+  } else {
+    const parent = await env.DB.prepare("SELECT * FROM holdings WHERE id = ? AND user_id = ?").bind(chain, user.id).first();
+    if (!parent || parent.closed_at) throw Object.assign(new Error("This sale cannot be undone because the position has changed"), { status: 400 });
+    await env.DB.batch([
+      env.DB.prepare("UPDATE holdings SET shares = shares + ? WHERE id = ? AND user_id = ? AND closed_at IS NULL").bind(shares, parent.id, user.id),
+      env.DB.prepare("UPDATE holdings SET sell_price = NULL WHERE id = ? AND user_id = ?").bind(holding.id, user.id),
+      voidTrade,
+    ]);
+  }
+  return { undone: true };
 }
 
 async function removeHolding(request, env) {
@@ -1901,6 +1963,7 @@ async function handle(request, env, ctx) {
       return json(await approveMobilePairing(request, env, await readBody(request)));
     }
     if (url.pathname === "/api/holdings") return json(await listHoldings(request, env));
+    if (url.pathname === "/api/holdings/undo") return json(await undoEntry(request, env));
     if (url.pathname === "/api/holdings/stats") return json(await holdingStats(request, env));
     if (url.pathname === "/api/holdings/add") return json(await addHolding(request, env));
     if (url.pathname === "/api/holdings/increase") return json(await increaseHolding(request, env));

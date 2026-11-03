@@ -257,6 +257,15 @@ struct Holding: Decodable, Identifiable, Sendable {
     let dailyTrend: String?
     let previousAction: String?
     let actionSince: String?
+    let lastEntry: LastEntry?
+}
+
+struct LastEntry: Decodable, Sendable {
+    let id: String
+    let side: String
+    let shares: Double
+    let price: Double
+    let at: String
 }
 
 struct ClosedHolding: Decodable, Identifiable, Sendable {
@@ -305,7 +314,7 @@ struct SellHoldingBody: Encodable, Sendable {
     let price: Double
 }
 
-struct RemoveHoldingBody: Encodable, Sendable {
+struct UndoEntryBody: Encodable, Sendable {
     let id: String
 }
 
@@ -366,4 +375,6 @@ struct TradeEntry: Decodable, Identifiable, Sendable {
     let currencySymbol: String
     let priceDecimals: Int
     let realizedPnl: Double?
+    let voided: Bool
+    let canUndo: Bool
 }

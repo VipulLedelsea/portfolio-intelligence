@@ -95,6 +95,7 @@ export const holdingTrades = sqliteTable("holding_trades", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull(),
   holdingId: text("holding_id").notNull(),
+  chainId: text("chain_id"),
   symbol: text("symbol").notNull(),
   market: text("market").notNull().default("US"),
   side: text("side").notNull(),
@@ -102,6 +103,7 @@ export const holdingTrades = sqliteTable("holding_trades", {
   price: real("price").notNull(),
   at: text("at").notNull(),
   realizedPnl: real("realized_pnl"),
+  voidedAt: text("voided_at"),
 }, table => [
   index("holding_trades_user_idx").on(table.userId, table.at),
   index("holding_trades_holding_idx").on(table.holdingId),
