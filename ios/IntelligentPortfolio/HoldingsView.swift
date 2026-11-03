@@ -654,40 +654,12 @@ private struct PortfolioPanel: View {
             tile("Positions", "\(m.positions.count)")
             if let largest = m.positions.first { tile("Largest", "\(largest.symbol) \(String(format: "%.1f", largest.weightPct))%") }
         }
-        Text("ALLOCATIONS").font(.caption2).foregroundStyle(AppTheme.muted)
-        ForEach(m.positions) { position in
-            row(title: position.symbol, subtitle: position.sector, weight: position.weightPct,
-                over: m.positions.count > 1 && position.weightPct > limit,
-                trailing: "\(String(format: "%.1f", position.weightPct))% · \(String(format: "%+.1f", position.pnlPct))%",
-                trailingColor: position.pnlPct >= 0 ? AppTheme.mint : AppTheme.red)
-        }
-        Text("BY SECTOR").font(.caption2).foregroundStyle(AppTheme.muted)
-        ForEach(m.sectors) { sector in
-            row(title: sector.sector, subtitle: nil, weight: sector.weightPct, over: false, trailing: "\(String(format: "%.1f", sector.weightPct))%", trailingColor: AppTheme.muted)
-        }
+        AllocationDonut(market: m, limit: limit)
         Text("WHAT THE READINGS SAY").font(.caption2).foregroundStyle(AppTheme.muted)
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 8)], spacing: 8) {
             ForEach(m.readings) { reading in
                 tile(reading.label, "\(reading.count) holding\(reading.count == 1 ? "" : "s") · \(String(format: "%.1f", reading.weightPct))%")
             }
-        }
-    }
-
-    private func row(title: String, subtitle: String?, weight: Double, over: Bool, trailing: String, trailingColor: Color) -> some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.footnote.bold())
-                if let subtitle { Text(subtitle).font(.caption2).foregroundStyle(AppTheme.muted) }
-            }
-            .frame(width: 96, alignment: .leading)
-            GeometryReader { proxy in
-                Rectangle()
-                    .fill(over ? AppTheme.amber.opacity(0.7) : AppTheme.mint.opacity(0.5))
-                    .frame(width: max(3, proxy.size.width * weight / 100), height: 10)
-                    .frame(maxHeight: .infinity, alignment: .center)
-            }
-            .frame(height: 16)
-            Text(trailing).font(.caption.monospaced()).foregroundStyle(trailingColor)
         }
     }
 
@@ -699,5 +671,199 @@ private struct PortfolioPanel: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
         .overlay(Rectangle().stroke(AppTheme.line))
+    }
+}
+
+private extension Color {
+    init(hex: UInt32) {
+        self.init(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)
+    }
+}
+
+private func readingName(_ action: String?) -> String? {
+    switch action {
+    case "HOLD": "Hold"
+    case "WATCH": "Watch closely"
+    case "TAKE_PROFIT": "Consider taking profit"
+    case "EXIT": "Exit signal"
+    default: nil
+    }
+}
+
+private struct DonutSlice: Identifiable {
+    let id: String
+    let name: String
+    let sub: String
+    let value: Double
+    let weight: Double
+    let pnl: Double?
+    let action: String?
+    let over: Bool
+    let color: Color
+}
+
+/// A donut of one market's allocations, by stock or by sector. Slices are coloured per stock (or sector), tapping
+/// one shows its details in the middle, and an amber arc marks a stock above the concentration limit.
+private struct AllocationDonut: View {
+    let market: PortfolioMarket
+    let limit: Double
+    @State private var bySector = false
+    @State private var selected: String?
+
+    private static let palette: [Color] = [0x2A78D6, 0xEB6834, 0x1BAF7A, 0xEDA100, 0xE87BA4, 0x008300, 0x6250D6, 0xE34948].map { Color(hex: $0) }
+    private static let other = Color(hex: 0x898781)
+
+    private var slices: [DonutSlice] {
+        var items: [DonutSlice]
+        if bySector {
+            items = market.sectors.map { sector in
+                DonutSlice(id: sector.sector, name: sector.sector,
+                           sub: market.positions.filter { $0.sector == sector.sector }.map(\.symbol).joined(separator: ", "),
+                           value: sector.value, weight: sector.weightPct, pnl: nil, action: nil, over: false, color: .clear)
+            }
+        } else {
+            items = market.positions.map { position in
+                DonutSlice(id: position.symbol, name: position.symbol, sub: position.sector, value: position.value, weight: position.weightPct,
+                           pnl: position.pnlPct, action: position.action,
+                           over: market.positions.count > 1 && position.weightPct > limit, color: .clear)
+            }
+        }
+        if items.count > 8 {
+            let rest = Array(items[7...])
+            items = Array(items[..<7]) + [DonutSlice(id: "__other", name: "Other (\(rest.count))", sub: rest.map(\.name).joined(separator: ", "),
+                                                    value: rest.reduce(0) { $0 + $1.value }, weight: (rest.reduce(0) { $0 + $1.weight } * 10).rounded() / 10,
+                                                    pnl: nil, action: nil, over: false, color: .clear)]
+        }
+        return items.enumerated().map { index, item in
+            DonutSlice(id: item.id, name: item.name, sub: item.sub, value: item.value, weight: item.weight, pnl: item.pnl, action: item.action, over: item.over,
+                       color: item.id == "__other" ? Self.other : Self.palette[index % Self.palette.count])
+        }
+    }
+
+    var body: some View {
+        let items = slices
+        let total = max(items.reduce(0) { $0 + $1.value }, 0.0001)
+        let chosen = items.first { $0.id == selected }
+        VStack(alignment: .leading, spacing: 10) {
+            Picker("Group by", selection: $bySector) {
+                Text("By stock").tag(false)
+                Text("By sector").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: bySector) { _, _ in selected = nil }
+
+            GeometryReader { proxy in
+                let side = min(proxy.size.width, 280)
+                ZStack {
+                    Canvas { context, size in
+                        draw(items: items, total: total, in: &context, size: size)
+                    }
+                    centre(chosen: chosen, total: total)
+                }
+                .frame(width: side, height: side)
+                .contentShape(Rectangle())
+                .onTapGesture(coordinateSpace: .local) { location in
+                    selected = hit(at: location, side: side, items: items, total: total)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .frame(height: 280)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Allocations \(bySector ? "by sector" : "by stock"): " + items.map { "\($0.name) \(String(format: "%.1f", $0.weight)) percent" }.joined(separator: ", "))
+
+            VStack(spacing: 0) {
+                ForEach(items) { item in
+                    Button { selected = selected == item.id ? nil : item.id } label: {
+                        HStack(spacing: 10) {
+                            Rectangle().fill(item.color).frame(width: 12, height: 12)
+                            VStack(alignment: .leading, spacing: 1) {
+                                HStack(spacing: 6) {
+                                    Text(item.name).font(.footnote.bold())
+                                    if item.over {
+                                        Text("over \(Int(limit))% limit").font(.caption2.bold()).foregroundStyle(AppTheme.amber)
+                                    }
+                                }
+                                if !item.sub.isEmpty { Text(item.sub).font(.caption2).foregroundStyle(AppTheme.muted).lineLimit(1) }
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 1) {
+                                Text("\(String(format: "%.1f", item.weight))%").font(.footnote.bold())
+                                Text(item.pnl.map { String(format: "%+.1f%%", $0) } ?? money(market.currencySymbol, 0, item.value))
+                                    .font(.caption2)
+                                    .foregroundStyle(item.pnl.map { $0 >= 0 ? AppTheme.mint : AppTheme.red } ?? AppTheme.muted)
+                            }
+                        }
+                        .padding(.vertical, 8).padding(.horizontal, 6)
+                        .frame(minHeight: 44)
+                        .background(item.id == selected ? AppTheme.panel : .clear)
+                        .overlay(alignment: .bottom) { Rectangle().fill(AppTheme.line).frame(height: 1) }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Text("Tap a slice or a row for detail.\(!bySector && items.contains { $0.over } ? " An amber arc marks a position above the limit." : "")")
+                .font(.caption)
+                .foregroundStyle(AppTheme.muted)
+        }
+        .sensoryFeedback(.selection, trigger: selected)
+    }
+
+    private func geometry(_ side: CGFloat) -> (centre: CGPoint, outer: CGFloat, inner: CGFloat) {
+        let outer = side / 2 - 16
+        return (CGPoint(x: side / 2, y: side / 2), outer, outer * 0.65)
+    }
+
+    private func draw(items: [DonutSlice], total: Double, in context: inout GraphicsContext, size: CGSize) {
+        let g = geometry(min(size.width, size.height))
+        var start = -Double.pi / 2
+        for item in items {
+            let sweep = item.value / total * 2 * Double.pi
+            let gap = items.count > 1 ? 0.012 : 0
+            let a0 = start + gap, a1 = max(a0 + 0.001, start + sweep - gap)
+            let radius = item.id == selected ? g.outer + 5 : g.outer
+            var path = Path()
+            path.addArc(center: g.centre, radius: radius, startAngle: .radians(a0), endAngle: .radians(a1), clockwise: false)
+            path.addArc(center: g.centre, radius: g.inner, startAngle: .radians(a1), endAngle: .radians(a0), clockwise: true)
+            path.closeSubpath()
+            context.fill(path, with: .color(item.color.opacity(selected == nil || selected == item.id ? 1 : 0.5)))
+            if item.over {
+                var arc = Path()
+                arc.addArc(center: g.centre, radius: g.outer + 10, startAngle: .radians(a0), endAngle: .radians(a1), clockwise: false)
+                context.stroke(arc, with: .color(AppTheme.amber), lineWidth: 3)
+            }
+            start += sweep
+        }
+    }
+
+    private func hit(at point: CGPoint, side: CGFloat, items: [DonutSlice], total: Double) -> String? {
+        let g = geometry(side)
+        let dx = point.x - g.centre.x, dy = point.y - g.centre.y
+        let distance = (dx * dx + dy * dy).squareRoot()
+        guard distance >= g.inner - 8, distance <= g.outer + 14 else { return nil }
+        var angle = atan2(dy, dx) + Double.pi / 2
+        if angle < 0 { angle += 2 * Double.pi }
+        var running = 0.0
+        for item in items {
+            running += item.value / total * 2 * Double.pi
+            if angle <= running { return item.id == selected ? nil : item.id }
+        }
+        return nil
+    }
+
+    @ViewBuilder
+    private func centre(chosen: DonutSlice?, total: Double) -> some View {
+        VStack(spacing: 2) {
+            if let chosen {
+                Text(chosen.name).font(.caption).foregroundStyle(AppTheme.muted).lineLimit(1)
+                Text("\(String(format: "%.1f", chosen.weight))%").font(.title2.bold())
+                Text(money(market.currencySymbol, 0, chosen.value)).font(.caption).foregroundStyle(AppTheme.muted)
+                if let reading = readingName(chosen.action) { Text(reading).font(.caption2).foregroundStyle(AppTheme.muted) }
+            } else {
+                Text("Total").font(.caption).foregroundStyle(AppTheme.muted)
+                Text(money(market.currencySymbol, 0, total)).font(.title3.bold())
+            }
+        }
+        .frame(width: 130)
+        .allowsHitTesting(false)
     }
 }
