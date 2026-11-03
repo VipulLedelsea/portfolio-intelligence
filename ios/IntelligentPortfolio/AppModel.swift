@@ -122,7 +122,13 @@ final class AppModel: ObservableObject {
             do {
                 let status = try await api.pairingStatus(code: request.code, secret: request.pairingSecret)
                 if status.approved, let newToken = status.token {
-                    try KeychainStore.save(token: newToken)
+                    do { try KeychainStore.save(token: newToken) } catch {
+                        // The server has already handed the token over, so retrying cannot help: say so and start over.
+                        pairing = nil
+                        connectionState = .disconnected
+                        errorMessage = "This device couldn't store the connection securely. Please try connecting again."
+                        return
+                    }
                     token = newToken
                     isGuest = false
                     UserDefaults.standard.set(false, forKey: Self.guestKey)

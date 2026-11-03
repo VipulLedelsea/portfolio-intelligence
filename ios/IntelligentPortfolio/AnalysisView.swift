@@ -42,6 +42,7 @@ struct AnalysisContent: View {
 
     @EnvironmentObject private var model: AppModel
     @Environment(\.openURL) private var openURL
+    @ScaledMetric(relativeTo: .caption) private var tileMinimum: CGFloat = 150
     @State private var chartMode = ChartMode.signal
     @State private var trailingInset: CGFloat = 0
     @Namespace private var railNamespace
@@ -241,7 +242,7 @@ struct AnalysisContent: View {
     @ViewBuilder
     private func levels(_ levels: ScenarioLevels, analysis: AnalysisResponse) -> some View {
         let format: (Double) -> String = { PriceFormat.string($0, prefix: analysis.currencySymbol, decimals: analysis.priceDecimals) }
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: tileMinimum), spacing: 10)], spacing: 10) {
             level("Signal entry", format(levels.reference))
             level("Current", format(levels.current))
             level("Invalidation", format(levels.risk))

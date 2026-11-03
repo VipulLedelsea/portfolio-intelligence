@@ -3,7 +3,16 @@ import Foundation
 actor APIClient {
     static let shared = APIClient()
     /// The only place the server address is set. Change it when the site moves.
-    static let productionOrigin = URL(string: "https://intelligent-portfolio.portfolio-intelligence-site.workers.dev")!
+    private static let liveOrigin = URL(string: "https://intelligent-portfolio.portfolio-intelligence-site.workers.dev")!
+
+    /// Debug builds can point at a local test server through the `apiOriginOverride` default (simulator testing only).
+    /// Release builds always use the live address.
+    static var productionOrigin: URL {
+        #if DEBUG
+        if let text = UserDefaults.standard.string(forKey: "apiOriginOverride"), let url = URL(string: text) { return url }
+        #endif
+        return liveOrigin
+    }
 
     private let origin: URL
     private let session: URLSession

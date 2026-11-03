@@ -155,7 +155,13 @@ private struct SectionTabs: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 6) { ForEach(HoldingsSection.allCases) { tab in chip(tab).frame(maxWidth: .infinity) } }
+            // Natural widths with the spare room shared between them, so a longer label never truncates.
+            HStack(spacing: 0) {
+                ForEach(Array(HoldingsSection.allCases.enumerated()), id: \.offset) { index, tab in
+                    chip(tab)
+                    if index < HoldingsSection.allCases.count - 1 { Spacer(minLength: 6) }
+                }
+            }
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) { ForEach(HoldingsSection.allCases) { tab in chip(tab).id(tab) } }
@@ -169,10 +175,10 @@ private struct SectionTabs: View {
         let selected = selection == tab
         return Button { withAnimation(.snappy) { selection = tab } } label: {
             Text(tab.rawValue)
-                .font(.subheadline.weight(selected ? .semibold : .regular))
+                .font(.footnote.weight(selected ? .semibold : .regular))
                 .lineLimit(1)
-                .padding(.horizontal, 12).padding(.vertical, 8)
-                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .fixedSize(horizontal: true, vertical: false)
                 .foregroundStyle(selected ? AppTheme.background : Color.primary)
                 .background(selected ? AppTheme.amber : AppTheme.panel)
                 .overlay(Rectangle().stroke(selected ? AppTheme.amber : AppTheme.line))
@@ -209,6 +215,8 @@ private func shareText(_ shares: Double) -> String {
 }
 
 private struct HoldingCard: View {
+    /// Tile columns widen with the text size, so at large sizes they stack in one column instead of squeezing words.
+    @ScaledMetric(relativeTo: .caption) private var tileMinimum: CGFloat = 130
     let holding: Holding
     let onBuyMore: () -> Void
     let onSell: () -> Void
@@ -243,7 +251,7 @@ private struct HoldingCard: View {
             }
             Text(holding.headline).font(.subheadline.bold())
             if let price = holding.currentPrice, let pnl = holding.pnlValue, let pct = holding.pnlPct {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 8)], spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: tileMinimum), spacing: 8)], spacing: 8) {
                     stat("Now", money(symbol, decimals, price))
                     stat("Profit / loss", "\(signed(symbol, pnl)) (\(String(format: "%+.2f", pct))%)", color: pnl >= 0 ? AppTheme.mint : AppTheme.red)
                     if let v = holding.value { stat("Value", money(symbol, 2, v)) }
@@ -447,6 +455,7 @@ private struct PositionSheet: View {
 /// Results from the user's own closed sales, kept per market because currencies cannot be added together.
 private struct PerformancePanel: View {
     @EnvironmentObject private var model: AppModel
+    @ScaledMetric(relativeTo: .caption) private var tileMinimum: CGFloat = 140
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -471,7 +480,7 @@ private struct PerformancePanel: View {
     private func marketSection(_ m: MarketStats) -> some View {
         Text(m.market == "IN" ? "INDIA (BSE)" : "US STOCKS")
             .font(.caption.monospaced().bold()).foregroundStyle(AppTheme.amber)
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 8)], spacing: 8) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: tileMinimum), spacing: 8)], spacing: 8) {
             tile("Closed trades", "\(m.closedTrades)")
             tile("Win rate", "\(String(format: "%.1f", m.winRate))% (\(m.wins) of \(m.closedTrades))")
             tile("Realised P/L", signed(m.currencySymbol, m.realizedPnl), color: m.realizedPnl >= 0 ? AppTheme.mint : AppTheme.red)
@@ -656,6 +665,7 @@ private struct EditEntrySheet: View {
 /// How the open holdings fit together, per market: weights, sectors, concentration and risk to the protective levels.
 private struct PortfolioPanel: View {
     @EnvironmentObject private var model: AppModel
+    @ScaledMetric(relativeTo: .caption) private var tileMinimum: CGFloat = 140
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -694,7 +704,7 @@ private struct PortfolioPanel: View {
                 .foregroundStyle(AppTheme.amber)
                 .panel()
         }
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 8)], spacing: 8) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: tileMinimum), spacing: 8)], spacing: 8) {
             tile("Total value", money(symbol, 2, m.value))
             tile("Cost", money(symbol, 2, m.cost))
             tile("Unrealised P/L", "\(signed(symbol, m.pnlValue)) (\(String(format: "%+.2f", m.pnlPct))%)", color: m.pnlValue >= 0 ? AppTheme.mint : AppTheme.red)
@@ -704,7 +714,7 @@ private struct PortfolioPanel: View {
         }
         AllocationDonut(market: m, limit: limit)
         Text("WHAT THE READINGS SAY").font(.caption2).foregroundStyle(AppTheme.muted)
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 8)], spacing: 8) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: tileMinimum + 20), spacing: 8)], spacing: 8) {
             ForEach(m.readings) { reading in
                 tile(reading.label, "\(reading.count) holding\(reading.count == 1 ? "" : "s") · \(String(format: "%.1f", reading.weightPct))%")
             }
