@@ -1045,7 +1045,94 @@ function marketTrend(info, index, snapshots, withBreadth = true, marketId = null
   };
 }
 
-async function discover(market = MARKETS.US, env = {}) {
+// ---- Entry window timing: when does each setup stop being a fresh entry, and what happened to the ones that did ----
+const RECENT_SETUP_HOURS = 24;
+const DROP_REASONS = {
+  LATE_TREND: () => "Entry window closed",
+  EXTENDED_DO_NOT_CHASE: c => `Price ran ${Math.abs(c.extension_atr).toFixed(1)} ATR past the signal`,
+  SIGNAL_WEAKENING: c => `Price fell ${Math.abs(c.extension_atr).toFixed(1)} ATR below the signal`,
+  DAILY_CONFLICT: () => "Daily trend turned against it",
+  WEAK_TREND_REGIME: () => "Daily trend strength faded",
+  TARGET_REACHED: () => "Target 1 was reached",
+};
+
+function localParts(instant, tz) {
+  return Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+    .formatToParts(instant).filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+}
+
+// The wall-clock minute (since local midnight) at which each 4-hour bar of a typical recent session ends.
+function sessionBarEnds(bars, market) {
+  const byDay = new Map();
+  for (const bar of bars || []) {
+    const end = Date.parse(bar.ends_at);
+    if (!Number.isFinite(end)) continue;
+    const parts = localParts(new Date(end), market.tz);
+    const key = `${parts.year}-${parts.month}-${parts.day}`;
+    if (!byDay.has(key)) byDay.set(key, []);
+    byDay.get(key).push(Number(parts.hour) * 60 + Number(parts.minute));
+  }
+  const days = [...byDay.values()].slice(0, -1).slice(-6);
+  if (!days.length) return [];
+  const fullest = days.reduce((best, day) => day.length >= best.length ? day : best, days[0]);
+  return [...fullest].sort((a, b) => a - b);
+}
+
+function zonedInstant(year, month, day, minutes, tz) {
+  const base = Date.UTC(year, month - 1, day) + minutes * 60000;
+  let stamp = base;
+  for (let pass = 0; pass < 2; pass += 1) {
+    const parts = localParts(new Date(stamp), tz);
+    const wall = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute));
+    stamp += base - wall;
+  }
+  return new Date(stamp);
+}
+
+// The next completed-bar times from now, following the session pattern and skipping weekends.
+function nextBarEnds(pattern, market, from = new Date(), count = 3) {
+  if (!pattern.length) return [];
+  const out = [];
+  const start = localParts(from, market.tz);
+  for (let offset = 0; offset < 12 && out.length < count; offset += 1) {
+    const day = new Date(Date.UTC(Number(start.year), Number(start.month) - 1, Number(start.day) + offset));
+    if ([0, 6].includes(day.getUTCDay())) continue;
+    for (const minutes of pattern) {
+      const instant = zonedInstant(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), minutes, market.tz);
+      if (instant > from && out.length < count) out.push(instant);
+    }
+  }
+  return out;
+}
+
+// Setups that were fresh entries in an earlier scan but no longer are, kept for a day with the reason, so they do
+// not simply vanish. Each also shows how the price has moved since the signal.
+function recentSetups(previous, allCandidates, freshSymbols, nowIso) {
+  const known = new Map();
+  for (const item of [...(previous?.candidates || []), ...(previous?.recent_setups || [])]) if (!known.has(item.symbol)) known.set(item.symbol, item);
+  const current = new Map(allCandidates.map(candidate => [candidate.symbol, candidate]));
+  const cutoff = Date.parse(nowIso) - RECENT_SETUP_HOURS * 3600 * 1000;
+  const out = [];
+  for (const [symbol, old] of known) {
+    if (freshSymbols.has(symbol)) continue;
+    const droppedAt = old.dropped_at || nowIso;
+    if (Date.parse(droppedAt) < cutoff) continue;
+    const now = current.get(symbol) || old;
+    const entry = Number(now.signal_entry_price) || Number(old.signal_entry_price) || 0;
+    const sign = now.direction === "SHORT" ? -1 : 1;
+    const reasonFor = DROP_REASONS[now.entry_status];
+    out.push({
+      ...now,
+      first_seen_at: old.first_seen_at || previous?.generated_at || nowIso,
+      dropped_at: droppedAt,
+      drop_reason: reasonFor ? reasonFor(now) : "No longer a fresh entry",
+      since_signal_pct: entry ? round(sign * (now.price / entry - 1) * 100, 2) : null,
+    });
+  }
+  return out.sort((a, b) => Date.parse(b.dropped_at) - Date.parse(a.dropped_at)).slice(0, 30);
+}
+
+async function discover(market = MARKETS.US, env = {}, previous = null) {
   const records = market.universe || await loadUniverse();
   const metadata = new Map(records.map(record => [record.symbol, record]));
   const symbols = [...metadata.keys()];
@@ -1060,6 +1147,17 @@ async function discover(market = MARKETS.US, env = {}) {
   const allCandidates = [...snapshots.entries()].map(([symbol, snapshot]) => scoreCandidate(snapshot, metadata.get(symbol))).sort((a, b) => b.score - a.score || a.symbol.localeCompare(b.symbol));
   const candidates = allCandidates.filter(candidate => candidate.entry_eligible);
   const lateCandidates = allCandidates.filter(candidate => !candidate.entry_eligible);
+  // When each fresh setup stops counting as an entry (after MAX_ENTRY_AGE_BARS + 1 completed bars), and when it was first seen.
+  const nowIso = new Date().toISOString();
+  const sample = snapshots.values().next().value;
+  const barEnds = sample ? nextBarEnds(sessionBarEnds(sample.history, market), market) : [];
+  const previousFirstSeen = new Map((previous?.candidates || []).map(item => [item.symbol, item.first_seen_at || previous.generated_at]));
+  for (const candidate of candidates) {
+    candidate.first_seen_at = previousFirstSeen.get(candidate.symbol) || nowIso;
+    const closing = barEnds[MAX_ENTRY_AGE_BARS - Number(candidate.signal_age_bars || 0)];
+    if (closing) candidate.window_closes_at = closing.toISOString();
+  }
+  const recent = recentSetups(previous, allCandidates, new Set(candidates.map(candidate => candidate.symbol)), nowIso);
   const longCandidates = candidates.filter(candidate => candidate.direction === "LONG").sort((a, b) => b.long_score - a.long_score || a.symbol.localeCompare(b.symbol));
   const shortCandidates = candidates.filter(candidate => candidate.direction === "SHORT").sort((a, b) => b.short_score - a.short_score || a.symbol.localeCompare(b.symbol));
   return {
@@ -1080,6 +1178,7 @@ async function discover(market = MARKETS.US, env = {}) {
     long_candidates: longCandidates.slice(0, 20),
     short_candidates: shortCandidates.slice(0, 20),
     late_candidates: lateCandidates.slice(0, 20),
+    recent_setups: recent,
     direction_counts: { LONG: longCandidates.length, SHORT: shortCandidates.length },
     fresh_entry_count: candidates.length,
     late_or_extended_count: lateCandidates.length,
@@ -1458,7 +1557,8 @@ async function claimScanRefresh(env, market) {
 }
 
 async function refreshScan(env, market) {
-  const payload = await discover(market, env);
+  const previous = (await readStoredScan(env, market))?.payload || null;
+  const payload = await discover(market, env, previous);
   const generatedAt = new Date().toISOString();
   if (payload.successful === 0) throw new Error(payload.errors?.[0]?.error || "No market data was returned");
   scanMemory.set(market.id, { payload, generatedAt });

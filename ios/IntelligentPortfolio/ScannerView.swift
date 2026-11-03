@@ -112,6 +112,25 @@ struct ScannerView: View {
                         }
                         .buttonStyle(.plain)
                     }
+
+                    if let recent = discovery.recentSetups, !recent.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("RECENT SETUPS · LAST 24 HOURS")
+                                .font(.caption.monospaced().bold())
+                                .foregroundStyle(AppTheme.amber)
+                            Text("Fresh entries that dropped out, with why and how the price has moved since the signal.")
+                                .font(.caption)
+                                .foregroundStyle(AppTheme.muted)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 14)
+                        ForEach(recent) { setup in
+                            Button { selected = setup.candidate } label: {
+                                RecentSetupCard(setup: setup, isSelected: selectable && selected == setup.candidate)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                 } else if model.isScanning {
                     ProgressView("Loading the \(model.market.scanTitle) scan…")
                         .tint(AppTheme.amber)
@@ -230,6 +249,11 @@ private struct CandidateCard: View {
                 }
             }
             ProgressView(value: candidate.score, total: 100).tint(AppTheme.amber)
+            if let closing = candidate.windowClosesAt.flatMap(PairingExpiryParser.date(from:)) {
+                Label("Entry window closes \(timeText(closing)) · \(leftText(closing))", systemImage: "timer")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.amber)
+            }
             Text("Daily \(candidate.dailySupertrendDirection) · ADX \(candidate.dailyAdx, specifier: "%.1f") \(candidate.dailyAdxRising ? "rising" : "fading") · \(candidate.extensionAtr, specifier: "%+.2f") ATR")
                 .font(.caption)
                 .foregroundStyle(AppTheme.muted)
@@ -243,4 +267,61 @@ private struct CandidateCard: View {
 private struct ScannerInsetKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// "2:00 PM" today, or "Tue 2:00 PM" on another day.
+private func timeText(_ date: Date) -> String {
+    if Calendar.current.isDateInToday(date) { return date.formatted(date: .omitted, time: .shortened) }
+    return date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+}
+
+private func leftText(_ date: Date) -> String {
+    let minutes = Int(date.timeIntervalSinceNow / 60)
+    if minutes <= 0 { return "closing now" }
+    if minutes < 45 { return "\(minutes) min left" }
+    let hours = Int((Double(minutes) / 60).rounded())
+    return hours < 24 ? "about \(hours) h left" : "about \(Int((Double(hours) / 24).rounded())) d left"
+}
+
+/// A setup that dropped out of the fresh list in the last day, shown more quietly than a live one.
+private struct RecentSetupCard: View {
+    let setup: RecentSetup
+    var isSelected = false
+
+    private var sinceColor: Color { (setup.sinceSignalPct ?? 0) >= 0 ? AppTheme.mint : AppTheme.red }
+
+    var body: some View {
+        let candidate = setup.candidate
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(candidate.symbol).font(.title3.monospaced().bold())
+                    Text(candidate.company).font(.caption).foregroundStyle(AppTheme.muted).lineLimit(1)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(PriceFormat.string(candidate.price, prefix: candidate.currencySymbol, decimals: candidate.priceDecimals)).bold()
+                    if let since = setup.sinceSignalPct {
+                        Text(String(format: "%+.2f%% since signal", since)).font(.caption.monospaced()).foregroundStyle(sinceColor)
+                    }
+                }
+            }
+            Text("\(candidate.direction) · \(setup.dropReason)")
+                .font(.caption.monospaced().bold())
+                .foregroundStyle(AppTheme.muted)
+            Text(timeline)
+                .font(.caption)
+                .foregroundStyle(AppTheme.muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
+        .opacity(0.92)
+        .overlay(Rectangle().stroke(AppTheme.amber, lineWidth: isSelected ? 2 : 0))
+    }
+
+    private var timeline: String {
+        let seen = setup.candidate.firstSeenAt.flatMap(PairingExpiryParser.date(from:)).map(timeText)
+        let dropped = PairingExpiryParser.date(from: setup.droppedAt).map(timeText)
+        return [seen.map { "First seen \($0)" }, dropped.map { "dropped out \($0)" }].compactMap { $0 }.joined(separator: " · ")
+    }
 }

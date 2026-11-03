@@ -468,4 +468,39 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
 }
 globalThis.fetch = realFetch;
 
+// Entry window timing and recent setups: pure helpers, exercised on their own.
+{
+  const start = source.indexOf("// ---- Entry window timing"), end = source.indexOf("async function discover(");
+  assert.ok(start > 0 && end > start, "The entry window helpers must be present");
+  const h = new Function("round", "MAX_ENTRY_AGE_BARS", `${source.slice(start, end)}; return { sessionBarEnds, nextBarEnds, recentSetups };`)((v, d = 0) => Math.round(v * 10 ** d) / 10 ** d, 1);
+  const ny = { tz: "America/New_York" };
+  const bar = iso => ({ ends_at: iso });
+  const pattern = h.sessionBarEnds([
+    bar("2026-11-02T19:00:00Z"), bar("2026-11-02T21:00:00Z"), bar("2026-11-03T19:00:00Z"), bar("2026-11-03T21:00:00Z"), bar("2026-11-04T19:00:00Z"),
+  ], ny);
+  assert.deepEqual(pattern, [840, 960], "The session pattern must come out as bars ending at 14:00 and 16:00 New York time");
+  const iso = list => list.map(d => d.toISOString());
+  assert.deepEqual(iso(h.nextBarEnds(pattern, ny, new Date("2026-11-03T20:00:00Z"), 3)), ["2026-11-03T21:00:00.000Z", "2026-11-04T19:00:00.000Z", "2026-11-04T21:00:00.000Z"], "The next bar ends must follow the session pattern");
+  assert.deepEqual(iso(h.nextBarEnds(pattern, ny, new Date("2026-11-06T22:00:00Z"), 2)), ["2026-11-09T19:00:00.000Z", "2026-11-09T21:00:00.000Z"], "The next bar ends must skip the weekend");
+  assert.deepEqual(iso(h.nextBarEnds(pattern, ny, new Date("2026-10-30T22:00:00Z"), 2)), ["2026-11-02T19:00:00.000Z", "2026-11-02T21:00:00.000Z"], "Clock changes must be handled (summer to winter time here)");
+  assert.deepEqual(iso(h.nextBarEnds(pattern, ny, new Date("2026-10-28T20:30:00Z"), 2)), ["2026-10-29T18:00:00.000Z", "2026-10-29T20:00:00.000Z"], "Summer-time bars must land an hour earlier in UTC");
+
+  const nowIso = "2026-11-03T20:00:00.000Z";
+  const candidate = (symbol, extra = {}) => ({ symbol, direction: "LONG", price: 100, signal_entry_price: 100, entry_status: "ENTRY_WINDOW", extension_atr: 0, ...extra });
+  const previous = { generated_at: "2026-11-03T15:00:00.000Z", candidates: [candidate("AAA", { first_seen_at: "2026-11-02T20:00:00.000Z" }), candidate("BBB"), candidate("CCC")],
+    recent_setups: [candidate("OLD", { dropped_at: "2026-11-01T00:00:00.000Z", first_seen_at: "2026-10-31T00:00:00.000Z" }), candidate("RET", { dropped_at: "2026-11-03T10:00:00.000Z", first_seen_at: "2026-11-03T08:00:00.000Z" })] };
+  const all = [candidate("AAA"), candidate("BBB", { entry_status: "EXTENDED_DO_NOT_CHASE", extension_atr: 1.2, price: 103 }), candidate("CCC", { entry_status: "LATE_TREND", price: 97 }), candidate("OLD", { entry_status: "LATE_TREND" }), candidate("RET")];
+  const recent = h.recentSetups(previous, all, new Set(["AAA", "RET"]), nowIso);
+  const by = Object.fromEntries(recent.map(item => [item.symbol, item]));
+  assert.deepEqual(Object.keys(by).sort(), ["BBB", "CCC"], "Only setups that dropped within a day, and are not fresh again, belong in the recent list");
+  assert.equal(by.BBB.drop_reason, "Price ran 1.2 ATR past the signal");
+  assert.equal(by.BBB.since_signal_pct, 3, "The move since the signal must be shown");
+  assert.equal(by.CCC.drop_reason, "Entry window closed");
+  assert.equal(by.CCC.since_signal_pct, -3);
+  assert.equal(by.BBB.dropped_at, nowIso, "A newly dropped setup is stamped with the time it was noticed");
+  assert.equal(by.BBB.first_seen_at, "2026-11-03T15:00:00.000Z", "The first-seen time falls back to the previous scan");
+  const again = h.recentSetups({ ...previous, candidates: [], recent_setups: recent }, all, new Set(), "2026-11-03T21:00:00.000Z");
+  assert.equal(again.find(item => item.symbol === "BBB").dropped_at, nowIso, "A dropped setup keeps its original drop time on later scans");
+}
+
 console.log("Artifact is valid ESM; read-only, subscription, persistent-memory, and iPhone pairing gates passed");

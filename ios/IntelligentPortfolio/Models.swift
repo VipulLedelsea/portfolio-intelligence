@@ -88,6 +88,7 @@ struct DiscoveryResponse: Decodable, Sendable {
     let marketTrend: MarketTrend?
     let marketTrends: [MarketTrend]?
     let allMarketTrends: [MarketTrend]?
+    let recentSetups: [RecentSetup]?
     let autoRefresh: Bool?
     let refreshedAt: String?
     let warmingUp: Bool?
@@ -125,6 +126,28 @@ struct Candidate: Decodable, Identifiable, Hashable, Sendable {
     let extensionAtr: Double
     let reasons: [String]
     let cautions: [String]
+    /// When this setup stops counting as a fresh entry (about a trading day after the signal).
+    let windowClosesAt: String?
+    let firstSeenAt: String?
+}
+
+/// A setup that was a fresh entry in the last 24 hours and no longer is, with why and how the price has moved since.
+struct RecentSetup: Decodable, Identifiable, Hashable, Sendable {
+    let candidate: Candidate
+    let droppedAt: String
+    let dropReason: String
+    let sinceSignalPct: Double?
+    var id: String { candidate.symbol }
+
+    private enum Keys: String, CodingKey { case droppedAt, dropReason, sinceSignalPct }
+
+    init(from decoder: Decoder) throws {
+        candidate = try Candidate(from: decoder)
+        let container = try decoder.container(keyedBy: Keys.self)
+        droppedAt = try container.decode(String.self, forKey: .droppedAt)
+        dropReason = try container.decode(String.self, forKey: .dropReason)
+        sinceSignalPct = try container.decodeIfPresent(Double.self, forKey: .sinceSignalPct)
+    }
 }
 
 struct AnalysisResponse: Decodable, Sendable {
