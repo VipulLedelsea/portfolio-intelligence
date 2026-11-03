@@ -241,9 +241,11 @@ assert.ok(fetchLog.length - usCalls - callsPerUsScan <= callsPerUsScan * 2, "Sim
 assert.equal(usScan.auto_refresh, false, "US keeps a manual refresh control");
 assert.ok(usScan.market_trend && ["UP", "MIXED", "DOWN"].includes(usScan.market_trend.state), "The US scan must report the market trend");
 assert.equal(usScan.market_trend.index_symbol, "SPY");
+assert.deepEqual(usScan.market_trends.map(item => item.label), ["S&P 500", "Nasdaq-100", "Dow Jones", "Russell 2000"], "The US scan must report each major index");
+assert.ok(usScan.market_trends.slice(1).every(item => item.breadth_daily_pct === null), "Only the S&P 500 carries breadth");
 assert.equal(usScan.market_trend.label, "S&P 500");
 assert.ok(usScan.market_trend.breadth_daily_pct >= 0 && usScan.market_trend.breadth_daily_pct <= 100 && usScan.market_trend.stocks_counted === 503, "Breadth must come from the scanned stocks, not the index");
-assert.ok(![...usScan.candidates, ...usScan.late_candidates].some(item => item.symbol === "SPY"), "The index must never appear as a candidate");
+assert.ok(![...usScan.candidates, ...usScan.late_candidates].some(item => ["SPY", "QQQ", "DIA", "IWM"].includes(item.symbol)), "The index proxies must never appear as candidates");
 
 const inScan = await (await post("/api/discover", { market: "IN" }, { TWELVE_DATA_API_KEY: "test-key" })).json();
 assert.equal(inScan.market, "IN");
@@ -252,6 +254,7 @@ assert.equal(inScan.successful, 30);
 assert.equal([...inScan.candidates, ...inScan.late_candidates][0].currency_symbol, "₹");
 assert.ok(fetchLog.includes("api.twelvedata.com"), "A Twelve Data key must route requests to Twelve Data");
 assert.equal(inScan.market_trend, null, "Without a usable index feed the trend is left out rather than guessed");
+assert.deepEqual(inScan.market_trends, [], "Without an index feed there are no trends to list");
 {
   const yahooModule = await import(`data:text/javascript;base64,${Buffer.from(`${source}\n//index-test`).toString("base64")}`);
   const scan = await (await yahooModule.default.fetch(new Request("https://example.test/api/discover", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ market: "IN" }) }), {}, { waitUntil() {} })).json();

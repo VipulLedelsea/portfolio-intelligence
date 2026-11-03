@@ -3,14 +3,35 @@ import SwiftUI
 struct ScannerView: View {
     @EnvironmentObject private var model: AppModel
     @State private var selected: Candidate?
+    @State private var trailingInset: CGFloat = 0
+    @State private var showingTrend = false
+    @State private var trendStart = 0
+
+    /// iPhone Duo reserves a trailing strip for system status; when it is wide enough the market trend lives in it.
+    private var trendInStrip: Bool { trailingInset >= 56 }
+    private var trends: [MarketTrend] { model.discovery?.marketTrends ?? model.discovery?.marketTrend.map { [$0] } ?? [] }
 
     var body: some View {
         GeometryReader { proxy in
-            if AdaptiveLayout.isWide(proxy.size.width) {
-                splitLayout
-            } else {
-                compactLayout
+            let wide = AdaptiveLayout.isWide(proxy.size.width)
+            ZStack(alignment: .topTrailing) {
+                if wide { splitLayout } else { compactLayout }
+                // In the wide layout the chart rail takes this strip once a setup is open, so step aside then.
+                if trendInStrip, !trends.isEmpty, !(wide && selected != nil) {
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        MarketTrendStrip(trends: trends) { index in trendStart = index; showingTrend = true }.frame(width: trailingInset)
+                    }
+                    .padding(.top, 175)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .ignoresSafeArea(.container, edges: .trailing)
+                }
             }
+            .background(GeometryReader { inner in
+                Color.clear.preference(key: ScannerInsetKey.self, value: inner.safeAreaInsets.trailing)
+            })
+            .onPreferenceChange(ScannerInsetKey.self) { trailingInset = $0 }
+            .sheet(isPresented: $showingTrend) { MarketTrendSheet(trends: trends, start: trendStart) }
         }
     }
 
@@ -73,7 +94,7 @@ struct ScannerView: View {
                     .font(.caption.monospaced())
                     .foregroundStyle(AppTheme.muted)
 
-                    if let trend = discovery.marketTrend { MarketTrendCard(trend: trend) }
+                    if !trendInStrip, let trend = trends.first { MarketTrendLine(trend: trend) { trendStart = 0; showingTrend = true } }
 
                     ForEach(discovery.candidates) { candidate in
                         Button { selected = candidate } label: {
@@ -192,3 +213,8 @@ private struct CandidateCard: View {
     }
 }
 
+
+private struct ScannerInsetKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}

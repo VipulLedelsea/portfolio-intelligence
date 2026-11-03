@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		068A90F29B88CDF8D2E6164A /* MarketTrendCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 998540CDE086714E1F545418 /* MarketTrendCard.swift */; };
+		092C3E6E9822F0C9965A0459 /* MarketTrendStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8E07DF82F3D58CFCD31BA4C /* MarketTrendStrip.swift */; };
 		16770662B1A9BE7946E6E197 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26F5C33879FCECCBAE73617 /* AppModel.swift */; };
 		44309038E86F705EFA7BC67A /* AccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B921725742B97F32E0FFE6B3 /* AccountView.swift */; };
 		4653911D3DEB449A748A772E /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C9E1313DAB4D0807C19A165 /* KeychainStore.swift */; };
@@ -60,6 +61,7 @@
 		E7526A067DDFBBC1A80176FF /* AnalysisView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisView.swift; sourceTree = "<group>"; };
 		EDDA04DD99202CBC6DB9A56C /* DisclaimerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisclaimerView.swift; sourceTree = "<group>"; };
 		F3EE5F377CF667D867689F77 /* ConnectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionView.swift; sourceTree = "<group>"; };
+		F8E07DF82F3D58CFCD31BA4C /* MarketTrendStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketTrendStrip.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -87,6 +89,7 @@
 				E4FE8B10C30926D8C8C286AC /* IntelligentPortfolioApp.swift */,
 				0C9E1313DAB4D0807C19A165 /* KeychainStore.swift */,
 				998540CDE086714E1F545418 /* MarketTrendCard.swift */,
+				F8E07DF82F3D58CFCD31BA4C /* MarketTrendStrip.swift */,
 				13E0F1D83D6D06F0BB49BE1B /* MemoryView.swift */,
 				9A02CDFD9316DBDABC405649 /* Models.swift */,
 				DE7C627CE526BE320CCCCDC2 /* PrivacyInfo.xcprivacy */,
@@ -226,6 +229,7 @@
 				78C29AB09DAC36F372E7775C /* IntelligentPortfolioApp.swift in Sources */,
 				4653911D3DEB449A748A772E /* KeychainStore.swift in Sources */,
 				068A90F29B88CDF8D2E6164A /* MarketTrendCard.swift in Sources */,
+				092C3E6E9822F0C9965A0459 /* MarketTrendStrip.swift in Sources */,
 				C3789F7C125CE60F596828CD /* MemoryView.swift in Sources */,
 				ECB6681D71B3AAED6CCC4E9D /* Models.swift in Sources */,
 				743E0F730295058EA7A30E40 /* ScannerView.swift in Sources */,

@@ -1012,9 +1012,14 @@ function fetchSnapshots(symbols, market = MARKETS.US, env = {}) {
 
 // The index each market's trend banner reads. It is fetched in the same batches as the stocks (no extra requests for
 // the S&P 500) and removed before ranking so it never appears as a candidate.
-const MARKET_INDEX = { US: { symbol: "SPY", label: "S&P 500" }, IN: { symbol: "^BSESN", label: "Sensex 30" } };
+// The first index of each market also carries breadth (the share of the scanned stocks trending up); the US
+// extras are ETF proxies read from the same batches, so they cost no additional requests.
+const MARKET_INDEXES = {
+  US: [{ symbol: "SPY", label: "S&P 500" }, { symbol: "QQQ", label: "Nasdaq-100" }, { symbol: "DIA", label: "Dow Jones" }, { symbol: "IWM", label: "Russell 2000" }],
+  IN: [{ symbol: "^BSESN", label: "Sensex 30" }],
+};
 
-function marketTrend(info, index, snapshots) {
+function marketTrend(info, index, snapshots, withBreadth = true) {
   if (!info || !index) return null;
   const daily = index.daily_supertrend?.direction === "LONG" ? "UP" : "DOWN";
   const fourHour = index.supertrend?.direction === "LONG" ? "UP" : "DOWN";
@@ -1032,9 +1037,9 @@ function marketTrend(info, index, snapshots) {
     index_symbol: info.symbol, label: info.label,
     daily, four_hour: fourHour,
     adx: round(numeric(index.daily_adx?.value), 0),
-    breadth_daily_pct: share(snapshot => snapshot.daily_supertrend?.direction),
-    breadth_4h_pct: share(snapshot => snapshot.supertrend?.direction),
-    stocks_counted: all.length,
+    breadth_daily_pct: withBreadth ? share(snapshot => snapshot.daily_supertrend?.direction) : null,
+    breadth_4h_pct: withBreadth ? share(snapshot => snapshot.supertrend?.direction) : null,
+    stocks_counted: withBreadth ? all.length : null,
     as_of: index.market_time || null,
   };
 }
@@ -1043,13 +1048,14 @@ async function discover(market = MARKETS.US, env = {}) {
   const records = market.universe || await loadUniverse();
   const metadata = new Map(records.map(record => [record.symbol, record]));
   const symbols = [...metadata.keys()];
-  const indexInfo = MARKET_INDEX[market.id];
-  const withIndex = Boolean(indexInfo) && !(market.provider !== "robinhood" && env?.TWELVE_DATA_API_KEY);
-  const fetched = await fetchSnapshots(withIndex ? [...symbols, indexInfo.symbol] : symbols, market, env);
-  const errors = withIndex ? fetched.errors.filter(error => error.symbol !== indexInfo.symbol) : fetched.errors;
+  const indexes = (market.provider !== "robinhood" && env?.TWELVE_DATA_API_KEY) ? [] : (MARKET_INDEXES[market.id] || []);
+  const indexSymbols = new Set(indexes.map(info => info.symbol));
+  const fetched = await fetchSnapshots(indexes.length ? [...symbols, ...indexSymbols] : symbols, market, env);
+  const errors = fetched.errors.filter(error => !indexSymbols.has(error.symbol));
   const snapshots = new Map(fetched.snapshots);
-  const indexSnapshot = withIndex ? snapshots.get(indexInfo.symbol) : null;
-  if (withIndex) snapshots.delete(indexInfo.symbol);
+  const indexSnapshots = new Map(indexes.map(info => [info.symbol, snapshots.get(info.symbol)]));
+  for (const symbol of indexSymbols) snapshots.delete(symbol);
+  const trends = indexes.map((info, position) => marketTrend(info, indexSnapshots.get(info.symbol), snapshots, position === 0)).filter(Boolean);
   const allCandidates = [...snapshots.entries()].map(([symbol, snapshot]) => scoreCandidate(snapshot, metadata.get(symbol))).sort((a, b) => b.score - a.score || a.symbol.localeCompare(b.symbol));
   const candidates = allCandidates.filter(candidate => candidate.entry_eligible);
   const lateCandidates = allCandidates.filter(candidate => !candidate.entry_eligible);
@@ -1057,7 +1063,8 @@ async function discover(market = MARKETS.US, env = {}) {
   const shortCandidates = candidates.filter(candidate => candidate.direction === "SHORT").sort((a, b) => b.short_score - a.short_score || a.symbol.localeCompare(b.symbol));
   return {
     generated_at: new Date().toISOString(),
-    market_trend: marketTrend(withIndex ? indexInfo : null, indexSnapshot, snapshots),
+    market_trend: trends[0] || null,
+    market_trends: trends,
     market: market.id,
     market_label: market.label,
     currency: market.currency,
