@@ -1722,6 +1722,32 @@ async function increaseHolding(request, env) {
   return { increased: true };
 }
 
+// Selling some or all shares. A full sale closes the holding; a partial sale reduces it and records the sold
+// part as its own closed entry at the same average buy price, so realised profit and loss stay accurate.
+async function sellHolding(request, env) {
+  const user = await holdingsUser(request, env);
+  const body = await readBody(request);
+  const id = String(body.id || ""), price = Number(body.price);
+  if (!/^[A-Za-z0-9_-]{6,40}$/.test(id)) throw Object.assign(new Error("Holding not found"), { status: 404 });
+  if (!Number.isFinite(price) || price <= 0 || price > 1e8) throw Object.assign(new Error("Enter the price you sold at"), { status: 400 });
+  const row = await env.DB.prepare("SELECT * FROM holdings WHERE id = ? AND user_id = ?").bind(id, user.id).first();
+  if (!row || row.closed_at) throw Object.assign(new Error("Holding not found"), { status: 404 });
+  const sold = body.shares === undefined || body.shares === null || body.shares === "" ? Number(row.shares) : Number(body.shares);
+  if (!Number.isFinite(sold) || sold <= 0) throw Object.assign(new Error("Enter how many shares you sold"), { status: 400 });
+  if (sold > Number(row.shares) + 1e-9) throw Object.assign(new Error(`You only hold ${Number(row.shares)} shares`), { status: 400 });
+  const now = new Date().toISOString();
+  if (sold >= Number(row.shares) - 1e-9) {
+    await env.DB.prepare("UPDATE holdings SET closed_at = ?, sell_price = ? WHERE id = ? AND user_id = ? AND closed_at IS NULL").bind(now, price, id, user.id).run();
+    return { sold: true, closed: true, remaining: 0 };
+  }
+  await env.DB.batch([
+    env.DB.prepare("UPDATE holdings SET shares = shares - ? WHERE id = ? AND user_id = ? AND closed_at IS NULL AND shares > ?").bind(sold, id, user.id, sold),
+    env.DB.prepare("INSERT INTO holdings (id, user_id, symbol, market, shares, buy_price, bought_at, created_at, closed_at, sell_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(randomBase64Url(12), user.id, row.symbol, row.market, sold, row.buy_price, row.bought_at, now, now, price),
+  ]);
+  return { sold: true, closed: false, remaining: round(Number(row.shares) - sold, 6) };
+}
+
 async function closeHolding(request, env) {
   const user = await holdingsUser(request, env);
   const body = await readBody(request);
@@ -1791,6 +1817,7 @@ async function handle(request, env, ctx) {
     if (url.pathname === "/api/holdings") return json(await listHoldings(request, env));
     if (url.pathname === "/api/holdings/add") return json(await addHolding(request, env));
     if (url.pathname === "/api/holdings/increase") return json(await increaseHolding(request, env));
+    if (url.pathname === "/api/holdings/sell") return json(await sellHolding(request, env));
     if (url.pathname === "/api/holdings/close") return json(await closeHolding(request, env));
     if (url.pathname === "/api/holdings/remove") return json(await removeHolding(request, env));
     if (url.pathname === "/api/mobile/account/delete") {

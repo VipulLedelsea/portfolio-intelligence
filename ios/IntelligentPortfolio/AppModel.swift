@@ -185,12 +185,17 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func closeHolding(id: String, sellPrice: Double) async {
-        guard let token else { return }
+    /// Returns true when the sale was recorded. Selling every share closes the position.
+    func sellHolding(id: String, shares: Double, price: Double) async -> Bool {
+        guard let token else { return false }
         do {
-            try await api.closeHolding(CloseHoldingBody(id: id, sellPrice: sellPrice), token: token)
+            try await api.sellHolding(SellHoldingBody(id: id, shares: shares, price: price), token: token)
             await refreshHoldings()
-        } catch { report(error) }
+            return true
+        } catch {
+            report(error)
+            return false
+        }
     }
 
     func removeHolding(id: String) async {

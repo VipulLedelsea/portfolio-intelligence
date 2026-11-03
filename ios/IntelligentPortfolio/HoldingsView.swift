@@ -4,8 +4,7 @@ import SwiftUI
 struct HoldingsView: View {
     @EnvironmentObject private var model: AppModel
     @State private var showingAdd = false
-    @State private var sellTarget: Holding?
-    @State private var buyMoreTarget: Holding?
+    @State private var positionEdit: PositionEdit?
     @State private var removeTarget: Holding?
     @Environment(\.scenePhase) private var scenePhase
 
@@ -46,7 +45,7 @@ struct HoldingsView: View {
                                 .panel()
                         }
                         ForEach(data.open) { holding in
-                            HoldingCard(holding: holding, onBuyMore: { buyMoreTarget = holding }, onSell: { sellTarget = holding }, onRemove: { removeTarget = holding })
+                            HoldingCard(holding: holding, onBuyMore: { positionEdit = PositionEdit(holding: holding, sell: false) }, onSell: { positionEdit = PositionEdit(holding: holding, sell: true) }, onRemove: { removeTarget = holding })
                         }
                         if !data.closed.isEmpty {
                             Text("CLOSED").font(.caption.monospaced().bold()).foregroundStyle(AppTheme.amber)
@@ -90,8 +89,7 @@ struct HoldingsView: View {
                 if phase == .active { Task { await model.refreshHoldings() } }
             }
             .sheet(isPresented: $showingAdd) { AddHoldingSheet().environmentObject(model) }
-            .sheet(item: $buyMoreTarget) { holding in BuyMoreSheet(holding: holding).environmentObject(model) }
-            .sheet(item: $sellTarget) { holding in SellSheet(holding: holding).environmentObject(model) }
+            .sheet(item: $positionEdit) { edit in PositionSheet(holding: edit.holding, startsAsSell: edit.sell).environmentObject(model) }
             .confirmationDialog("Remove this holding?", isPresented: Binding(get: { removeTarget != nil }, set: { if !$0 { removeTarget = nil } }), titleVisibility: .visible) {
                 Button("Remove", role: .destructive) {
                     if let target = removeTarget { Task { await model.removeHolding(id: target.id) } }
@@ -184,7 +182,7 @@ private struct HoldingCard: View {
             }
             HStack {
                 Button("Buy more", action: onBuyMore).buttonStyle(.bordered).tint(AppTheme.amber)
-                Button("Mark as sold", action: onSell).buttonStyle(.bordered)
+                Button("Sell", action: onSell).buttonStyle(.bordered)
                 Button("Remove", role: .destructive, action: onRemove).buttonStyle(.bordered)
             }
             .font(.footnote)
@@ -269,83 +267,92 @@ private struct AddHoldingSheet: View {
     }
 }
 
-/// Records an extra purchase of a stock already held; the server keeps a weighted-average buy price.
-private struct BuyMoreSheet: View {
+private struct PositionEdit: Identifiable {
+    let holding: Holding
+    let sell: Bool
+    var id: String { holding.id + (sell ? "-sell" : "-buy") }
+}
+
+/// One place to record buying more or selling some or all shares of a holding. Buying keeps a weighted-average
+/// buy price; selling records realised profit, and selling everything closes the position.
+private struct PositionSheet: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
     let holding: Holding
+    @State private var selling: Bool
     @State private var shares = ""
-    @State private var price = ""
+    @State private var price: String
     @State private var saving = false
 
-    private var addShares: Double? { Double(shares.replacingOccurrences(of: ",", with: ".")) }
-    private var addPrice: Double? { Double(price.replacingOccurrences(of: ",", with: ".")) }
-    private var preview: (shares: Double, average: Double)? {
-        guard let add = addShares, add > 0, let paid = addPrice, paid > 0 else { return nil }
-        let total = holding.shares + add
-        return (total, (holding.shares * holding.buyPrice + add * paid) / total)
+    init(holding: Holding, startsAsSell: Bool) {
+        self.holding = holding
+        _selling = State(initialValue: startsAsSell)
+        _price = State(initialValue: startsAsSell ? (holding.currentPrice.map { String($0) } ?? "") : "")
+    }
+
+    private var count: Double? { Double(shares.replacingOccurrences(of: ",", with: ".")) }
+    private var value: Double? { Double(price.replacingOccurrences(of: ",", with: ".")) }
+    private var canSave: Bool {
+        guard let n = count, n > 0, let p = value, p > 0, !saving else { return false }
+        return !selling || n <= holding.shares + 1e-9
+    }
+
+    private var summary: String? {
+        guard let n = count, n > 0, let p = value, p > 0 else { return nil }
+        let symbol = holding.currencySymbol, decimals = holding.priceDecimals
+        if selling {
+            guard n <= holding.shares + 1e-9 else { return "You only hold \(shareText(holding.shares)) shares." }
+            let profit = (p - holding.buyPrice) * n
+            let pct = (p / holding.buyPrice - 1) * 100
+            let lead = n >= holding.shares - 1e-9 ? "This closes the position. " : "\(shareText(holding.shares - n)) shares remain. "
+            return "\(lead)Realised \(signed(symbol, profit)) (\(String(format: "%+.2f", pct))%)"
+        }
+        let total = holding.shares + n
+        let average = (holding.shares * holding.buyPrice + n * p) / total
+        return "New position: \(shareText(total)) shares at an average of \(money(symbol, decimals, average))."
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                Text("You hold \(shareText(holding.shares)) shares of \(holding.symbol) at an average of \(money(holding.currencySymbol, holding.priceDecimals, holding.buyPrice)).")
-                TextField("Extra shares bought", text: $shares).keyboardType(.decimalPad)
-                TextField("Price paid per share", text: $price).keyboardType(.decimalPad)
-                if let preview {
-                    Text("New position: \(shareText(preview.shares)) shares at an average of \(money(holding.currencySymbol, holding.priceDecimals, preview.average)).")
-                        .font(.footnote.bold())
+                Picker("Action", selection: $selling) {
+                    Text("Buy more").tag(false)
+                    Text("Sell").tag(true)
                 }
-                Text("Only recorded here for research. The protective level and targets follow the new average price.")
+                .pickerStyle(.segmented)
+                .onChange(of: selling) { _, isSelling in
+                    price = isSelling ? (holding.currentPrice.map { String($0) } ?? "") : ""
+                }
+                Text("You hold \(shareText(holding.shares)) shares of \(holding.symbol) at an average of \(money(holding.currencySymbol, holding.priceDecimals, holding.buyPrice)).")
+                HStack {
+                    TextField(selling ? "Shares sold" : "Extra shares bought", text: $shares).keyboardType(.decimalPad)
+                    if selling {
+                        Button("All") { shares = shareText(holding.shares) }.buttonStyle(.bordered)
+                    }
+                }
+                TextField(selling ? "Price sold at, per share" : "Price paid per share", text: $price).keyboardType(.decimalPad)
+                if let summary { Text(summary).font(.footnote.bold()) }
+                Text(selling ? "Only recorded here for research. It does not place an order." : "Only recorded here for research. The protective level and targets follow the new average price.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            .navigationTitle("Buy more \(holding.symbol)")
+            .navigationTitle(holding.symbol)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        guard let add = addShares, let paid = addPrice else { return }
+                    Button(selling ? "Record sale" : "Save") {
+                        guard let n = count, let p = value else { return }
                         saving = true
                         Task {
-                            let saved = await model.increaseHolding(id: holding.id, shares: add, price: paid)
+                            let saved = selling
+                                ? await model.sellHolding(id: holding.id, shares: n, price: p)
+                                : await model.increaseHolding(id: holding.id, shares: n, price: p)
                             saving = false
                             if saved { dismiss() }
                         }
                     }
-                    .disabled(preview == nil || saving)
-                }
-            }
-        }
-        .preferredColorScheme(.dark)
-    }
-}
-
-private struct SellSheet: View {
-    @EnvironmentObject private var model: AppModel
-    @Environment(\.dismiss) private var dismiss
-    let holding: Holding
-    @State private var price = ""
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                TextField("Price sold at, per share", text: $price).keyboardType(.decimalPad)
-                Text("Records the sale for your closed list. It does not place an order.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            .navigationTitle("Sold \(holding.symbol)")
-            .navigationBarTitleDisplayMode(.inline)
-            .onAppear { if let current = holding.currentPrice { price = String(current) } }
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        guard let value = Double(price.replacingOccurrences(of: ",", with: ".")), value > 0 else { return }
-                        Task { await model.closeHolding(id: holding.id, sellPrice: value); dismiss() }
-                    }
+                    .disabled(!canSave)
                 }
             }
         }

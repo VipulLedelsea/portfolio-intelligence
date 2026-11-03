@@ -299,14 +299,10 @@ struct IncreaseHoldingBody: Encodable, Sendable {
     let price: Double
 }
 
-struct CloseHoldingBody: Encodable, Sendable {
+struct SellHoldingBody: Encodable, Sendable {
     let id: String
-    let sellPrice: Double
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case sellPrice = "sell_price"
-    }
+    let shares: Double
+    let price: Double
 }
 
 struct RemoveHoldingBody: Encodable, Sendable {
