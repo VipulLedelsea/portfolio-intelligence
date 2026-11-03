@@ -1558,7 +1558,9 @@ async function holdingSnapshotsFor(env, market, symbols, { manual = false } = {}
 }
 
 // A hold / watch / take-profit / exit read on a long position, from the same engine that ranks the scanner.
-// Risk 1R is two daily ATRs (at least 1.25%) below the buy price; targets sit at 2R and 3R.
+// The protective level sits 1.5 daily ATRs (at least 1%) below the buy price; targets are measured in R, where
+// 1R is two daily ATRs (at least 1.25%) of the buy price, at 2R and 3R. Backtests showed tighter than 1.5 ATR
+// stopped out most winning trades, while 1.5 kept most of the profit with smaller average losses.
 function evaluateHolding(holding, snapshot) {
   const market = MARKETS[holding.market] || MARKETS.US;
   const fmt = value => fmtPrice(value, market);
@@ -1569,7 +1571,7 @@ function evaluateHolding(holding, snapshot) {
   const adx = numeric(snapshot.daily_adx?.value);
   const atr = numeric(snapshot.atr_14) || buy * 0.02;
   const risk = Math.max(2 * atr, buy * 0.0125);
-  const stopLevel = Math.max(0.01, buy - risk);
+  const stopLevel = Math.max(0.01, buy - Math.max(1.5 * atr, buy * 0.01));
   const trailing = trend4h === "LONG" ? Math.max(stopLevel, numeric(snapshot.supertrend?.value)) : stopLevel;
   const target1 = buy + 2 * risk, target2 = buy + 3 * risk;
   const pnlPct = (price / buy - 1) * 100;
@@ -1578,7 +1580,7 @@ function evaluateHolding(holding, snapshot) {
   if (price <= stopLevel) {
     action = "EXIT";
     headline = "Price is below the protective level for this position";
-    reasons.push(`Price ${fmt(price)} is under the protective level ${fmt(stopLevel)} (two daily ranges below your buy price).`);
+    reasons.push(`Price ${fmt(price)} is under the protective level ${fmt(stopLevel)} (one and a half daily ranges below your buy price).`);
   } else if (trend4h === "SHORT") {
     action = "EXIT";
     headline = "The 4-hour trend has turned down";
