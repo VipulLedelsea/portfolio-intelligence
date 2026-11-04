@@ -106,11 +106,14 @@ struct ScannerView: View {
 
                     if !trendInStrip, let trend = model.discovery?.marketTrend ?? trends.first { MarketTrendLine(trend: trend) { trendStart = trendStartPage; showingTrend = true } }
 
-                    ForEach(discovery.candidates) { candidate in
-                        Button { selected = candidate } label: {
-                            CandidateCard(candidate: candidate, isSelected: selectable && selected == candidate)
+                    ListFrame {
+                        ForEach(Array(discovery.candidates.enumerated()), id: \.element.id) { index, candidate in
+                            if index > 0 { RowDivider() }
+                            Button { selected = candidate } label: {
+                                CandidateRow(candidate: candidate, isSelected: selectable && selected == candidate)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
 
                     if let recent = discovery.recentSetups, !recent.isEmpty {
@@ -124,11 +127,14 @@ struct ScannerView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 14)
-                        ForEach(recent) { setup in
-                            Button { selected = setup.candidate } label: {
-                                RecentSetupCard(setup: setup, isSelected: selectable && selected == setup.candidate)
+                        ListFrame {
+                            ForEach(Array(recent.enumerated()), id: \.element.id) { index, setup in
+                                if index > 0 { RowDivider() }
+                                Button { selected = setup.candidate } label: {
+                                    RecentSetupRow(setup: setup, isSelected: selectable && selected == setup.candidate)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 } else if model.isScanning {
@@ -205,67 +211,74 @@ struct ScannerView: View {
     }
 }
 
-private struct CandidateCard: View {
-    let candidate: Candidate
-    var isSelected = false
-    private var directionColor: Color { candidate.direction == "SHORT" ? AppTheme.red : AppTheme.mint }
-
-    private var directionText: some View {
-        Text("\(candidate.direction) · \(candidate.label)")
-            .font(.caption.monospaced().bold())
-            .foregroundStyle(directionColor)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var statusText: some View {
-        Text(candidate.entryStatus.replacingOccurrences(of: "_", with: " "))
-            .font(.caption2.monospaced())
-            .foregroundStyle(candidate.entryEligible ? AppTheme.mint : AppTheme.red)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
+/// One bordered frame around a whole list, with thin lines between the rows instead of a box per row.
+private struct ListFrame<Content: View>: View {
+    @ViewBuilder let content: Content
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(candidate.symbol).font(.title2.monospaced().bold())
-                    Text(candidate.company).font(.caption).foregroundStyle(AppTheme.muted).lineLimit(1)
-                }
-                Spacer()
-                VStack(alignment: .trailing) {
-                    Text(PriceFormat.string(candidate.price, prefix: candidate.currencySymbol, decimals: candidate.priceDecimals)).bold()
-                    Text("\(Int(candidate.score))/100").font(.caption.monospaced()).foregroundStyle(AppTheme.muted)
-                }
-            }
-            ViewThatFits(in: .horizontal) {
-                HStack {
-                    directionText
-                    Spacer()
-                    statusText
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    directionText
-                    statusText
-                }
-            }
-            ProgressView(value: candidate.score, total: 100).tint(AppTheme.amber)
-            if let range = candidate.buyRange {
-                BuyRangeBar(range: range, currency: candidate.currencySymbol, decimals: candidate.priceDecimals)
-            }
-            if let closing = candidate.windowClosesAt.flatMap(PairingExpiryParser.date(from:)) {
-                Label("Entry window closes \(timeText(closing)) · \(leftText(closing))", systemImage: "timer")
-                    .font(.caption)
-                    .foregroundStyle(AppTheme.amber)
-            }
-            Text("Daily \(candidate.dailySupertrendDirection) · ADX \(candidate.dailyAdx, specifier: "%.1f") \(candidate.dailyAdxRising ? "rising" : "fading") · \(candidate.extensionAtr, specifier: "%+.2f") ATR")
-                .font(.caption)
-                .foregroundStyle(AppTheme.muted)
-        }
-        .panel()
-        .overlay(Rectangle().stroke(AppTheme.amber, lineWidth: isSelected ? 2 : 0))
+        VStack(spacing: 0) { content }
+            .frame(maxWidth: .infinity)
+            .background(AppTheme.panel)
+            .overlay(Rectangle().stroke(AppTheme.line, lineWidth: 1))
     }
 }
 
+private struct RowDivider: View {
+    var body: some View { Rectangle().fill(AppTheme.line).frame(height: 1) }
+}
+
+/// A quiet one-glance row: symbol, how it sits against its buy zone, price and time left. Everything else is one tap away.
+private struct CandidateRow: View {
+    let candidate: Candidate
+    var isSelected = false
+    private var directionColor: Color { candidate.direction == "SHORT" ? AppTheme.red : AppTheme.mint }
+    private var statusLabel: String { candidate.buyRange?.label.uppercased() ?? candidate.entryStatus.replacingOccurrences(of: "_", with: " ") }
+    private var statusColor: Color { candidate.buyRange.map { zoneColour($0.state) } ?? (candidate.entryEligible ? AppTheme.mint : AppTheme.red) }
+
+    private var leading: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(candidate.symbol).font(.headline.monospaced().bold())
+                Text(candidate.direction).font(.caption2.monospaced().bold()).foregroundStyle(directionColor)
+            }
+            Text("\(candidate.company) · \(Int(candidate.score))/100")
+                .font(.caption)
+                .foregroundStyle(AppTheme.muted)
+                .lineLimit(1)
+            if let range = candidate.buyRange {
+                BuyRangeBar(range: range, currency: candidate.currencySymbol, decimals: candidate.priceDecimals, compact: true)
+                    .frame(maxWidth: 220)
+                    .padding(.top, 2)
+            }
+        }
+    }
+
+    private var trailing: some View {
+        VStack(alignment: .trailing, spacing: 3) {
+            Text(PriceFormat.string(candidate.price, prefix: candidate.currencySymbol, decimals: candidate.priceDecimals)).font(.headline)
+            Text(statusLabel)
+                .font(.caption2.monospaced().bold())
+                .foregroundStyle(statusColor)
+                .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
+            if let closing = candidate.windowClosesAt.flatMap(PairingExpiryParser.date(from:)) {
+                Text(shortLeft(closing)).font(.caption).foregroundStyle(AppTheme.amber)
+            }
+        }
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 12) { leading; Spacer(minLength: 8); trailing }
+            VStack(alignment: .leading, spacing: 8) { leading; trailing }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .background(isSelected ? AppTheme.amber.opacity(0.1) : Color.clear)
+        .overlay(Rectangle().stroke(AppTheme.amber, lineWidth: isSelected ? 2 : 0))
+        .accessibilityElement(children: .combine)
+    }
+}
 
 private struct ScannerInsetKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
@@ -273,12 +286,12 @@ private struct ScannerInsetKey: PreferenceKey {
 }
 
 /// "2:00 PM" today, or "Tue 2:00 PM" on another day.
-private func timeText(_ date: Date) -> String {
+func timeText(_ date: Date) -> String {
     if Calendar.current.isDateInToday(date) { return date.formatted(date: .omitted, time: .shortened) }
     return date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
 }
 
-private func leftText(_ date: Date) -> String {
+func leftText(_ date: Date) -> String {
     let minutes = Int(date.timeIntervalSinceNow / 60)
     if minutes <= 0 { return "closing now" }
     if minutes < 45 { return "\(minutes) min left" }
@@ -286,8 +299,16 @@ private func leftText(_ date: Date) -> String {
     return hours < 24 ? "about \(hours) h left" : "about \(Int((Double(hours) / 24).rounded())) d left"
 }
 
-/// A setup that dropped out of the fresh list in the last day, shown more quietly than a live one.
-private struct RecentSetupCard: View {
+func shortLeft(_ date: Date) -> String {
+    let minutes = Int(date.timeIntervalSinceNow / 60)
+    if minutes <= 0 { return "closing now" }
+    if minutes < 60 { return "\(minutes) min left" }
+    let hours = Int((Double(minutes) / 60).rounded())
+    return hours < 24 ? "\(hours) h left" : "\(Int((Double(hours) / 24).rounded())) d left"
+}
+
+/// A setup that dropped out of the fresh list in the last day, as a quieter row than a live one.
+private struct RecentSetupRow: View {
     let setup: RecentSetup
     var isSelected = false
 
@@ -295,31 +316,33 @@ private struct RecentSetupCard: View {
 
     var body: some View {
         let candidate = setup.candidate
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(candidate.symbol).font(.title3.monospaced().bold())
-                    Text(candidate.company).font(.caption).foregroundStyle(AppTheme.muted).lineLimit(1)
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(candidate.symbol).font(.headline.monospaced().bold())
+                    Text(candidate.direction).font(.caption2.monospaced().bold()).foregroundStyle(candidate.direction == "SHORT" ? AppTheme.red : AppTheme.mint)
                 }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(PriceFormat.string(candidate.price, prefix: candidate.currencySymbol, decimals: candidate.priceDecimals)).bold()
-                    if let since = setup.sinceSignalPct {
-                        Text(String(format: "%+.2f%% since signal", since)).font(.caption.monospaced()).foregroundStyle(sinceColor)
-                    }
+                Text("\(candidate.company) · \(setup.dropReason)")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.muted)
+                    .lineLimit(2)
+                Text(timeline).font(.caption2).foregroundStyle(AppTheme.muted)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(PriceFormat.string(candidate.price, prefix: candidate.currencySymbol, decimals: candidate.priceDecimals)).font(.headline)
+                if let since = setup.sinceSignalPct {
+                    Text(String(format: "%+.2f%%", since)).font(.caption.monospaced()).foregroundStyle(sinceColor)
+                    Text("since signal").font(.caption2).foregroundStyle(AppTheme.muted)
                 }
             }
-            Text("\(candidate.direction) · \(setup.dropReason)")
-                .font(.caption.monospaced().bold())
-                .foregroundStyle(AppTheme.muted)
-            Text(timeline)
-                .font(.caption)
-                .foregroundStyle(AppTheme.muted)
         }
+        .padding(.horizontal, 16).padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .panel()
-        .opacity(0.92)
+        .contentShape(Rectangle())
+        .background(isSelected ? AppTheme.amber.opacity(0.1) : Color.clear)
         .overlay(Rectangle().stroke(AppTheme.amber, lineWidth: isSelected ? 2 : 0))
+        .accessibilityElement(children: .combine)
     }
 
     private var timeline: String {
@@ -329,19 +352,23 @@ private struct RecentSetupCard: View {
     }
 }
 
+func zoneColour(_ key: String) -> Color {
+    switch key {
+    case "IN_BUY_RANGE": AppTheme.mint
+    case "DEEP_DIP", "EXTENDED": AppTheme.amber
+    default: AppTheme.red
+    }
+}
+
 /// A slim bar of the zones around the signal price with the current price marked, plus where that puts the setup.
-private struct BuyRangeBar: View {
+/// The compact form is just the bar, for list rows.
+struct BuyRangeBar: View {
     let range: BuyRange
     let currency: String?
     let decimals: Int?
+    var compact = false
 
-    private func colour(_ key: String) -> Color {
-        switch key {
-        case "IN_BUY_RANGE": AppTheme.mint
-        case "DEEP_DIP", "EXTENDED": AppTheme.amber
-        default: AppTheme.red
-        }
-    }
+    private func colour(_ key: String) -> Color { zoneColour(key) }
 
     private func money(_ value: Double) -> String { PriceFormat.string(value, prefix: currency, decimals: decimals) }
 
@@ -357,16 +384,16 @@ private struct BuyRangeBar: View {
                         let start = x(zone.lo ?? range.scaleMin), end = x(zone.hi ?? range.scaleMax)
                         Rectangle()
                             .fill(colour(zone.key).opacity(zone.key == "IN_BUY_RANGE" ? 1 : 0.5))
-                            .frame(width: max(0, end - start), height: 8)
+                            .frame(width: max(0, end - start), height: compact ? 6 : 8)
                             .offset(x: start)
                     }
-                    Rectangle().fill(Color.primary.opacity(0.65)).frame(width: 1, height: 14).offset(x: x(range.entry))
-                    Rectangle().fill(Color.primary).frame(width: 3, height: 18).offset(x: x(range.price) - 1.5)
+                    Rectangle().fill(Color.primary.opacity(0.65)).frame(width: 1, height: compact ? 10 : 14).offset(x: x(range.entry))
+                    Rectangle().fill(Color.primary).frame(width: compact ? 2 : 3, height: compact ? 14 : 18).offset(x: x(range.price) - 1.5)
                 }
-                .frame(height: 18, alignment: .center)
+                .frame(height: compact ? 14 : 18, alignment: .center)
             }
-            .frame(height: 18)
-            HStack(spacing: 8) {
+            .frame(height: compact ? 14 : 18)
+            if !compact { HStack(spacing: 8) {
                 Text(range.label.uppercased())
                     .font(.caption2.bold())
                     .foregroundStyle(colour(range.state))
@@ -379,7 +406,7 @@ private struct BuyRangeBar: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                 }
-            }
+            } }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Buy range: \(range.label).\(buy.flatMap { zone in zone.lo.flatMap { lo in zone.hi.map { hi in " Buy zone \(money(lo)) to \(money(hi))." } } } ?? "")")

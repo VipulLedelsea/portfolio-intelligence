@@ -78,6 +78,7 @@ struct AnalysisContent: View {
     private var scrollContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                EntryDetails(candidate: candidate)
                 if model.isAnalyzing {
                     ProgressView("Running analyst committee…")
                         .tint(AppTheme.amber)
@@ -312,4 +313,28 @@ private struct CandlestickChart: View {
 private struct TrailingInsetKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+
+/// What the scanner row leaves out: the full buy range, when the entry window closes, and the daily trend read.
+struct EntryDetails: View {
+    let candidate: Candidate
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let range = candidate.buyRange {
+                BuyRangeBar(range: range, currency: candidate.currencySymbol, decimals: candidate.priceDecimals)
+            }
+            if let closing = candidate.windowClosesAt.flatMap(PairingExpiryParser.date(from:)) {
+                Label("Entry window closes \(timeText(closing)) · \(leftText(closing))", systemImage: "timer")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.amber)
+            }
+            Text("Daily \(candidate.dailySupertrendDirection) · ADX \(candidate.dailyAdx, specifier: "%.1f") \(candidate.dailyAdxRising ? "rising" : "fading") · \(candidate.extensionAtr, specifier: "%+.2f") ATR from the signal")
+                .font(.caption)
+                .foregroundStyle(AppTheme.muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
+    }
 }

@@ -110,14 +110,21 @@ struct HoldingsView: View {
             .font(.caption)
             .foregroundStyle(AppTheme.muted)
             ForEach(data.totals) { total in
-                HStack {
-                    Text("\(total.market) value \(money(total.currencySymbol, 2, total.value))")
-                    Spacer()
-                    Text("\(signed(total.currencySymbol, total.pnlValue)) (\(String(format: "%+.2f", total.pnlPct))%)")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(data.totals.count > 1 ? "Portfolio value · \(total.market)" : "Portfolio value")
+                        .font(.footnote)
+                        .foregroundStyle(AppTheme.muted)
+                    Text(money(total.currencySymbol, 2, total.value))
+                        .font(.system(size: 36, weight: .medium, design: .serif))
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
+                    Text("\(signed(total.currencySymbol, total.pnlValue)) · \(String(format: "%+.2f", total.pnlPct))% on \(money(total.currencySymbol, 2, total.value - total.pnlValue)) invested")
+                        .font(.subheadline)
                         .foregroundStyle(total.pnlValue >= 0 ? AppTheme.mint : AppTheme.red)
                 }
-                .font(.subheadline.bold())
-                .panel()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+                .accessibilityElement(children: .combine)
             }
             if data.open.isEmpty {
                 Text("No holdings yet. Tap + to add a stock you bought, with the price and number of shares.")
@@ -232,54 +239,90 @@ private struct HoldingCard: View {
         }
     }
 
+    @State private var expanded = false
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(holding.symbol).font(.title3.bold())
+                Text(holding.market).font(.caption).foregroundStyle(AppTheme.muted)
+            }
+            Text("\(shareText(holding.shares)) shares · avg \(money(holding.currencySymbol, holding.priceDecimals, holding.buyPrice))")
+                .font(.footnote)
+                .foregroundStyle(AppTheme.muted)
+        }
+    }
+
+    private var valueBlock: some View {
+        VStack(alignment: .trailing, spacing: 3) {
+            if let value = holding.value { Text(money(holding.currencySymbol, 2, value)).font(.headline) }
+            if let pct = holding.pnlPct {
+                Text(String(format: "%+.2f%%", pct)).font(.footnote.monospaced()).foregroundStyle(pct >= 0 ? AppTheme.mint : AppTheme.red)
+            }
+            Text(holding.actionLabel.uppercased())
+                .font(.caption2.bold())
+                .foregroundStyle(tint)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .overlay(Rectangle().stroke(tint))
+        }
+    }
+
     var body: some View {
-        let symbol = holding.currencySymbol, decimals = holding.priceDecimals
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(holding.symbol) · \(holding.market)").font(.title3.bold())
-                    Text("\(shareText(holding.shares)) shares at \(money(symbol, decimals, holding.buyPrice)) · \(holding.boughtAt)")
-                        .font(.footnote)
+        VStack(alignment: .leading, spacing: 12) {
+            Button { withAnimation(.snappy) { expanded.toggle() } } label: {
+                HStack(spacing: 10) {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .center) { titleBlock; Spacer(minLength: 8); valueBlock }
+                        VStack(alignment: .leading, spacing: 8) { titleBlock; valueBlock }
+                    }
+                    Image(systemName: "chevron.down")
+                        .font(.caption)
                         .foregroundStyle(AppTheme.muted)
+                        .rotationEffect(.degrees(expanded ? 180 : 0))
                 }
-                Spacer()
-                Text(holding.actionLabel.uppercased())
-                    .font(.caption.bold())
-                    .foregroundStyle(tint)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .overlay(Rectangle().stroke(tint))
+                .contentShape(Rectangle())
             }
-            Text(holding.headline).font(.subheadline.bold())
-            if let price = holding.currentPrice, let pnl = holding.pnlValue, let pct = holding.pnlPct {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: tileMinimum), spacing: 8)], spacing: 8) {
-                    stat("Now", money(symbol, decimals, price))
-                    stat("Profit / loss", "\(signed(symbol, pnl)) (\(String(format: "%+.2f", pct))%)", color: pnl >= 0 ? AppTheme.mint : AppTheme.red)
-                    if let v = holding.value { stat("Value", money(symbol, 2, v)) }
-                    if let v = holding.stopLevel { stat("Protective level", money(symbol, decimals, v)) }
-                    if let v = holding.trailingLevel { stat("Trailing (4H)", money(symbol, decimals, v)) }
-                    if let v = holding.target1 { stat("Target 1 (2R)", money(symbol, decimals, v)) }
-                    if let v = holding.target2 { stat("Target 2 (3R)", money(symbol, decimals, v)) }
-                    if let a = holding.trend4h, let d = holding.dailyTrend { stat("4H · Daily", "\(a) · \(d)") }
-                }
-            }
-            ForEach(holding.reasons, id: \.self) { reason in
-                Text("• \(reason)").font(.footnote).foregroundStyle(AppTheme.muted)
-            }
-            if let previous = holding.previousAction, previous != holding.action, holding.action != "NO_DATA" {
-                Text("Changed from \(label(previous)) to \(holding.actionLabel)")
-                    .font(.caption.bold())
-                    .foregroundStyle(tint)
-            }
-            HStack {
-                Button("Buy more", action: onBuyMore).buttonStyle(.bordered).tint(AppTheme.amber)
-                Button("Sell", action: onSell).buttonStyle(.bordered)
-                if holding.lastEntry != nil {
-                    Button("Undo last entry", action: onUndo).buttonStyle(.bordered)
-                }
-            }
-            .font(.footnote)
+            .buttonStyle(.plain)
+            .accessibilityHint(expanded ? "Hides the details" : "Shows the details")
+            if expanded { details }
         }
         .panel()
+    }
+
+    @ViewBuilder
+    private var details: some View {
+        let symbol = holding.currencySymbol, decimals = holding.priceDecimals
+        Text("Bought \(holding.boughtAt) at \(money(symbol, decimals, holding.buyPrice))")
+            .font(.footnote)
+            .foregroundStyle(AppTheme.muted)
+        Text(holding.headline).font(.subheadline.bold())
+        if let price = holding.currentPrice, let pnl = holding.pnlValue, let pct = holding.pnlPct {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: tileMinimum), spacing: 8)], spacing: 8) {
+                stat("Now", money(symbol, decimals, price))
+                stat("Profit / loss", "\(signed(symbol, pnl)) (\(String(format: "%+.2f", pct))%)", color: pnl >= 0 ? AppTheme.mint : AppTheme.red)
+                if let v = holding.stopLevel { stat("Protective level", money(symbol, decimals, v)) }
+                if let v = holding.trailingLevel { stat("Trailing (4H)", money(symbol, decimals, v)) }
+                if let v = holding.target1 { stat("Target 1 (2R)", money(symbol, decimals, v)) }
+                if let v = holding.target2 { stat("Target 2 (3R)", money(symbol, decimals, v)) }
+                if let a = holding.trend4h, let d = holding.dailyTrend { stat("4H · Daily", "\(a) · \(d)") }
+            }
+        }
+        ForEach(holding.reasons, id: \.self) { reason in
+            Text("• \(reason)").font(.footnote).foregroundStyle(AppTheme.muted)
+        }
+        if let previous = holding.previousAction, previous != holding.action, holding.action != "NO_DATA" {
+            Text("Changed from \(label(previous)) to \(holding.actionLabel)")
+                .font(.caption.bold())
+                .foregroundStyle(tint)
+        }
+        HStack {
+            Button("Buy more", action: onBuyMore).buttonStyle(.bordered).tint(AppTheme.amber)
+            Button("Sell", action: onSell).buttonStyle(.bordered)
+            if holding.lastEntry != nil {
+                Button("Undo last entry", action: onUndo).buttonStyle(.bordered)
+            }
+        }
+        .font(.footnote)
     }
 
     private func label(_ action: String) -> String {
