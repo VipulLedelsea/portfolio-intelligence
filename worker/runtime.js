@@ -19,6 +19,7 @@ const US_REFRESH_OPEN_SECONDS = 5 * 60;
 const AUTO_REFRESH_CLOSED_SECONDS = 6 * 60 * 60;
 const AUTO_REFRESH_LOCK_SECONDS = 4 * 60;
 const AUTO_REFRESH_BACKOFF_SECONDS = 15 * 60;
+const MANUAL_REFRESH_MIN_SECONDS = 60;
 const EXTERNAL_ANALYSIS_CACHE_SECONDS = 15 * 60;
 const YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/";
 const TWELVE_DATA = "https://api.twelvedata.com/time_series";
@@ -1607,9 +1608,9 @@ async function refreshScan(env, market) {
   }
 }
 
-async function backOffScan(env, market) {
+async function backOffScan(env, market, seconds = AUTO_REFRESH_BACKOFF_SECONDS) {
   // A failed refresh (for example a provider rate limit) pauses further attempts instead of retrying on the next request.
-  const until = Date.now() + AUTO_REFRESH_BACKOFF_SECONDS * 1000;
+  const until = Date.now() + seconds * 1000;
   scanMemory.set(`${market.id}:lock`, until);
   if (env.DB) {
     await env.DB.prepare("UPDATE scan_cache SET refreshing_until = ? WHERE market = ?").bind(new Date(until).toISOString(), market.id).run().catch(() => {});
@@ -1619,6 +1620,8 @@ async function backOffScan(env, market) {
 async function refreshScanIfDue(env, market, ctx, { force = false, wait = false } = {}) {
   const stored = await readStoredScan(env, market);
   const age = stored ? (Date.now() - Date.parse(stored.generatedAt)) / 1000 : Infinity;
+  // A manual refresh can never push the data provider harder than once a minute for everyone together.
+  if (force && stored && age < MANUAL_REFRESH_MIN_SECONDS) return stored;
   if (!force && age < refreshInterval(market)) return stored;
   if (!force && !marketIsOpen(market) && stored && age < AUTO_REFRESH_CLOSED_SECONDS) return stored;
   if (await claimScanRefresh(env, market)) {
@@ -1725,18 +1728,70 @@ const HOLDING_MARKETS = ["US", "IN"];
 const MAX_OPEN_HOLDINGS = 20;
 const HOLDING_ACTIONS = { HOLD: "Hold", WATCH: "Watch closely", TAKE_PROFIT: "Consider taking profit", EXIT: "Exit signal", NO_DATA: "No data" };
 const holdingSnapshotCache = new Map();
+const HOLDING_REFRESH_OPEN_SECONDS = 5 * 60;
+const HOLDING_REFRESH_CLOSED_SECONDS = 10 * 60;
+const HOLDING_SHARED_SYMBOLS = 150;
+const holdKey = market => ({ id: `HOLD:${market.id}` });
 
-// Prices are shared for a minute while the market is open (ten minutes when closed). A manual refresh accepts
-// data up to 20 seconds old, so repeated taps never multiply requests to the data provider.
+// Everyone's open positions in a market are read in one shared batch and stored in the database, so prices and
+// signals are identical for every user and the number of provider requests no longer depends on the number of
+// users. A cron job keeps it fresh every five minutes while the market is open; a request only refreshes it when
+// it is overdue, and the lock lets one refresh run at a time. A manual refresh waits at least a minute.
+async function refreshSharedHoldings(env, market, extra = []) {
+  if (!env.DB || !(await claimScanRefresh(env, holdKey(market)))) return false;
+  try {
+    const rows = (await env.DB.prepare("SELECT symbol FROM holdings WHERE market = ? AND closed_at IS NULL GROUP BY symbol ORDER BY COUNT(*) DESC LIMIT ?").bind(market.id, HOLDING_SHARED_SYMBOLS).all()).results || [];
+    const symbols = [...new Set([...extra, ...rows.map(row => row.symbol)])].slice(0, HOLDING_SHARED_SYMBOLS);
+    if (!symbols.length) { await backOffScan(env, holdKey(market), 0); return false; }
+    const fetched = await fetchSnapshots(symbols, market, env);
+    if (!fetched.snapshots.size) throw new Error(fetched.errors?.[0]?.error || "No market data was returned");
+    const snapshots = {};
+    for (const [symbol, { history, ...slim }] of fetched.snapshots) snapshots[symbol] = slim;
+    const payload = { snapshots, errors: (fetched.errors || []).slice(0, 50) };
+    const generatedAt = new Date().toISOString();
+    scanMemory.set(holdKey(market).id, { payload, generatedAt });
+    scanMemory.delete(`${holdKey(market).id}:lock`);
+    await env.DB.prepare("UPDATE scan_cache SET payload = ?, generated_at = ?, refreshing_until = NULL WHERE market = ?").bind(JSON.stringify(payload), generatedAt, holdKey(market).id).run();
+    return true;
+  } catch { await backOffScan(env, holdKey(market), 2 * 60); return false; }
+}
+
+async function refreshHoldingsIfDue(env, market) {
+  if (!env.DB || !HOLDING_MARKETS.includes(market.id)) return;
+  const stored = await readStoredScan(env, holdKey(market));
+  const age = stored ? (Date.now() - Date.parse(stored.generatedAt)) / 1000 : Infinity;
+  const fresh = marketIsOpen(market) ? HOLDING_REFRESH_OPEN_SECONDS : HOLDING_REFRESH_CLOSED_SECONDS;
+  if (age < fresh - 30) return;
+  await refreshSharedHoldings(env, market);
+}
+
 async function holdingSnapshotsFor(env, market, symbols, { manual = false } = {}) {
-  const key = `${market.id}:${[...symbols].sort().join(",")}`;
-  const maxAge = manual ? 20000 : marketIsOpen(market) ? 55000 : 600000;
+  const wanted = [...new Set(symbols)];
+  const read = async () => {
+    const stored = await readStoredScan(env, holdKey(market));
+    if (!stored) return null;
+    const snapshots = new Map(Object.entries(stored.payload.snapshots || {}));
+    const errors = stored.payload.errors || [];
+    const missing = wanted.filter(symbol => !snapshots.has(symbol) && !errors.some(entry => entry.symbol === symbol));
+    return { snapshots, errors, missing, age: (Date.now() - Date.parse(stored.generatedAt)) / 1000 };
+  };
+  let shared = await read();
+  const fresh = manual ? MANUAL_REFRESH_MIN_SECONDS : marketIsOpen(market) ? HOLDING_REFRESH_OPEN_SECONDS : HOLDING_REFRESH_CLOSED_SECONDS;
+  if (!shared || shared.missing.length || shared.age > fresh) {
+    if (await refreshSharedHoldings(env, market, wanted)) shared = await read();
+  }
+  if (shared && !shared.missing.length) return { snapshots: shared.snapshots, errors: shared.errors };
+  // Nothing stored yet or another refresh is running: fetch only the symbols that are missing, shared for a short while.
+  const need = shared ? shared.missing : wanted;
+  const key = `${market.id}:${[...need].sort().join(",")}`;
   const hit = holdingSnapshotCache.get(key);
-  if (hit && Date.now() - hit.fetchedAt <= maxAge) return hit.value;
-  const value = await fetchSnapshots(symbols, market, env).catch(error => ({ snapshots: new Map(), errors: symbols.map(symbol => ({ symbol, error: cleanError(error) })) }));
-  if (holdingSnapshotCache.size > 40) holdingSnapshotCache.delete(holdingSnapshotCache.keys().next().value);
-  holdingSnapshotCache.set(key, { value, fetchedAt: Date.now() });
-  return value;
+  let direct = hit && Date.now() - hit.fetchedAt <= 55000 ? hit.value : null;
+  if (!direct) {
+    direct = await fetchSnapshots(need, market, env).catch(error => ({ snapshots: new Map(), errors: need.map(symbol => ({ symbol, error: cleanError(error) })) }));
+    if (holdingSnapshotCache.size > 40) holdingSnapshotCache.delete(holdingSnapshotCache.keys().next().value);
+    holdingSnapshotCache.set(key, { value: direct, fetchedAt: Date.now() });
+  }
+  return { snapshots: new Map([...(shared?.snapshots || []), ...direct.snapshots]), errors: [...(shared?.errors || []), ...(direct.errors || [])] };
 }
 
 // A hold / watch / take-profit / exit read on a long position, from the same engine that ranks the scanner.
@@ -1962,7 +2017,7 @@ async function listHoldings(request, env) {
   const anyOpen = [...symbolsByMarket.keys()].some(marketId => MARKETS[marketId] && marketIsOpen(MARKETS[marketId]));
   return {
     updated_at: now,
-    refresh_after_seconds: anyOpen ? 60 : 600,
+    refresh_after_seconds: anyOpen ? 300 : 600,
     open: openOut,
     portfolio: await buildPortfolio(openOut),
     market_trends: Object.fromEntries(await Promise.all([...symbolsByMarket.keys()].filter(id => MARKETS[id]).map(async id => [id, (await readStoredScan(env, MARKETS[id]))?.payload?.market_trend || null]))),
@@ -2362,8 +2417,11 @@ export default {
   fetch: handle,
   // One market per cron trigger, so each job has its own outgoing-request budget.
   async scheduled(event, env, ctx) {
-    const byCron = { "5 * * * *": "IN", "10 * * * *": "FX", "*/15 13-21 * * 1-5": "US" };
+    const byCron = { "5 * * * *": "IN", "*/5 3-10 * * 1-5": "IN", "10 * * * *": "FX", "*/5 13-21 * * 1-5": "US" };
     const market = MARKETS[byCron[event.cron]];
-    if (market) ctx.waitUntil(refreshScanIfDue(env, market, ctx));
+    if (market) ctx.waitUntil((async () => {
+      await refreshScanIfDue(env, market, ctx).catch(() => {});
+      await refreshHoldingsIfDue(env, market).catch(() => {});
+    })());
   },
 };

@@ -198,7 +198,7 @@ private enum HoldingsSection: String, CaseIterable, Identifiable {
 
 private func updatedText(_ data: HoldingsResponse) -> String {
     let when = PairingExpiryParser.date(from: data.updatedAt)?.formatted(date: .omitted, time: .standard) ?? data.updatedAt
-    let every = (data.refreshAfterSeconds ?? 300) >= 600 ? "every 10 minutes, markets closed" : "every minute, market open"
+    let every = (data.refreshAfterSeconds ?? 300) >= 600 ? "every 10 minutes, markets closed" : "every 5 minutes, market open"
     return "Updated \(when) · auto-updates \(every)"
 }
 

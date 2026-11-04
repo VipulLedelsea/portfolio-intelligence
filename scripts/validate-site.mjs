@@ -245,11 +245,16 @@ const usScan = await (await post("/api/discover", { market: "US" })).json();
 assert.equal(usScan.successful, 503, "Every S&P 500 symbol must be scanned");
 assert.ok(fetchLog.length <= 30, `A full US scan must stay far below the free plan's 50-request limit (used ${fetchLog.length})`);
 const usCalls = fetchLog.length;
+await Promise.all([1, 2, 3, 4].map(() => post("/api/discover", { market: "US", refresh: true })));
+assert.equal(fetchLog.length, usCalls, "Manual refreshes within a minute must be served from the shared scan with no provider calls");
+const realNow = Date.now;
+Date.now = () => realNow() + 61000;
 await post("/api/discover", { market: "US", refresh: true });
 const callsPerUsScan = fetchLog.length - usCalls;
-assert.ok(callsPerUsScan > 0 && callsPerUsScan <= usCalls, "A US manual refresh must always rescan, with no cooldown");
-await Promise.all([post("/api/discover", { market: "US", refresh: true }), post("/api/discover", { market: "US", refresh: true }), post("/api/discover", { market: "US", refresh: true })]);
-assert.ok(fetchLog.length - usCalls - callsPerUsScan <= callsPerUsScan * 2, "Simultaneous manual refreshes must share a scan instead of each making their own");
+assert.ok(callsPerUsScan > 0 && callsPerUsScan <= usCalls, "A manual refresh after a minute must rescan");
+await Promise.all([1, 2, 3].map(() => post("/api/discover", { market: "US", refresh: true })));
+assert.ok(fetchLog.length - usCalls - callsPerUsScan <= callsPerUsScan, "Simultaneous manual refreshes must share one scan");
+Date.now = realNow;
 assert.equal(usScan.auto_refresh, false, "US keeps a manual refresh control");
 assert.ok(usScan.market_trend && ["UP", "MIXED", "DOWN"].includes(usScan.market_trend.state), "The US scan must report the market trend");
 assert.equal(usScan.market_trend.index_symbol, "SPY");
@@ -302,11 +307,15 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
 // Holdings: positions entered by hand are evaluated by the same engine and stay private to their owner.
 {
   class HoldingsDb {
-    constructor() { this.rows = []; this.trades = []; }
+    constructor() { this.rows = []; this.trades = []; this.cache = new Map(); }
     prepare(sql) {
       const statement = { args: [], bind: (...args) => { statement.args = args; return statement; } };
       statement.run = async () => {
         const a = statement.args;
+        if (sql.startsWith("INSERT OR IGNORE INTO scan_cache")) { if (!this.cache.has(a[0])) this.cache.set(a[0], { payload: null, generated_at: a[1], refreshing_until: null }); return { success: true, meta: { changes: 1 } }; }
+        if (sql.startsWith("UPDATE scan_cache SET refreshing_until = ? WHERE market = ? AND")) { const row = this.cache.get(a[1]); const ok = row && (!row.refreshing_until || row.refreshing_until <= a[2]); if (ok) row.refreshing_until = a[0]; return { success: true, meta: { changes: ok ? 1 : 0 } }; }
+        if (sql.startsWith("UPDATE scan_cache SET refreshing_until = ? WHERE market = ?")) { const row = this.cache.get(a[1]); if (row) row.refreshing_until = a[0]; return { success: true }; }
+        if (sql.startsWith("UPDATE scan_cache SET payload")) { const row = this.cache.get(a[2]); if (row) { row.payload = a[0]; row.generated_at = a[1]; row.refreshing_until = null; } return { success: true }; }
         if (sql.startsWith("INSERT INTO holding_trades")) this.trades.push({ id: a[0], user_id: a[1], holding_id: a[2], chain_id: a[3], symbol: a[4], market: a[5], side: a[6], shares: a[7], price: a[8], at: a[9], realized_pnl: a[10], voided_at: null, seq: this.trades.length });
         else if (sql.startsWith("UPDATE holding_trades SET voided_at")) { const t = this.trades.find(x => x.id === a[1] && x.user_id === a[2]); if (t) t.voided_at = a[0]; }
         else if (sql.startsWith("UPDATE holdings SET shares = ?, buy_price = ?")) { const r = this.rows.find(x => x.id === a[2] && x.user_id === a[3] && !x.closed_at); if (r) { r.shares = a[0]; r.buy_price = a[1]; } }
@@ -327,17 +336,19 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
         else if (sql.startsWith("DELETE FROM holdings")) this.rows = this.rows.filter(r => !(r.id === a[0] && r.user_id === a[1]));
         return { success: true };
       };
-      statement.first = async () => sql.startsWith("SELECT * FROM holding_trades WHERE id") ? (this.trades.find(t => t.id === statement.args[0] && t.user_id === statement.args[1]) || null) : sql.startsWith("SELECT * FROM holdings WHERE id") ? (this.rows.find(r => r.id === statement.args[0] && r.user_id === statement.args[1]) || null) : sql.includes("COUNT(*)") ? { n: this.rows.filter(r => r.user_id === statement.args[0] && !r.closed_at).length } : null;
-      statement.all = async () => sql.includes("FROM holding_trades") ? { results: this.trades.filter(t => t.user_id === statement.args[0] && (!sql.includes("chain_id = ?") || t.chain_id === statement.args[1]) && (!sql.includes("voided_at IS NULL") || !t.voided_at)).sort((x, y) => y.at.localeCompare(x.at) || y.seq - x.seq) }
+      statement.first = async () => sql.includes("FROM scan_cache") ? (this.cache.get(statement.args[0]) || null) : sql.startsWith("SELECT * FROM holding_trades WHERE id") ? (this.trades.find(t => t.id === statement.args[0] && t.user_id === statement.args[1]) || null) : sql.startsWith("SELECT * FROM holdings WHERE id") ? (this.rows.find(r => r.id === statement.args[0] && r.user_id === statement.args[1]) || null) : sql.includes("COUNT(*)") ? { n: this.rows.filter(r => r.user_id === statement.args[0] && !r.closed_at).length } : null;
+      statement.all = async () => sql.includes("GROUP BY symbol") ? { results: [...new Set(this.rows.filter(r => r.market === statement.args[0] && !r.closed_at).map(r => r.symbol))].map(symbol => ({ symbol })) } : sql.includes("FROM holding_trades") ? { results: this.trades.filter(t => t.user_id === statement.args[0] && (!sql.includes("chain_id = ?") || t.chain_id === statement.args[1]) && (!sql.includes("voided_at IS NULL") || !t.voided_at)).sort((x, y) => y.at.localeCompare(x.at) || y.seq - x.seq) }
         : sql.includes("closed_at IS NOT NULL") ? { results: this.rows.filter(r => r.user_id === statement.args[0] && r.closed_at) }
         : { results: this.rows.filter(r => r.user_id === statement.args[0]) };
       return statement;
     }
     async batch(list) { for (const item of list) await item.run(); return []; }
   }
+  let holdingFetches = 0;
   globalThis.fetch = async input => {
     const url = new URL(String(input));
     if (url.hostname !== "api.robinhood.com") return new Response("{}", { status: 404 });
+    holdingFetches++;
     const symbols = url.searchParams.get("symbols").split(",");
     if (!url.pathname.includes("historicals")) return new Response(JSON.stringify({ results: symbols.map(symbol => ({ symbol, last_trade_price: "100", adjusted_previous_close: "99" })) }), { status: 200 });
     const daily = url.searchParams.get("interval") === "day";
@@ -362,9 +373,14 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
   assert.ok(["HOLD", "WATCH", "TAKE_PROFIT"].includes(bySymbol.AAPL.action));
   assert.ok(bySymbol.AAPL.trailing_level > 0 && bySymbol.AAPL.target_1 > bySymbol.AAPL.buy_price);
   assert.match(list.disclaimer, /not personal financial advice/);
-  assert.ok([60, 600].includes(list.refresh_after_seconds), "The response must tell clients how soon to re-check");
+  assert.ok([300, 600].includes(list.refresh_after_seconds), "The response must tell clients how soon to re-check");
   assert.equal(db.rows.find(row => row.symbol === "NVDA").last_action, "EXIT", "The latest decision must be remembered so changes can be shown");
   assert.equal((await (await as("bob", "/api/holdings")).json()).open.length, 0, "Holdings must stay private to their owner");
+  const fetchesAfterList = holdingFetches;
+  for (const body of [{}, { refresh: true }, {}, { refresh: true }]) await as("alice", "/api/holdings", body);
+  await as("bob", "/api/holdings", { refresh: true });
+  assert.equal(holdingFetches, fetchesAfterList, "Repeated and manual refreshes must reuse the shared snapshot instead of calling the data provider");
+  assert.ok(db.cache.get("HOLD:US")?.payload && !/"history"/.test(db.cache.get("HOLD:US").payload), "The shared snapshot must be stored without chart history");
   const aapl = bySymbol.AAPL.id;
   assert.equal((await as("alice", "/api/holdings/increase", { id: aapl, shares: 0, price: 110 })).status, 400, "Adding zero shares must be rejected");
   assert.equal((await as("alice", "/api/holdings/increase", { id: aapl, shares: 10, price: 110 })).status, 200);

@@ -12,7 +12,7 @@ migrations_dir = "drizzle"
 # One scan per market, each in its own invocation (the free plan allows 50 outgoing requests per run):
 # BSE at :05 and forex at :10 every hour, US every 15 minutes during US trading hours (UTC).
 [triggers]
-crons = ["5 * * * *", "10 * * * *", "*/15 13-21 * * 1-5"]
+crons = ["5 * * * *", "10 * * * *", "*/5 13-21 * * 1-5", "*/5 3-10 * * 1-5"]
 
 # Secrets (never commit these); set each with `npx wrangler secret put NAME`:
 #   STRIPE_SECRET_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, PAYWALL_ENABLED ("true" to enable the paywall)

@@ -264,7 +264,7 @@ function render(data){
  totalsEl.innerHTML=data.totals.map(t=>`<span><b>${esc(t.market)}</b> value ${money(t.currency_symbol,2,t.value)} · <span class="${cls(t.pnl_value)}">${signed(t.currency_symbol,2,t.pnl_value)} (${t.pnl_pct>=0?'+':''}${t.pnl_pct.toFixed(2)}%)</span></span>`).join('');
  listEl.innerHTML=data.open.length?data.open.map(card).join(''):'<div class="status" style="margin-top:14px">No holdings yet. Add a stock you bought above.</div>';
  closedEl.innerHTML=data.closed.length?`<h4 style="margin:22px 0 4px">Closed</h4>`+data.closed.map(c=>`<div class="h-meta">${esc(c.symbol)} · ${Number(c.shares)} sh · bought ${money(c.currency_symbol,c.price_decimals,c.buy_price)}, sold ${money(c.currency_symbol,c.price_decimals,c.sell_price)} · <b class="${cls(c.pnl_value)}">${signed(c.currency_symbol,2,c.pnl_value)} (${c.pnl_pct>=0?'+':''}${c.pnl_pct.toFixed(2)}%)</b></div>`).join(''):'';
- statusEl.textContent='Updated '+new Date(data.updated_at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'})+' · auto-updates about every '+(data.refresh_after_seconds>=600?'10 minutes (markets closed)':'minute (market open)')+' while this page is open.';
+ statusEl.textContent='Updated '+new Date(data.updated_at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'})+' · auto-updates about every '+(data.refresh_after_seconds>=600?'10 minutes (markets closed)':'5 minutes (market open)')+' while this page is open.';
 }
 let timer=null,busy=false;
 async function load(manual){if(busy)return;busy=true;clearTimeout(timer);const btn=el('holdings-refresh');btn.disabled=true;btn.textContent='Refreshing…';let wait=300;
