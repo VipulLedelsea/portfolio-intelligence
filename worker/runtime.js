@@ -2084,6 +2084,20 @@ async function holdingsUser(request, env) {
   return user;
 }
 
+// Numbers from request bodies must be real numbers or numeric strings; Number([5]) or Number(true) must not slip through.
+function toAmount(value) {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.trim() !== "") return Number(value);
+  return NaN;
+}
+// A strict YYYY-MM-DD calendar day that exists and is not in the future.
+function validPastDay(text, today) {
+  if (typeof text !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(text) || text > today) return false;
+  const parsed = new Date(`${text}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === text;
+}
+const MIN_AMOUNT = 1e-4;
+
 async function addHolding(request, env) {
   const user = await holdingsUser(request, env);
   const body = await readBody(request);
@@ -2093,12 +2107,12 @@ async function addHolding(request, env) {
   const market = MARKETS[marketId];
   if (!/^[A-Z0-9.\-^&]{1,15}$/.test(symbol)) throw Object.assign(new Error("Enter a valid ticker symbol"), { status: 400 });
   if (market.universe && !market.universe.some(entry => entry.symbol === symbol)) throw Object.assign(new Error(`Choose one of the ${market.name} symbols`), { status: 400 });
-  const shares = Number(body.shares), price = Number(body.price);
-  if (!Number.isFinite(shares) || shares <= 0 || shares > 1e9) throw Object.assign(new Error("Enter how many shares you bought"), { status: 400 });
-  if (!Number.isFinite(price) || price <= 0 || price > 1e8) throw Object.assign(new Error("Enter the price you paid per share"), { status: 400 });
+  const shares = toAmount(body.shares), price = toAmount(body.price);
+  if (!Number.isFinite(shares) || shares < MIN_AMOUNT || shares > 1e9) throw Object.assign(new Error("Enter how many shares you bought"), { status: 400 });
+  if (!Number.isFinite(price) || price < MIN_AMOUNT || price > 1e8) throw Object.assign(new Error("Enter the price you paid per share"), { status: 400 });
   const today = new Date().toISOString().slice(0, 10);
-  const boughtAt = String(body.bought_at || today).slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(boughtAt) || boughtAt > today) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
+  const boughtAt = body.bought_at === undefined || body.bought_at === null || body.bought_at === "" ? today : body.bought_at;
+  if (!validPastDay(boughtAt, today)) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
   const open = await env.DB.prepare("SELECT COUNT(*) AS n FROM holdings WHERE user_id = ? AND closed_at IS NULL").bind(user.id).first();
   if (Number(open?.n || 0) >= MAX_OPEN_HOLDINGS) throw Object.assign(new Error(`You can track up to ${MAX_OPEN_HOLDINGS} open holdings. Remove or close one first.`), { status: 400 });
   const { snapshots, errors } = await holdingSnapshotsFor(env, market, [symbol]);
@@ -2176,10 +2190,10 @@ async function listHoldings(request, env) {
 async function increaseHolding(request, env) {
   const user = await holdingsUser(request, env);
   const body = await readBody(request);
-  const id = String(body.id || ""), shares = Number(body.shares), price = Number(body.price);
+  const id = String(body.id || ""), shares = toAmount(body.shares), price = toAmount(body.price);
   if (!/^[A-Za-z0-9_-]{6,40}$/.test(id)) throw Object.assign(new Error("Holding not found"), { status: 404 });
-  if (!Number.isFinite(shares) || shares <= 0 || shares > 1e9) throw Object.assign(new Error("Enter how many more shares you bought"), { status: 400 });
-  if (!Number.isFinite(price) || price <= 0 || price > 1e8) throw Object.assign(new Error("Enter the price you paid per share"), { status: 400 });
+  if (!Number.isFinite(shares) || shares < MIN_AMOUNT || shares > 1e9) throw Object.assign(new Error("Enter how many more shares you bought"), { status: 400 });
+  if (!Number.isFinite(price) || price < MIN_AMOUNT || price > 1e8) throw Object.assign(new Error("Enter the price you paid per share"), { status: 400 });
   const row = await env.DB.prepare("SELECT * FROM holdings WHERE id = ? AND user_id = ?").bind(id, user.id).first();
   if (!row || row.closed_at) throw Object.assign(new Error("Holding not found"), { status: 404 });
   await env.DB.batch([
@@ -2195,12 +2209,12 @@ async function increaseHolding(request, env) {
 async function sellHolding(request, env) {
   const user = await holdingsUser(request, env);
   const body = await readBody(request);
-  const id = String(body.id || ""), price = Number(body.price);
+  const id = String(body.id || ""), price = toAmount(body.price);
   if (!/^[A-Za-z0-9_-]{6,40}$/.test(id)) throw Object.assign(new Error("Holding not found"), { status: 404 });
   if (!Number.isFinite(price) || price <= 0 || price > 1e8) throw Object.assign(new Error("Enter the price you sold at"), { status: 400 });
   const row = await env.DB.prepare("SELECT * FROM holdings WHERE id = ? AND user_id = ?").bind(id, user.id).first();
   if (!row || row.closed_at) throw Object.assign(new Error("Holding not found"), { status: 404 });
-  const sold = body.shares === undefined || body.shares === null || body.shares === "" ? Number(row.shares) : Number(body.shares);
+  const sold = body.shares === undefined || body.shares === null || body.shares === "" ? Number(row.shares) : toAmount(body.shares);
   if (!Number.isFinite(sold) || sold <= 0) throw Object.assign(new Error("Enter how many shares you sold"), { status: 400 });
   if (sold > Number(row.shares) + 1e-9) throw Object.assign(new Error(`You only hold ${Number(row.shares)} shares`), { status: 400 });
   const now = new Date().toISOString();
@@ -2368,19 +2382,19 @@ async function editEntry(request, env) {
   const user = await holdingsUser(request, env);
   const body = await readBody(request);
   const { trade, chain, active, holding } = await latestEntryContext(env, user, String(body.id || ""));
-  const price = Number(body.price);
-  if (!Number.isFinite(price) || price <= 0 || price > 1e8) throw Object.assign(new Error("Enter a valid price"), { status: 400 });
+  const price = toAmount(body.price);
+  if (!Number.isFinite(price) || price < MIN_AMOUNT || price > 1e8) throw Object.assign(new Error("Enter a valid price"), { status: 400 });
   const oldShares = Number(trade.shares), oldPrice = Number(trade.price);
-  const shares = body.shares === undefined || body.shares === null || body.shares === "" ? oldShares : Number(body.shares);
-  if (!Number.isFinite(shares) || shares <= 0 || shares > 1e9) throw Object.assign(new Error("Enter a valid number of shares"), { status: 400 });
+  const shares = body.shares === undefined || body.shares === null || body.shares === "" ? oldShares : toAmount(body.shares);
+  if (!Number.isFinite(shares) || shares < MIN_AMOUNT || shares > 1e9) throw Object.assign(new Error("Enter a valid number of shares"), { status: 400 });
   const now = new Date().toISOString();
   const voidOld = env.DB.prepare("UPDATE holding_trades SET voided_at = ? WHERE id = ? AND user_id = ?").bind(now, trade.id, user.id);
   const record = (count, at, pnl = null) => tradeStatement(env, user.id, trade.holding_id, holding, trade.side, count, price, at, pnl, chain);
   if (trade.side === "BUY" && active.length === 1) {
     if (holding.closed_at) throw Object.assign(new Error("This entry cannot be edited"), { status: 400 });
     const today = new Date().toISOString().slice(0, 10);
-    const boughtAt = body.bought_at ? String(body.bought_at).slice(0, 10) : holding.bought_at;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(boughtAt) || boughtAt > today) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
+    const boughtAt = body.bought_at ? body.bought_at : holding.bought_at;
+    if (!validPastDay(boughtAt, today)) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
     await env.DB.batch([
       env.DB.prepare("UPDATE holdings SET bought_at = ?, shares = ?, buy_price = ? WHERE id = ? AND user_id = ? AND closed_at IS NULL").bind(boughtAt, shares, price, holding.id, user.id),
       voidOld, record(shares, `${boughtAt}T00:00:00.000Z`),
@@ -2438,6 +2452,11 @@ async function allMarketTrends(env, current, scan) {
 }
 
 async function handle(request, env, ctx) {
+  if (request.method === "HEAD") {
+    // Uptime monitors probe with HEAD: answer like GET and drop the body.
+    const probe = await handle(new Request(request.url, { method: "GET", headers: request.headers }), env, ctx);
+    return new Response(null, { status: probe.status, headers: probe.headers });
+  }
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/") {
     return new Response(PAGE, {
