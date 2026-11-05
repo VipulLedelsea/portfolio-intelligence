@@ -40,3 +40,12 @@ Signals fire at the close; entry is the next open; 0.1% cost per side; one open 
 - None helped. Changes in average return were within about 0.05% either way, and on the uptrend baseline the 5-day-average rule cut the average from -0.06% to -0.12% and the win rate from 43% to 37%, while exiting 58% of trades.
 - Over one week, stock moves tend to partly reverse, so selling on short-term weakness mostly sells dips.
 - Not tested: the holdings tracker's 4H Supertrend exit, because long 4H history is not available from the data source.
+
+## Point-in-time rerun (backtest5.mjs, 2026-11-05)
+
+Membership dates come from `fja05680/sp500` (`sp500_ticker_start_end.csv`, saved as `members.csv`). Signals only count on dates when the stock was actually in the index, and 54 former members that still trade were added (`fetch2.mjs`, `fetch3.mjs`). 56 former members (acquired, merged or delisted) have no data in the source, so some bias remains.
+
+- Bias was real: every result fell. At 20 days, the "up 20%" control went from +1.25% to +0.64% and the 20% bull flag from +1.26% to +0.20%; at 5 days the control fell from +0.32% to +0.05%.
+- At a 5-day hold with the near-target exit, no pattern or entry set averaged better than +0.02% per trade (baseline -0.06% to -0.12%). Cup and handle, both flags and 52-week highs without volume were negative.
+- The only positive reading was the 20% flag at a 20-day hold with the near-target exit (+0.34%, 152 trades, first half -0.06%, second half +0.75%), which is outside the one-week goal and unstable.
+- Decision: chart patterns are not added as trade signals. Revisit only through live track-record data.
