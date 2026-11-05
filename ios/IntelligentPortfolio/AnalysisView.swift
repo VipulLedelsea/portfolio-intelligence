@@ -168,12 +168,12 @@ struct AnalysisContent: View {
     private func analysisBody(_ analysis: AnalysisResponse) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("\(analysis.direction) · \(analysis.action)")
-                .font(.system(size: 30, weight: .bold, design: .monospaced))
+                .font(.system(size: 30, weight: .bold, design: .rounded))
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
                 .foregroundStyle(analysis.direction == "SHORT" ? AppTheme.red : AppTheme.mint)
             Text(analysis.entryStatus.replacingOccurrences(of: "_", with: " "))
-                .font(.caption.monospaced())
+                .font(.caption)
                 .foregroundStyle(AppTheme.muted)
         }
 
@@ -189,7 +189,7 @@ struct AnalysisContent: View {
                     case .hourly, .daily:
                         TradingViewChart(symbol: (Market(rawValue: analysis.market ?? "US") ?? .us).tradingViewSymbol(analysis.symbol), interval: chartMode == .daily ? "D" : "240")
                             .frame(height: 420)
-                            .overlay(Rectangle().stroke(AppTheme.line, lineWidth: 1))
+                            .overlay(RoundedRectangle(cornerRadius: AppTheme.radiusSmall, style: .continuous).stroke(AppTheme.hairline, lineWidth: 1))
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -211,7 +211,7 @@ struct AnalysisContent: View {
         }
 
         VStack(alignment: .leading, spacing: 10) {
-            Text("RESEARCH CONCLUSION").font(.caption.monospaced().bold()).foregroundStyle(AppTheme.amber)
+            SectionLabel(text: "Research conclusion")
             Text(analysis.thesis)
             if !analysis.vetoReasons.isEmpty {
                 Text(analysis.vetoReasons.joined(separator: " · ")).foregroundStyle(AppTheme.red)

@@ -208,8 +208,7 @@ struct MarketTrendSheet: View {
                                             .font(.footnote.bold())
                                             .padding(.horizontal, 12).padding(.vertical, 7)
                                             .foregroundStyle(index == selection ? AppTheme.background : .primary)
-                                            .background(index == selection ? AppTheme.amber : AppTheme.panel)
-                                            .overlay(Rectangle().stroke(AppTheme.line))
+                                            .background(index == selection ? AppTheme.amber : AppTheme.raised, in: Capsule())
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -226,7 +225,7 @@ struct MarketTrendSheet: View {
                         TradingViewChart(symbol: chartSymbol, interval: interval)
                             .id("\(chartSymbol)-\(interval)")
                             .frame(height: 380)
-                            .overlay(Rectangle().stroke(AppTheme.line, lineWidth: 1))
+                            .overlay(RoundedRectangle(cornerRadius: AppTheme.radiusSmall, style: .continuous).stroke(AppTheme.hairline, lineWidth: 1))
                         HStack {
                             Text("Chart by TradingView: Volume, Supertrend (10, 3) and a 9-period SMA.")
                                 .font(.caption)

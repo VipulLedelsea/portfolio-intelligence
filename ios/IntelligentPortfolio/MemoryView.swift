@@ -66,14 +66,16 @@ private struct MemoryRow: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading) {
-                Text(record.symbol).font(.headline.monospaced())
+                Text(record.symbol).font(.headline)
                 Text("\(record.action) · \(record.direction)").font(.caption).foregroundStyle(AppTheme.muted)
             }
             Spacer()
             VStack(alignment: .trailing) {
                 Text(record.status == "PENDING" ? "PENDING" : record.grade ?? "SETTLED")
-                    .font(.caption.monospaced().bold())
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(gradeColor)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(gradeColor.opacity(0.15), in: Capsule())
                 if let value = record.strategyReturnPct {
                     Text(String(format: "%+.2f%%", value)).font(.caption).foregroundStyle(AppTheme.muted)
                 }
@@ -96,7 +98,7 @@ struct TrackRecordPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("SCANNER TRACK RECORD").font(.caption2).foregroundStyle(AppTheme.muted)
+            SectionLabel(text: "Scanner track record")
             if let summary = record?.summary, record?.available == true {
                 let n = summary.settledPicks
                 if n == 0 {

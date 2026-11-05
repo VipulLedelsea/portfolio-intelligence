@@ -165,7 +165,7 @@ struct ScannerView: View {
                         Spacer()
                         Text("\(discovery.freshEntryCount) fresh")
                     }
-                    .font(.caption.monospaced())
+                    .font(.caption)
                     .foregroundStyle(AppTheme.muted)
 
                     if !trendInStrip, let trend = model.discovery?.marketTrend ?? trends.first { MarketTrendLine(trend: trend) { trendStart = trendStartPage; showingTrend = true } }
@@ -182,9 +182,7 @@ struct ScannerView: View {
 
                     if let recent = discovery.recentSetups, !recent.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("RECENT SETUPS · LAST 24 HOURS")
-                                .font(.caption.monospaced().bold())
-                                .foregroundStyle(AppTheme.amber)
+                            SectionLabel(text: "Recent setups · last 24 hours")
                             Text("Fresh entries that dropped out, with why and how the price has moved since the signal.")
                                 .font(.caption)
                                 .foregroundStyle(AppTheme.muted)
@@ -251,7 +249,7 @@ struct ScannerView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Daily direction.\nFour-hour timing.")
-                .font(.system(size: heroSize, weight: .medium, design: .serif))
+                .font(.system(size: heroSize, weight: .medium, design: .rounded))
             marketMenu
             Text("Confirmed daily and 4-hour Supertrend, strengthening ADX, and entry-extension controls rank the \(model.market.scanTitle).")
                 .foregroundStyle(AppTheme.muted)
@@ -282,16 +280,18 @@ private struct ListFrame<Content: View>: View {
         VStack(spacing: 0) { content }
             .frame(maxWidth: .infinity)
             .background(AppTheme.panel)
-            .overlay(Rectangle().stroke(AppTheme.line, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.radius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: AppTheme.radius, style: .continuous).stroke(AppTheme.hairline, lineWidth: 1))
     }
 }
 
 private struct RowDivider: View {
-    var body: some View { Rectangle().fill(AppTheme.line).frame(height: 1) }
+    var body: some View { Rectangle().fill(AppTheme.hairline).frame(height: 1).padding(.leading, 66) }
 }
 
 /// A quiet one-glance row: symbol, how it sits against its buy zone, price and time left. Everything else is one tap away.
 private struct CandidateRow: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     let candidate: Candidate
     var isSelected = false
     private var directionColor: Color { candidate.direction == "SHORT" ? AppTheme.red : AppTheme.mint }
@@ -301,8 +301,9 @@ private struct CandidateRow: View {
     private var leading: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(candidate.symbol).font(.headline.monospaced().bold())
-                Text(candidate.direction).font(.caption2.monospaced().bold()).foregroundStyle(directionColor)
+                Text(candidate.symbol).font(.headline)
+                Text(candidate.direction.capitalized).font(.caption2.weight(.semibold)).foregroundStyle(directionColor)
+                    .padding(.horizontal, 7).padding(.vertical, 2).background(directionColor.opacity(0.15), in: Capsule())
             }
             Text("\(candidate.company) · \(Int(candidate.score))/100")
                 .font(.caption)
@@ -319,9 +320,11 @@ private struct CandidateRow: View {
     private var trailing: some View {
         VStack(alignment: .trailing, spacing: 3) {
             Text(PriceFormat.string(candidate.price, prefix: candidate.currencySymbol, decimals: candidate.priceDecimals)).font(.headline)
-            Text(statusLabel)
-                .font(.caption2.monospaced().bold())
+            Text(statusLabel.capitalized)
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(statusColor)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(statusColor.opacity(0.15), in: Capsule())
                 .multilineTextAlignment(.trailing)
                 .fixedSize(horizontal: false, vertical: true)
             if let closing = candidate.windowClosesAt.flatMap(PairingExpiryParser.date(from:)) {
@@ -331,15 +334,19 @@ private struct CandidateRow: View {
     }
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 12) { leading; Spacer(minLength: 8); trailing }
-            VStack(alignment: .leading, spacing: 8) { leading; trailing }
+        HStack(alignment: .top, spacing: 12) {
+            Monogram(symbol: candidate.symbol, colour: directionColor)
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) { leading; trailing }
+            } else {
+                HStack(alignment: .top, spacing: 12) { leading; Spacer(minLength: 8); trailing }
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .background(isSelected ? AppTheme.amber.opacity(0.1) : Color.clear)
-        .overlay(Rectangle().stroke(AppTheme.amber, lineWidth: isSelected ? 2 : 0))
+        .overlay(alignment: .leading) { Rectangle().fill(AppTheme.amber).frame(width: isSelected ? 3 : 0) }
         .accessibilityElement(children: .combine)
     }
 }
@@ -378,8 +385,8 @@ private struct RecentSetupRow: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(candidate.symbol).font(.headline.monospaced().bold())
-                    Text(candidate.direction).font(.caption2.monospaced().bold()).foregroundStyle(candidate.direction == "SHORT" ? AppTheme.red : AppTheme.mint)
+                    Text(candidate.symbol).font(.headline)
+                    Text(candidate.direction.capitalized).font(.caption2.weight(.semibold)).foregroundStyle(candidate.direction == "SHORT" ? AppTheme.red : AppTheme.mint)
                 }
                 Text("\(candidate.company) · \(setup.dropReason)")
                     .font(.caption)
@@ -391,7 +398,7 @@ private struct RecentSetupRow: View {
             VStack(alignment: .trailing, spacing: 3) {
                 Text(PriceFormat.string(candidate.price, prefix: candidate.currencySymbol, decimals: candidate.priceDecimals)).font(.headline)
                 if let since = setup.sinceSignalPct {
-                    Text(String(format: "%+.2f%%", since)).font(.caption.monospaced()).foregroundStyle(sinceColor)
+                    PnLChip(text: String(format: "%.2f%%", abs(since)), positive: since >= 0)
                     Text("since signal").font(.caption2).foregroundStyle(AppTheme.muted)
                 }
             }
@@ -400,7 +407,7 @@ private struct RecentSetupRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .background(isSelected ? AppTheme.amber.opacity(0.1) : Color.clear)
-        .overlay(Rectangle().stroke(AppTheme.amber, lineWidth: isSelected ? 2 : 0))
+        .overlay(alignment: .leading) { Rectangle().fill(AppTheme.amber).frame(width: isSelected ? 3 : 0) }
         .accessibilityElement(children: .combine)
     }
 
@@ -441,7 +448,7 @@ struct BuyRangeBar: View {
                 ZStack(alignment: .leading) {
                     ForEach(range.zones, id: \.key) { zone in
                         let start = x(zone.lo ?? range.scaleMin), end = x(zone.hi ?? range.scaleMax)
-                        Rectangle()
+                        Capsule()
                             .fill(colour(zone.key).opacity(zone.key == "IN_BUY_RANGE" ? 1 : 0.5))
                             .frame(width: max(0, end - start), height: compact ? 6 : 8)
                             .offset(x: start)
@@ -453,11 +460,11 @@ struct BuyRangeBar: View {
             }
             .frame(height: compact ? 14 : 18)
             if !compact { HStack(spacing: 8) {
-                Text(range.label.uppercased())
-                    .font(.caption2.bold())
+                Text(range.label)
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(colour(range.state))
                     .padding(.horizontal, 7).padding(.vertical, 2)
-                    .overlay(Rectangle().stroke(colour(range.state).opacity(0.7)))
+                    .background(colour(range.state).opacity(0.15), in: Capsule())
                 if let buy, let lo = buy.lo, let hi = buy.hi {
                     Text("Buy zone \(money(lo)) – \(money(hi))")
                         .font(.caption)

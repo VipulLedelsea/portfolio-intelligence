@@ -56,6 +56,6 @@ struct MarketTrendCard: View {
             .font(.caption2)
             .foregroundStyle(AppTheme.muted)
             .padding(.horizontal, 8).padding(.vertical, 3)
-            .overlay(Rectangle().stroke(AppTheme.line))
+            .background(AppTheme.raised, in: Capsule())
     }
 }
