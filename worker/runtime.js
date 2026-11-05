@@ -829,7 +829,8 @@ async function loadYahooSeries(symbols, market) {
     if (index) await new Promise(resolve => setTimeout(resolve, 300));
     await Promise.all(symbols.slice(index, index + 3).map(async symbol => {
       try {
-        const hourly = await yahooChart(market, symbol, "60m", "6mo");
+        // Forex trades 24 hours, so three months already holds about as many hourly bars as India's six; longer overruns the CPU limit.
+        const hourly = await yahooChart(market, symbol, "60m", market.id === "FX" ? "3mo" : "6mo");
         series.set(symbol, { daily: { symbol, historicals: aggregateDaily(hourly, market) }, signal: { symbol, historicals: hourly } });
       } catch (error) { errors.push({ symbol, error: cleanError(error) }); }
     }));
