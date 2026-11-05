@@ -32,3 +32,11 @@ Signals fire at the close; entry is the next open; 0.1% cost per side; one open 
 
 - Differences between fractions are a few hundredths of a percent per trade, well inside noise. Lower fractions raise the win rate (about 51% at 50% vs 45% at 90%) but not the average return.
 - 90% is at or near the best mean in every set tested and is reached in 17 to 20% of 5-day trades, so it is kept. It is not a source of edge: every entry set, including the daily Supertrend approximation, averaged about zero or below after costs.
+
+## Weakness (outlook) exits (backtest4.mjs, 2026-11-05)
+
+`node backtest4.mjs 5` adds an exit at the next open when the outlook turns bad during a 5-day hold, on top of the 1R stop and 90%-of-target exit. Rules tested: daily Supertrend turns down, close below the 5- or 10-day average, two down closes in a row, and a bearish close on heavy volume.
+
+- None helped. Changes in average return were within about 0.05% either way, and on the uptrend baseline the 5-day-average rule cut the average from -0.06% to -0.12% and the win rate from 43% to 37%, while exiting 58% of trades.
+- Over one week, stock moves tend to partly reverse, so selling on short-term weakness mostly sells dips.
+- Not tested: the holdings tracker's 4H Supertrend exit, because long 4H history is not available from the data source.
