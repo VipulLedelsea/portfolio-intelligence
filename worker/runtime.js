@@ -2456,7 +2456,7 @@ async function handle(request, env, ctx) {
         : await subscriptionAccess(request, env);
       void customer_id;
       return json(access);
-    } catch (error) { return json({ error: cleanError(error) }, 502); }
+    } catch (error) { return json({ error: cleanError(error) }, Number(error?.status) || 502); }
   }
   if (request.method !== "POST") return json({ error: "Not found" }, 404);
   const origin = request.headers.get("origin");
@@ -2519,7 +2519,7 @@ async function handle(request, env, ctx) {
       const market = marketFrom(body);
       const symbol = String(body.symbol || "").trim().toUpperCase();
       if (!/^[A-Z0-9.\-^&]{1,15}$/.test(symbol)) throw new Error("Enter a valid ticker symbol");
-      if (market.universe && !market.universe.some(entry => entry.symbol === symbol)) throw new Error(`Choose one of the ${market.name} symbols`);
+      if (market.universe && !market.universe.some(entry => entry.symbol === symbol)) throw Object.assign(new Error(`Choose one of the ${market.name} symbols`), { status: 400 });
       const cacheName = market.id === "US" ? `analysis-${symbol}-v7-regime-filter` : `analysis-${market.id}-${symbol}-v8`;
       const cacheSeconds = market.id === "US" ? ANALYSIS_CACHE_SECONDS : EXTERNAL_ANALYSIS_CACHE_SECONDS;
       const flightKey = `${market.id}:${symbol}`;

@@ -371,7 +371,7 @@ const fxAnalysis = await (await post("/api/analyze", { market: "FX", symbol: "EU
 assert.equal(fxAnalysis.market, "FX");
 assert.equal(fxAnalysis.price_decimals, 5);
 assert.ok(fxAnalysis.stop_price > 0 && fxAnalysis.chart.levels.target_1 > 0);
-assert.equal((await post("/api/analyze", { market: "FX", symbol: "AAPL" })).status, 502, "Forex analysis is limited to the pair list");
+assert.equal((await post("/api/analyze", { market: "FX", symbol: "AAPL" })).status, 400, "Forex analysis is limited to the pair list");
 assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unknown markets must be rejected");
 
 // A rate-limited provider must trigger a backoff, not a retry on every request.
