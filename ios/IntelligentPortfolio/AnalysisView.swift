@@ -61,6 +61,7 @@ struct AnalysisContent: View {
                 HStack(spacing: 0) {
                     Spacer(minLength: 0)
                     chartRail.frame(width: trailingInset)
+                        .offset(x: AdaptiveLayout.sideShift(strip: trailingInset))
                 }
                 .padding(.top, 175)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -101,7 +102,7 @@ struct AnalysisContent: View {
                     Button(action: onBack) {
                         Image(systemName: "chevron.left")
                             .font(.headline)
-                            .frame(width: 52, height: 52)
+                            .frame(width: AdaptiveLayout.sidePillWidth, height: AdaptiveLayout.sidePillWidth)
                             .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
@@ -112,7 +113,7 @@ struct AnalysisContent: View {
                 modeBar
             }
         }
-        .frame(width: 56)
+        .frame(width: AdaptiveLayout.sidePillWidth)
     }
 
     private static let itemHeight: CGFloat = 58
@@ -129,16 +130,16 @@ struct AnalysisContent: View {
                     Image(systemName: mode.icon).font(.title3)
                     Text(mode.railLabel).font(.caption2.weight(selected ? .semibold : .regular))
                 }
-                .frame(width: 52, height: Self.itemHeight)
+                .frame(width: AdaptiveLayout.sidePillWidth - 2 * Self.barPadding, height: Self.itemHeight)
                 .foregroundStyle(selected ? AppTheme.amber : Color.white.opacity(0.85))
                 .background {
                     if selected {
-                        RoundedRectangle(cornerRadius: 26)
+                        RoundedRectangle(cornerRadius: 20)
                             .fill(Color.white.opacity(0.18))
                             .matchedGeometryEffect(id: "railHighlight", in: railNamespace)
                     }
                 }
-                .contentShape(RoundedRectangle(cornerRadius: 26))
+                .contentShape(RoundedRectangle(cornerRadius: 20))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(mode.rawValue)
                 .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)

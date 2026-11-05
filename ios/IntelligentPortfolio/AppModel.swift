@@ -22,6 +22,7 @@ final class AppModel: ObservableObject {
     @Published var isAnalyzing = false
     @Published var errorMessage: String?
     @Published var isGuest = false
+    @Published var fold: AdaptiveLayout.FoldState = .unknown
     @Published var holdings: HoldingsResponse?
     @Published var isLoadingHoldings = false
     @Published var holdingStats: HoldingStatsResponse?
@@ -46,6 +47,10 @@ final class AppModel: ObservableObject {
             token = stored
             connectionState = .connected
             await refreshAll()
+        } catch let error as URLError where error.code != .cancelled {
+            // No connection is not a revoked connection: keep the saved token so the next launch signs straight back in.
+            connectionState = .disconnected
+            report(error)
         } catch {
             KeychainStore.delete()
             connectionState = .disconnected

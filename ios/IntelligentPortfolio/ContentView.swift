@@ -30,6 +30,11 @@ struct ContentView: View {
             }
             }
         }
+        .background(HingeReader { state, angle in
+            // Only a change of state reaches the layouts; the raw angle goes to the debug probe alone.
+            if model.fold != state { model.fold = state }
+            HingeProbe.shared.angle = angle
+        })
         .alert("IntelligentPortfolio", isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } }

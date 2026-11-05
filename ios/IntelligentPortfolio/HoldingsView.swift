@@ -6,6 +6,7 @@ struct HoldingsView: View {
     @State private var showingAdd = false
     @State private var positionEdit: PositionEdit?
     @State private var section = HoldingsSection.positions
+    @State private var detail = HoldingsSection.portfolio
     @State private var undoTarget: Holding?
     @Environment(\.scenePhase) private var scenePhase
 
@@ -27,31 +28,43 @@ struct HoldingsView: View {
                         .readableWidth()
                     }
                 } else {
-                    VStack(spacing: 0) {
-                        SectionTabs(selection: $section)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        // Real paging: each tab is its own page, so swiping works anywhere on screen and follows the finger.
-                        TabView(selection: $section) {
-                            ForEach(HoldingsSection.allCases) { tab in
-                                ScrollView {
-                                    VStack(alignment: .leading, spacing: 14) { page(for: tab) }
-                                        .padding(16)
-                                        .readableWidth()
-                                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    GeometryReader { outer in
+                        let posture = AdaptiveLayout.posture(outer.size, outer.safeAreaInsets, model.fold)
+                        if posture == .creaseAcross {
+                            // Half open: Positions above the crease, the other three sections below it.
+                            let split = AdaptiveLayout.creaseSplit(outer.size, outer.safeAreaInsets)
+                            VStack(spacing: 0) {
+                                scrolling(.positions).frame(height: split.top)
+                                Rectangle().fill(AppTheme.line).frame(height: 10)
+                                VStack(spacing: 0) {
+                                    SectionTabs(selection: $detail, cases: HoldingsSection.detailCases)
+                                    scrolling(detail)
                                 }
-                                .refreshable { await Task { await model.refreshHoldings(manual: true) }.value }
-                                .tag(tab)
+                                .frame(height: split.bottom)
                             }
+                        } else if posture != .compact {
+                            // Fully unfolded: Positions on the left, the other three sections share the right pane.
+                            HStack(spacing: 0) {
+                                scrolling(.positions)
+                                    .frame(width: posture == .creaseDown ? AdaptiveLayout.creaseLeftWidth(outer.size, outer.safeAreaInsets) : AdaptiveLayout.listPaneWidth)
+                                Rectangle().fill(AppTheme.line).frame(width: 1)
+                                VStack(spacing: 0) {
+                                    SectionTabs(selection: $detail, cases: HoldingsSection.detailCases)
+                                    scrolling(detail)
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                        } else {
+                            pager
                         }
-                        .tabViewStyle(.page(indexDisplayMode: .never))
-                        .ignoresSafeArea(.container, edges: .bottom)
                     }
+                    .animation(.smooth(duration: 0.4), value: model.fold)
                 }
             }
             .sensoryFeedback(.selection, trigger: section)
             .background(AppTheme.background)
             .navigationTitle("My holdings")
+            .solidNavigationBar()
             .toolbar {
                 if !model.isGuest {
                     ToolbarItem(placement: .topBarLeading) {
@@ -90,6 +103,45 @@ struct HoldingsView: View {
             }
         }
     }
+    private func scrolling(_ tab: HoldingsSection) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) { page(for: tab) }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .refreshable { await Task { await model.refreshHoldings(manual: true) }.value }
+        .id(tab)
+    }
+
+    private var pager: some View {
+        VStack(spacing: 0) {
+            SectionTabs(selection: $section, cases: HoldingsSection.allCases)
+            // Native paging: one horizontal scroll view that snaps a full page at a time, so a swipe always
+            // follows the finger and the tab bar above and the page below can never disagree.
+            GeometryReader { geo in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 0) {
+                        ForEach(HoldingsSection.allCases) { tab in
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 14) { page(for: tab) }
+                                    .padding(16)
+                                    .readableWidth()
+                                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                            }
+                            .refreshable { await Task { await model.refreshHoldings(manual: true) }.value }
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .id(tab)
+                        }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollTargetBehavior(.paging)
+                .scrollPosition(id: Binding<HoldingsSection?>(get: { section }, set: { if let tab = $0 { section = tab } }))
+                .animation(.snappy, value: section)
+            }
+        }
+    }
+
     @ViewBuilder
     private func page(for tab: HoldingsSection) -> some View {
         switch tab {
@@ -155,40 +207,49 @@ struct HoldingsView: View {
     }
 }
 
-/// The four Holdings tabs. They share the width equally when they fit; on narrow screens or with large text they
-/// become a row that scrolls sideways instead of truncating.
+/// The four Holdings tabs as a heading bar: the current tab is bold with an amber underline that slides to the next
+/// one, the others are muted. On narrow screens or with large text it scrolls sideways instead of truncating.
 private struct SectionTabs: View {
     @Binding var selection: HoldingsSection
+    var cases: [HoldingsSection] = HoldingsSection.allCases
+    @Namespace private var underline
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            // Natural widths with the spare room shared between them, so a longer label never truncates.
-            HStack(spacing: 0) {
-                ForEach(Array(HoldingsSection.allCases.enumerated()), id: \.offset) { index, tab in
-                    chip(tab)
-                    if index < HoldingsSection.allCases.count - 1 { Spacer(minLength: 6) }
+        VStack(spacing: 0) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 0) { ForEach(cases) { tab in heading(tab).frame(maxWidth: .infinity) } }
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) { ForEach(cases) { tab in heading(tab).id(tab) } }
+                            .padding(.horizontal, 8)
+                    }
+                    .onChange(of: selection) { _, tab in withAnimation(.snappy) { proxy.scrollTo(tab, anchor: .center) } }
                 }
             }
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) { ForEach(HoldingsSection.allCases) { tab in chip(tab).id(tab) } }
-                }
-                .onChange(of: selection) { _, tab in withAnimation(.snappy) { proxy.scrollTo(tab, anchor: .center) } }
-            }
+            Rectangle().fill(AppTheme.line).frame(height: 1)
         }
+        .padding(.horizontal, 8)
+        .background(AppTheme.background)
     }
 
-    private func chip(_ tab: HoldingsSection) -> some View {
+    private func heading(_ tab: HoldingsSection) -> some View {
         let selected = selection == tab
         return Button { withAnimation(.snappy) { selection = tab } } label: {
-            Text(tab.rawValue)
-                .font(.footnote.weight(selected ? .semibold : .regular))
-                .lineLimit(1)
-                .padding(.horizontal, 10).padding(.vertical, 8)
-                .fixedSize(horizontal: true, vertical: false)
-                .foregroundStyle(selected ? AppTheme.background : Color.primary)
-                .background(selected ? AppTheme.amber : AppTheme.panel)
-                .overlay(Rectangle().stroke(selected ? AppTheme.amber : AppTheme.line))
+            VStack(spacing: 8) {
+                Label(tab.rawValue, systemImage: tab.icon)
+                    .labelStyle(.titleOnly)
+                    .font(.subheadline.weight(selected ? .bold : .medium))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .foregroundStyle(selected ? Color.primary : AppTheme.muted)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 10)
+                ZStack {
+                    Rectangle().fill(Color.clear).frame(height: 3)
+                    if selected { Rectangle().fill(AppTheme.amber).frame(height: 3).matchedGeometryEffect(id: "underline", in: underline) }
+                }
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -201,6 +262,15 @@ private enum HoldingsSection: String, CaseIterable, Identifiable {
     case performance = "Performance"
     case history = "History"
     var id: String { rawValue }
+    static let detailCases: [HoldingsSection] = [.portfolio, .performance, .history]
+    var icon: String {
+        switch self {
+        case .positions: "briefcase"
+        case .portfolio: "chart.pie"
+        case .performance: "chart.line.uptrend.xyaxis"
+        case .history: "clock.arrow.circlepath"
+        }
+    }
 }
 
 private func updatedText(_ data: HoldingsResponse) -> String {

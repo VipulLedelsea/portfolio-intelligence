@@ -30,7 +30,7 @@ actor APIClient {
     }
 
     func startPairing(deviceName: String) async throws -> PairingStart {
-        try await request(path: "/api/mobile/pair/start", body: ["device_name": deviceName])
+        try await request(path: "/api/mobile/pair/start", body: ["device_name": deviceName], retryOnConnectionLoss: false)
     }
 
     func pairingStatus(code: String, secret: String) async throws -> PairingStatus {
@@ -66,34 +66,35 @@ actor APIClient {
     }
 
     func addHolding(_ body: AddHoldingBody, token: String) async throws {
-        let _: HoldingChangeResponse = try await request(path: "/api/holdings/add", token: token, body: body)
+        let _: HoldingChangeResponse = try await request(path: "/api/holdings/add", token: token, body: body, retryOnConnectionLoss: false)
     }
 
     func increaseHolding(_ body: IncreaseHoldingBody, token: String) async throws {
-        let _: HoldingChangeResponse = try await request(path: "/api/holdings/increase", token: token, body: body)
+        let _: HoldingChangeResponse = try await request(path: "/api/holdings/increase", token: token, body: body, retryOnConnectionLoss: false)
     }
 
     func sellHolding(_ body: SellHoldingBody, token: String) async throws {
-        let _: HoldingChangeResponse = try await request(path: "/api/holdings/sell", token: token, body: body)
+        let _: HoldingChangeResponse = try await request(path: "/api/holdings/sell", token: token, body: body, retryOnConnectionLoss: false)
     }
 
     func editEntry(_ body: EditEntryBody, token: String) async throws {
-        let _: HoldingChangeResponse = try await request(path: "/api/holdings/edit", token: token, body: body)
+        let _: HoldingChangeResponse = try await request(path: "/api/holdings/edit", token: token, body: body, retryOnConnectionLoss: false)
     }
 
     func undoEntry(id: String, token: String) async throws {
-        let _: HoldingChangeResponse = try await request(path: "/api/holdings/undo", token: token, body: UndoEntryBody(id: id))
+        let _: HoldingChangeResponse = try await request(path: "/api/holdings/undo", token: token, body: UndoEntryBody(id: id), retryOnConnectionLoss: false)
     }
 
     func deleteAccountData(token: String) async throws {
-        let _: DeleteResponse = try await request(path: "/api/mobile/account/delete", token: token, body: [:] as [String: String])
+        let _: DeleteResponse = try await request(path: "/api/mobile/account/delete", token: token, body: [:] as [String: String], retryOnConnectionLoss: false)
     }
 
     private func request<Response: Decodable, Body: Encodable>(
         path: String,
         method: String = "POST",
         token: String? = nil,
-        body: Body?
+        body: Body?,
+        retryOnConnectionLoss: Bool = true
     ) async throws -> Response {
         var request = URLRequest(url: origin.appending(path: path))
         request.httpMethod = method
@@ -103,13 +104,34 @@ actor APIClient {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONEncoder().encode(body)
         }
-        let (data, response) = try await session.data(for: request)
+        var (data, response) = try await send(request, retry: retryOnConnectionLoss)
+        // The host sometimes answers a heavy request with a plain-text 5xx page (for example when a fresh analysis runs
+        // over its limits). Reads try once more, since the second run is usually served from the shared cache.
+        if retryOnConnectionLoss, let http = response as? HTTPURLResponse, [500, 502, 503, 504].contains(http.statusCode),
+           (try? decoder.decode(APIError.self, from: data)) == nil {
+            try? await Task.sleep(for: .milliseconds(800))
+            (data, response) = try await send(request, retry: retryOnConnectionLoss)
+        }
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard (200..<300).contains(http.statusCode) else {
             if let apiError = try? decoder.decode(APIError.self, from: data) { throw apiError }
-            throw URLError(.badServerResponse)
+            if http.statusCode >= 500 { throw APIError(error: "The service is busy right now. Try again in a moment.") }
+            throw APIError(error: "The request couldn't be completed (code \(http.statusCode)). Try again in a moment.")
         }
         return try decoder.decode(Response.self, from: data)
+    }
+}
+
+private extension APIClient {
+    /// After the app has been in the background, iOS may have silently dropped the idle connection, and the first
+    /// request on it fails with "network connection was lost" even though the network is fine. Reads are simply
+    /// retried on a fresh connection. Requests that change data are never retried, so nothing is applied twice.
+    func send(_ request: URLRequest, retry: Bool) async throws -> (Data, URLResponse) {
+        do { return try await session.data(for: request) }
+        catch let error as URLError where retry && (error.code == .networkConnectionLost || error.code == .notConnectedToInternet) {
+            try? await Task.sleep(for: .milliseconds(400))
+            return try await session.data(for: request)
+        }
     }
 }
 

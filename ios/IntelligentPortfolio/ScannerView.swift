@@ -22,26 +22,40 @@ struct ScannerView: View {
     var body: some View {
         GeometryReader { proxy in
             let wide = AdaptiveLayout.isWide(proxy.size.width)
+            let posture = AdaptiveLayout.posture(proxy.size, proxy.safeAreaInsets, model.fold)
             ZStack(alignment: .topTrailing) {
-                if wide { splitLayout } else { compactLayout }
+                switch posture {
+                case .creaseAcross: tabletopLayout
+                case .creaseDown: splitLayout(leftWidth: AdaptiveLayout.creaseLeftWidth(proxy.size, proxy.safeAreaInsets))
+                case .book: splitLayout(leftWidth: AdaptiveLayout.listPaneWidth)
+                case .compact: compactLayout
+                }
                 // In the wide layout the chart rail takes this strip once a setup is open, so step aside then.
-                if trendInStrip, !trends.isEmpty, !(wide && selected != nil) {
+                if trendInStrip, !trends.isEmpty, !(posture != .compact && selected != nil) {
                     HStack(spacing: 0) {
                         Spacer(minLength: 0)
                         MarketTrendStrip(trends: trends, start: trendStartPage) { index in trendStart = index; showingTrend = true }
                             .id(model.market.rawValue)
                             .frame(width: trailingInset)
+                            .offset(x: AdaptiveLayout.sideShift(strip: trailingInset))
                     }
                     .padding(.top, 175)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .ignoresSafeArea(.container, edges: .trailing)
                 }
             }
+            #if DEBUG
+            .overlay(alignment: .bottomLeading) {
+                HingeStrip(size: proxy.size, insets: proxy.safeAreaInsets, fold: model.fold, posture: posture)
+            }
+            #endif
             .background(GeometryReader { inner in
                 Color.clear.preference(key: ScannerInsetKey.self, value: inner.safeAreaInsets.trailing)
             })
             .onPreferenceChange(ScannerInsetKey.self) { trailingInset = $0 }
             .sheet(isPresented: $showingTrend) { MarketTrendSheet(trends: trends, start: trendStart) }
+            // Glide between postures instead of jumping while the phone is opened or folded.
+            .animation(.smooth(duration: 0.4), value: posture)
         }
     }
 
@@ -51,37 +65,90 @@ struct ScannerView: View {
             scannerList(selectable: false)
                 .navigationTitle("Top setups")
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { ReadOnlyBadge() } }
+            .solidNavigationBar()
                 .sheet(item: $selected) { candidate in
                     AnalysisView(candidate: candidate)
                 }
         }
     }
 
-    /// Wide scene (unfolded Duo or landscape): ranked list beside a live analysis pane.
-    private var splitLayout: some View {
+    /// Title rows drawn by the app instead of the system bar, so the two panes never share a bar that reacts to
+    /// whichever one is scrolling. The list pane is titled "Top setups"; the stock name sits in the middle of the
+    /// detail pane, above its data, with the read-only badge at the far edge.
+    private var listHeader: some View {
+        HStack { Text("Top setups").font(.headline); Spacer() }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .frame(minHeight: 44)
+            .background(AppTheme.background)
+    }
+
+    private var detailHeader: some View {
+        ZStack {
+            Text(selected?.symbol ?? "").font(.headline)
+            HStack { Spacer(); ReadOnlyBadge() }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .frame(minHeight: 44)
+        .background(AppTheme.background)
+    }
+
+    private var analysisPane: some View {
+        Group {
+            if let candidate = selected {
+                AnalysisContent(candidate: candidate)
+            } else {
+                ContentUnavailableView("Select a setup", systemImage: "chart.xyaxis.line",
+                    description: Text("Choose a ranked setup to see its chart, gates, and scenario levels here."))
+                    .foregroundStyle(AppTheme.muted)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(AppTheme.background)
+    }
+
+    /// Half open, crease across the middle: the header and chart fill the top screen and the ranked list and controls
+    /// the bottom one, with the divider on the crease. The first setup opens by itself so the top is never empty.
+    private var tabletopLayout: some View {
+        NavigationStack {
+            GeometryReader { proxy in
+                let split = AdaptiveLayout.creaseSplit(proxy.size, proxy.safeAreaInsets)
+                VStack(spacing: 0) {
+                    VStack(spacing: 0) { detailHeader; analysisPane }
+                        .frame(height: split.top)
+                        .clipped()
+                    Rectangle().fill(AppTheme.line).frame(height: 10)
+                    scannerList(selectable: true)
+                        .frame(height: split.bottom)
+                }
+            }
+            .background(AppTheme.background)
+            .toolbar(.hidden, for: .navigationBar)
+            .onChange(of: model.discovery?.candidates.first?.id, initial: true) { _, _ in
+                if selected == nil { selected = model.discovery?.candidates.first }
+            }
+        }
+    }
+
+    /// Fully unfolded: a fixed-width ranked list beside a live analysis pane. Half open with the crease running top to
+    /// bottom (`leftWidth`): the divider sits exactly on the crease.
+    private func splitLayout(leftWidth: CGFloat) -> some View {
         NavigationStack {
             HStack(spacing: 0) {
-                scannerList(selectable: true)
-                    .frame(width: AdaptiveLayout.listPaneWidth)
-                Rectangle().fill(AppTheme.line).frame(width: 1)
-                Group {
-                    if let candidate = selected {
-                        AnalysisContent(candidate: candidate)
-                    } else {
-                        ContentUnavailableView(
-                            "Select a setup",
-                            systemImage: "chart.xyaxis.line",
-                            description: Text("Choose a ranked setup to see its chart, gates, and scenario levels here.")
-                        )
-                        .foregroundStyle(AppTheme.muted)
-                    }
+                VStack(spacing: 0) {
+                    listHeader
+                    scannerList(selectable: true)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(AppTheme.background)
+                .frame(width: leftWidth)
+                Rectangle().fill(AppTheme.line).frame(width: 1)
+                VStack(spacing: 0) {
+                    detailHeader
+                    analysisPane
+                }
             }
-            .navigationTitle(selected?.symbol ?? "Top setups")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { ReadOnlyBadge() } }
+            .background(AppTheme.background)
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 
@@ -412,3 +479,20 @@ struct BuyRangeBar: View {
         .accessibilityLabel("Buy range: \(range.label).\(buy.flatMap { zone in zone.lo.flatMap { lo in zone.hi.map { hi in " Buy zone \(money(lo)) to \(money(hi))." } } } ?? "")")
     }
 }
+
+#if DEBUG
+private struct HingeStrip: View {
+    @ObservedObject private var probe = HingeProbe.shared
+    let size: CGSize
+    let insets: EdgeInsets
+    let fold: AdaptiveLayout.FoldState
+    let posture: AdaptiveLayout.Posture
+
+    var body: some View {
+        let screenH = AdaptiveLayout.screenHeight(size, insets)
+        Text("win \(Int(size.width))×\(Int(screenH)) · ratio \(String(format: "%.2f", screenH / max(size.width, 1))) · inset t\(Int(insets.top)) b\(Int(insets.bottom)) l\(Int(insets.leading)) r\(Int(insets.trailing)) · \(fold) ∠\(probe.angle.map { String(format: "%.2f", $0) } ?? "–") · \(posture)")
+            .font(.caption2.monospaced()).padding(4).background(.black.opacity(0.7)).foregroundStyle(.white)
+            .allowsHitTesting(false)
+    }
+}
+#endif
