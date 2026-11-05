@@ -81,3 +81,9 @@ Risks: push notifications need an APNs setup and a privacy review.
 2. Workstream 2 provider decision, then the build and backtest.
 3. Workstream 3.
 4. Pricing changes once the track record is live.
+
+## Open issues (noted 2026-11-05)
+
+1. **Forex shows no viable setups.** Live check: the FX scan was last generated 2026-11-04 09:11 UTC, over a day stale although the cron runs hourly, so refreshes are probably failing silently (`refreshScan` errors are swallowed and trigger a 15-minute back-off). Separately, all 13 pairs were filtered out: 3 by daily conflict, 7 by weak ADX, 3 late. Diagnose with `wrangler tail` during the :10 cron, then decide whether the ADX gate is too strict for forex.
+2. **Market sentiment reads "down".** The trend label is the Supertrend of one index (SPY for US) on daily and 4H. It lags: on 2026-11-05 SPY read DOWN on both timeframes while 71% of S&P 500 stocks were in daily uptrends. The label does not use the day's price change. India read UP and forex MIXED, so not every market was down. Fix by combining the index with breadth, and show the day's change next to the label.
+3. **Trade only with the market direction?** Recommendation: use it as a soft gate (a "with market" or "against market" tag plus a score adjustment), not a hard filter, and only after the market-state measure in item 2 is fixed. Record the market state on each logged pick so the track record can show whether alignment actually helps.
