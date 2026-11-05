@@ -782,8 +782,15 @@ async function fetchRobinhoodSnapshots(symbols) {
   return { snapshots, errors };
 }
 
+// Building an Intl.DateTimeFormat is expensive and this runs once per hourly bar, so one formatter is kept per time zone.
+const localDateFormatters = new Map();
 function localDate(epochSeconds, timeZone) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(epochSeconds * 1000));
+  let formatter = localDateFormatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+    localDateFormatters.set(timeZone, formatter);
+  }
+  return formatter.format(new Date(epochSeconds * 1000));
 }
 
 async function yahooChart(market, symbol, interval, range) {
