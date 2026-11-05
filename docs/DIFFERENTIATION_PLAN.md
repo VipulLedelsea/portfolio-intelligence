@@ -87,3 +87,19 @@ Risks: push notifications need an APNs setup and a privacy review.
 1. **Forex shows no viable setups.** Live check: the FX scan was last generated 2026-11-04 09:11 UTC, over a day stale although the cron runs hourly, so refreshes are probably failing silently (`refreshScan` errors are swallowed and trigger a 15-minute back-off). Separately, all 13 pairs were filtered out: 3 by daily conflict, 7 by weak ADX, 3 late. Diagnosed 2026-11-05 with `wrangler tail`: the refresh dies with "Worker exceeded CPU time limit" (about 2.0 s CPU). Forex hourly bars run 24 hours a day, so six months of history is far more bars than India's, and the Supertrend/ADX math is too heavy. Local CPU for the forex scan: about 1.3 s at 6 months, 0.77 s at 3 months, 0.54 s at 2 months (India's, which succeeds in production, is about 1.0 s at 6 months). A 3-month lookback was deployed but the live refresh still hit the limit, so lookback was not the cause. A CPU profile found the real hotspot: `localDate` built a new `Intl.DateTimeFormat` for every hourly bar and took about 80% of the compute. Caching one formatter per time zone cut local CPU from 0.77 s to 0.31 s for forex and 0.73 s to 0.25 s for India, with identical output on 4,167 sample timestamps. Fix committed, not yet deployed. After deploying, confirm the live forex scan refreshes, then re-check the ADX gate.
 2. **Market sentiment reads "down".** The trend label is the Supertrend of one index (SPY for US) on daily and 4H. It lags: on 2026-11-05 SPY read DOWN on both timeframes while 71% of S&P 500 stocks were in daily uptrends. The label does not use the day's price change. India read UP and forex MIXED, so not every market was down. Fix by combining the index with breadth, and show the day's change next to the label.
 3. **Trade only with the market direction?** Recommendation: use it as a soft gate (a "with market" or "against market" tag plus a score adjustment), not a hard filter, and only after the market-state measure in item 2 is fixed. Record the market state on each logged pick so the track record can show whether alignment actually helps.
+
+### Forex filter review (2026-11-05)
+
+Replayed 62 days of hourly data for the 13 forex pairs (159 signal events). Each event is graded over the next 5 days. One window, correlated pairs and small samples, so treat as directional only.
+
+| Gate | Events per week | Win rate | Avg return |
+|---|---|---|---|
+| Current (aligned, ADX >= 20 and rising, fresh) | 0.8 (7 events) | 71% | +0.28% |
+| ADX >= 20, not required to be rising | 3.5 | 42% | -0.29% |
+| No ADX gate | 5.9 | 51% | -0.10% |
+| Current but without daily alignment | 4.2 | 72% | +0.40% |
+
+- Few forex entries is expected, about one a week.
+- The rising-ADX requirement helps; relaxing it made results worse.
+- The forex risk floor is wrong: stops sit at the stock floor of 1.25% (median) while the median 5-day move is 0.78%, so target 1 is reached only 3% of the time. Forex needs its own, lower floor.
+- Open question: whether the daily-alignment rule helps forex, which needs a longer history to judge.
