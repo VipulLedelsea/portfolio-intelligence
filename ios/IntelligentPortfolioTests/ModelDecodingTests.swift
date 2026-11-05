@@ -48,5 +48,15 @@ final class ModelDecodingTests: XCTestCase {
     func testPairingExpiryParsesWholeSeconds() throws {
         XCTAssertNotNil(PairingExpiryParser.date(from: "2026-10-31T12:00:00Z"))
     }
-}
 
+    func testStandByRuleNeedsLandscapeAndStillness() {
+        // Starts only on its side and still for long enough; no charger needed.
+        XCTAssertTrue(StandByRule.decide(active: false, landscape: true, stillFor: 2.5, pickedUp: false))
+        XCTAssertFalse(StandByRule.decide(active: false, landscape: true, stillFor: 0.5, pickedUp: false))
+        XCTAssertFalse(StandByRule.decide(active: false, landscape: false, stillFor: 9, pickedUp: false))
+        // Once on, it stays on through small bumps and ends on turning upright or being picked up.
+        XCTAssertTrue(StandByRule.decide(active: true, landscape: true, stillFor: 0, pickedUp: false))
+        XCTAssertFalse(StandByRule.decide(active: true, landscape: false, stillFor: 9, pickedUp: false))
+        XCTAssertFalse(StandByRule.decide(active: true, landscape: true, stillFor: 9, pickedUp: true))
+    }
+}

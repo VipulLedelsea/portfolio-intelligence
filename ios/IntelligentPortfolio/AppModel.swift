@@ -22,6 +22,45 @@ final class AppModel: ObservableObject {
     @Published var isAnalyzing = false
     @Published var errorMessage: String?
     @Published var isGuest = false
+    /// The desk display: a full-screen ticker that cycles markets and setups. Off, Auto (starts by itself like StandBy:
+    /// on its side and still) or On.
+    enum DeskSetting: String, CaseIterable, Identifiable {
+        case off = "Off", auto = "Auto", on = "On"
+        var id: String { rawValue }
+    }
+    @Published var deskSetting: DeskSetting = DeskSetting(rawValue: UserDefaults.standard.string(forKey: "deskSetting") ?? "") ?? .auto {
+        didSet { UserDefaults.standard.set(deskSetting.rawValue, forKey: "deskSetting"); updateStandByDetection() }
+    }
+    @Published private var standByHolds = false
+    /// After leaving by touch-and-hold in Auto, it stays off until the conditions end and come back.
+    @Published private var deskDismissed = false
+    private let standBy = StandByDetector()
+
+    var deskActive: Bool {
+        switch deskSetting {
+        case .off: false
+        case .on: true
+        case .auto: standByHolds && !deskDismissed
+        }
+    }
+
+    func dismissDesk() {
+        if deskSetting == .on { deskSetting = .off } else { deskDismissed = true }
+    }
+
+    func updateStandByDetection() {
+        if deskSetting == .auto {
+            standBy.start { [weak self] holds in
+                guard let self else { return }
+                self.standByHolds = holds
+                if !holds { self.deskDismissed = false }
+            }
+        } else {
+            standBy.stop()
+            standByHolds = false
+            deskDismissed = false
+        }
+    }
     @Published var fold: AdaptiveLayout.FoldState = .unknown
     @Published var holdings: HoldingsResponse?
     @Published var isLoadingHoldings = false

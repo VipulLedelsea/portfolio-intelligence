@@ -542,4 +542,6 @@ struct MarketTrend: Decodable, Sendable {
     let adx: Double
     let dayChangePct: Double?
     let breadthDailyPct: Double?
+    /// Recent closes of the index, oldest first, for the desk display's line chart. Absent on older server data.
+    let spark: [Double]?
 }

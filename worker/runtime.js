@@ -1090,6 +1090,8 @@ function marketTrend(info, index, snapshots, withBreadth = true, marketId = null
     breadth_4h_pct: showBreadth ? share(snapshot => snapshot.supertrend?.direction) : null,
     stocks_counted: showBreadth ? all.length : null,
     as_of: index.market_time || null,
+    // The last 60 four-hour closes of the index, for a small line chart. About sixty numbers, so the scan stays small.
+    spark: (index.history || []).slice(-60).map(bar => round(numeric(bar.close), 4)).filter(Number.isFinite),
   };
 }
 

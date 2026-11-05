@@ -1,6 +1,6 @@
 import SwiftUI
 
-private func trendColour(_ state: String) -> Color {
+func trendColour(_ state: String) -> Color {
     switch state {
     case "UP": AppTheme.mint
     case "DOWN": AppTheme.red
@@ -8,7 +8,7 @@ private func trendColour(_ state: String) -> Color {
     }
 }
 
-private extension MarketTrend {
+extension MarketTrend {
     /// A label short enough for the narrow strip.
     var shortLabel: String {
         switch indexSymbol {
@@ -39,7 +39,7 @@ private struct ArcShape: Shape {
 
 /// A glass ring split into Down, Mixed and Up with the current third lit and a trend arrow in the middle.
 /// It stays put when the index changes: the lit third and the colours animate instead of a panel sliding away.
-private struct TrendRing: View {
+struct TrendRing: View {
     let trend: MarketTrend
     /// Grows by a full turn on every swipe, so the ring visibly spins even when two neighbours share a reading.
     let spin: Double

@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreMotion
 
 enum AppTheme {
     static let background = Color(red: 0.035, green: 0.047, blue: 0.043)
@@ -217,5 +218,75 @@ struct SideStrip<Content: View>: View {
         .padding(.top, top)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: edge == .trailing ? .topTrailing : .topLeading)
         .ignoresSafeArea(.container, edges: edge == .trailing ? .trailing : .leading)
+    }
+}
+
+
+/// When the desk display starts and stops on its own, modelled on Apple's StandBy but without needing a charger: the
+/// phone is on its side (landscape) and sitting still. Turning it upright or picking it up ends it. iOS gives apps no
+/// signal for StandBy itself, so these conditions are read directly.
+enum StandByRule {
+    /// How long the phone must sit still before the display starts, so carrying it in landscape never triggers it.
+    static let stillSecondsToStart: TimeInterval = 2
+
+    static func decide(active: Bool, landscape: Bool, stillFor: TimeInterval, pickedUp: Bool) -> Bool {
+        guard landscape else { return false }
+        if active { return !pickedUp }
+        return stillFor >= stillSecondsToStart
+    }
+}
+
+/// Watches orientation and movement and reports whether the StandBy-style conditions hold.
+@MainActor
+final class StandByDetector {
+    private let motion = CMMotionManager()
+    private var loop: Task<Void, Never>?
+    private var lastMovement = Date()
+    private var landscape = false
+    private var active = false
+    private var onChange: (Bool) -> Void = { _ in }
+
+    func start(onChange: @escaping (Bool) -> Void) {
+        stop()
+        self.onChange = onChange
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        if motion.isDeviceMotionAvailable {
+            motion.deviceMotionUpdateInterval = 0.2
+            motion.startDeviceMotionUpdates()
+        }
+        lastMovement = Date()
+        loop = Task { [weak self] in
+            while !Task.isCancelled {
+                self?.evaluate()
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
+    }
+
+    func stop() {
+        loop?.cancel(); loop = nil
+        motion.stopDeviceMotionUpdates()
+        UIDevice.current.endGeneratingDeviceOrientationNotifications()
+        if active { active = false; onChange(false) }
+    }
+
+    private func evaluate() {
+        let device = UIDevice.current
+        // Lying flat or unknown keeps the last known side, as StandBy does.
+        switch device.orientation {
+        case .landscapeLeft, .landscapeRight: landscape = true
+        case .portrait, .portraitUpsideDown: landscape = false
+        default: break
+        }
+        var pickedUp = false
+        if let data = motion.deviceMotion {
+            let shake = (data.userAcceleration.x * data.userAcceleration.x + data.userAcceleration.y * data.userAcceleration.y + data.userAcceleration.z * data.userAcceleration.z).squareRoot()
+            let spin = (data.rotationRate.x * data.rotationRate.x + data.rotationRate.y * data.rotationRate.y + data.rotationRate.z * data.rotationRate.z).squareRoot()
+            if shake > 0.04 || spin > 0.3 { lastMovement = Date() }
+            pickedUp = shake > 0.25 || spin > 1.5
+        }
+        let next = StandByRule.decide(active: active, landscape: landscape,
+                                      stillFor: Date().timeIntervalSince(lastMovement), pickedUp: pickedUp)
+        if next != active { active = next; onChange(next) }
     }
 }

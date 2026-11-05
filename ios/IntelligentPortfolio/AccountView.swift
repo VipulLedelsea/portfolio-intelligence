@@ -17,6 +17,17 @@ struct AccountView: View {
                     Text("Research and education only. Nothing here is investment, financial, tax or legal advice.")
                         .font(.footnote)
                         .foregroundStyle(AppTheme.muted)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Desk display").font(.headline)
+                        Picker("Desk display", selection: $model.deskSetting) {
+                            ForEach(AppModel.DeskSetting.allCases) { Text($0.rawValue).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        Text("A full-screen ticker for a phone standing on a desk: markets with a price line, and setups with their buy ranges, changing together every 5 seconds. Auto starts it like StandBy does, when the phone is on its side and still (no charger needed), and ends it when you turn it upright or pick it up. On keeps it up all the time. Touch and hold to leave.")
+                            .font(.footnote)
+                            .foregroundStyle(AppTheme.muted)
+                    }
+                    .panel()
                     Button("Open the website") { openURL(webURL) }
                         .buttonStyle(.bordered)
                     if model.isGuest {
