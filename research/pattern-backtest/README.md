@@ -49,3 +49,12 @@ Membership dates come from `fja05680/sp500` (`sp500_ticker_start_end.csv`, saved
 - At a 5-day hold with the near-target exit, no pattern or entry set averaged better than +0.02% per trade (baseline -0.06% to -0.12%). Cup and handle, both flags and 52-week highs without volume were negative.
 - The only positive reading was the 20% flag at a 20-day hold with the near-target exit (+0.34%, 152 trades, first half -0.06%, second half +0.75%), which is outside the one-week goal and unstable.
 - Decision: chart patterns are not added as trade signals. Revisit only through live track-record data.
+
+## Round two: the FOREX.com patterns (round2.mjs, 2026-11-05)
+
+`node round2.mjs stocks` (point-in-time S&P 500) and `node round2.mjs forex` (13 pairs, `fetch_fx.mjs`). Pivot-based detectors for double top and bottom, head and shoulders and its inverse, ascending, descending and symmetrical triangles, rising and falling wedges, bull flag, and cup and handle in both the after-uptrend and after-downtrend versions. Exits use the pattern's own stop (where it fails) and measured-move target, with holds up to 5 and 20 days, an optional 2-session confirmation, and a scanner-like ATR exit. Every trade is compared with 25 random entries that have the same direction and the same stop and target distances in ATR units.
+
+- **Stocks:** pooled across all patterns, results were worse than matched random entries on a 5-day hold (-0.15% per trade, t -4.4) and no better at 20 days. Long patterns trailed random entries; short patterns were about even. Individual positives at a 20-day hold (confirmed ascending triangle, double bottom, bull flag, t about 2) are within what 50 comparisons produce by chance.
+- **Bull flag** was the one consistent positive against random days, in every configuration and both halves. Against a control of stocks that had just surged 20%, it shrank to +0.1 to +0.35% per trade (t 0.3 to 1.1), so it is the surge, not the flag.
+- **Forex:** 181 pattern trades over 5 years, pooled -0.15% per trade, worse than matched random entries. Nothing works there, though samples are tiny.
+- **Not tested:** support and resistance bounce trades, and intraday patterns.
