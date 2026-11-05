@@ -936,7 +936,7 @@ function scoreCandidate(snapshot, metadata = {}) {
   const isFresh = age <= MAX_ENTRY_AGE_BARS;
   const isExtended = extensionAtr > MAX_ENTRY_EXTENSION_ATR;
   const isFailing = extensionAtr < -MAX_ADVERSE_EXTENSION_ATR;
-  const riskDistance = Math.max(2 * signalAtr, entryReference * 0.0125);
+  const riskDistance = Math.max(2 * signalAtr, entryReference * riskFloorFraction(snapshot.market));
   const target1 = direction === "SHORT" ? Math.max(0.01, entryReference - 2 * riskDistance) : entryReference + 2 * riskDistance;
   const signalStartedAt = Date.parse(supertrend.signal_bar_started_at);
   const postSignalBars = snapshot.history.filter(row => !Number.isFinite(signalStartedAt) || Date.parse(row.date) > signalStartedAt);
@@ -1277,7 +1277,7 @@ async function analyze(symbol, market = MARKETS.US, env = {}) {
   const bear = makeReport("bear", symbol, direction === "SHORT" ? technicalScore : 100 - technicalScore, 0.7, direction === "SHORT" ? "Trend, momentum, and Supertrend are aligned for the bearish case." : "Headline risk, volatility, and a close below Supertrend are the main reasons the long setup could fail.", candidate.cautions.length ? candidate.cautions : ["No setup is certain."], ["Risk is defined by the invalidation level."], true);
   const price = snapshot.price;
   const entryReference = candidate.signal_entry_price || price;
-  const { stop, target1, target2 } = scenarioLevels(direction, entryReference, candidate.signal_atr);
+  const { stop, target1, target2 } = scenarioLevels(direction, entryReference, candidate.signal_atr, market.id);
   const signalStartedAt = Date.parse(snapshot.supertrend.signal_bar_started_at);
   const postSignalBars = snapshot.history.filter(row => !Number.isFinite(signalStartedAt) || Date.parse(row.date) > signalStartedAt);
   const target1Reached = direction === "SHORT"
@@ -1396,9 +1396,13 @@ async function fromCache(request, cacheName, maxAge, producer, ctx) {
 
 const SCANNER_USER_ID = "system:scanner";
 
+// Smallest protective distance as a share of price. 1.25% suits stocks; a forex pair's typical 2 ATR is only
+// about 0.3% to 0.6%, so the stock floor made forex stops far too wide and first targets almost unreachable.
+function riskFloorFraction(marketId) { return marketId === "FX" ? 0.0025 : 0.0125; }
+
 // Protective level and the two scenario targets, shared by full reports and logged scanner picks.
-function scenarioLevels(direction, entry, atr) {
-  const riskDistance = Math.max(2 * atr, entry * 0.0125);
+function scenarioLevels(direction, entry, atr, marketId = "US") {
+  const riskDistance = Math.max(2 * atr, entry * riskFloorFraction(marketId));
   const short = direction === "SHORT";
   return {
     stop: short ? entry + riskDistance : Math.max(0.01, entry - riskDistance),

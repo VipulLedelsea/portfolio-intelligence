@@ -103,3 +103,5 @@ Replayed 62 days of hourly data for the 13 forex pairs (159 signal events). Each
 - The rising-ADX requirement helps; relaxing it made results worse.
 - The forex risk floor is wrong: stops sit at the stock floor of 1.25% (median) while the median 5-day move is 0.78%, so target 1 is reached only 3% of the time. Forex needs its own, lower floor.
 - Open question: whether the daily-alignment rule helps forex, which needs a longer history to judge.
+
+Forex risk floor fixed in code (2026-11-05, not yet deployed): the minimum stop distance is now 0.25% of price for forex and stays 1.25% for stocks. Replaying the same events: median stop distance 1.25% -> 0.46%, first target reached 3% -> 32% of the time, and the current-gate setups went 0 of 7 to 6 of 9 reaching target 1 (3 hit the stop). Still a small, single-window sample.
