@@ -44,7 +44,7 @@ struct AnalysisContent: View {
     @Environment(\.openURL) private var openURL
     @ScaledMetric(relativeTo: .caption) private var tileMinimum: CGFloat = 150
     @State private var chartMode = ChartMode.signal
-    @State private var trailingInset: CGFloat = 0
+    @State private var sideInsets = SideInsets()
     @Namespace private var railNamespace
     let candidate: Candidate
     /// When set, a glass back button sits beside the chart controls (sheet presentation).
@@ -52,27 +52,17 @@ struct AnalysisContent: View {
 
     /// iPhone Duo reserves a trailing strip for system status. When that strip is wide enough
     /// the rail lives in it, below the status icons, so the chart keeps the full content width.
-    private var railInInset: Bool { trailingInset >= 56 }
+    private var railInInset: Bool { sideInsets.strip != nil }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             scrollContent
-            if railInInset, model.analysis?.symbol == candidate.symbol, model.analysis?.chart != nil {
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    chartRail.frame(width: trailingInset)
-                        .offset(x: AdaptiveLayout.sideShift(strip: trailingInset))
-                }
-                .padding(.top, 175)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                .ignoresSafeArea(.container, edges: .trailing)
+            if let strip = sideInsets.strip, model.analysis?.symbol == candidate.symbol, model.analysis?.chart != nil {
+                SideStrip(edge: strip.edge, width: strip.width, top: 175) { chartRail }
             }
         }
         .background(AppTheme.background)
-        .background(GeometryReader { proxy in
-            Color.clear.preference(key: TrailingInsetKey.self, value: proxy.safeAreaInsets.trailing)
-        })
-        .onPreferenceChange(TrailingInsetKey.self) { trailingInset = $0 }
+        .reportSideInsets { sideInsets = $0 }
         .task(id: candidate.symbol) { await model.analyze(symbol: candidate.symbol) }
     }
 
@@ -308,12 +298,6 @@ private struct CandlestickChart: View {
         }
         .accessibilityLabel("Candlestick chart with entry, invalidation, and target levels")
     }
-}
-
-
-private struct TrailingInsetKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 

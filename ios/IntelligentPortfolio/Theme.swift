@@ -51,7 +51,10 @@ enum AdaptiveLayout {
     /// neatly above it. `shift` moves something centred in the reserved strip onto that line.
     static let sidePillWidth: CGFloat = 48
     static let sideCentreFromEdge: CGFloat = 48.5
-    static func sideShift(strip: CGFloat) -> CGFloat { strip / 2 - sideCentreFromEdge }
+    static func sideShift(strip: CGFloat, edge: HorizontalEdge) -> CGFloat {
+        let shift = strip / 2 - sideCentreFromEdge
+        return edge == .trailing ? shift : -shift
+    }
 
     /// What the hinge reports. `unknown` on phones that don't fold and before the first update.
     enum FoldState { case unknown, partial, full }
@@ -162,4 +165,57 @@ struct HingeReader: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {}
+}
+
+
+/// The strip the Duo reserves for system status. It is on the trailing edge one way up and on the leading edge when
+/// the phone is turned the other way, so both edges are measured and the wider one is used.
+struct SideInsets: Equatable {
+    var leading: CGFloat = 0
+    var trailing: CGFloat = 0
+    var strip: (edge: HorizontalEdge, width: CGFloat)? {
+        if trailing >= 56 { return (.trailing, trailing) }
+        if leading >= 56 { return (.leading, leading) }
+        return nil
+    }
+    static func == (a: SideInsets, b: SideInsets) -> Bool { a.leading == b.leading && a.trailing == b.trailing }
+}
+
+struct SideInsetsKey: PreferenceKey {
+    static let defaultValue = SideInsets()
+    static func reduce(value: inout SideInsets, nextValue: () -> SideInsets) {
+        let next = nextValue()
+        value = SideInsets(leading: max(value.leading, next.leading), trailing: max(value.trailing, next.trailing))
+    }
+}
+
+extension View {
+    /// Reports this view's leading and trailing safe-area insets.
+    func reportSideInsets(_ update: @escaping (SideInsets) -> Void) -> some View {
+        background(GeometryReader { proxy in
+            Color.clear.preference(key: SideInsetsKey.self, value: SideInsets(leading: proxy.safeAreaInsets.leading, trailing: proxy.safeAreaInsets.trailing))
+        })
+        .onPreferenceChange(SideInsetsKey.self) { update($0) }
+    }
+}
+
+/// Puts content in the reserved strip on whichever edge it is, lined up with the system tab bar.
+struct SideStrip<Content: View>: View {
+    let edge: HorizontalEdge
+    let width: CGFloat
+    let top: CGFloat
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if edge == .trailing { Spacer(minLength: 0) }
+            content
+                .frame(width: width)
+                .offset(x: AdaptiveLayout.sideShift(strip: width, edge: edge))
+            if edge == .leading { Spacer(minLength: 0) }
+        }
+        .padding(.top, top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: edge == .trailing ? .topTrailing : .topLeading)
+        .ignoresSafeArea(.container, edges: edge == .trailing ? .trailing : .leading)
+    }
 }

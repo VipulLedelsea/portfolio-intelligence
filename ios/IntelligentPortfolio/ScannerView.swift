@@ -3,13 +3,23 @@ import SwiftUI
 struct ScannerView: View {
     @EnvironmentObject private var model: AppModel
     @State private var selected: Candidate?
-    @State private var trailingInset: CGFloat = 0
+    @State private var sideInsets = SideInsets()
+    @State private var screenHeight: CGFloat = 1000
     @State private var showingTrend = false
     @State private var trendStart = 0
     @ScaledMetric(relativeTo: .largeTitle) private var heroSize = 34
 
     /// iPhone Duo reserves a trailing strip for system status; when it is wide enough the market trend lives in it.
-    private var trendInStrip: Bool { trailingInset >= 56 }
+    private var trendInStrip: Bool { sideInsets.strip != nil }
+    /// Where the gauge starts below the top. Usually 175 points. In landscape the system tab bar rises to about 288
+    /// points above the bottom edge, so on a short screen the gauge moves up to end just above it instead of behind it.
+    /// Turned the other way up, the strip is on the camera side and the camera cut-out takes the top of it, so the gauge
+    /// starts this much lower there.
+    private static let cameraClearance: CGFloat = 40
+    private var stripTop: CGFloat {
+        let tabBarTop = screenHeight - 288, gauge: CGFloat = 125
+        return min(175, max(8, tabBarTop - gauge - 10))
+    }
     /// Every market's indexes in one list, so a single swipe-through covers US, India and forex.
     private var trends: [MarketTrend] {
         model.discovery?.allMarketTrends.flatMap { $0.isEmpty ? nil : $0 }
@@ -31,23 +41,15 @@ struct ScannerView: View {
                 case .compact: compactLayout
                 }
                 // In the wide layout the chart rail takes this strip once a setup is open, so step aside then.
-                if trendInStrip, !trends.isEmpty, !(posture != .compact && selected != nil) {
-                    HStack(spacing: 0) {
-                        Spacer(minLength: 0)
+                if let strip = sideInsets.strip, !trends.isEmpty, !(posture != .compact && selected != nil) {
+                    SideStrip(edge: strip.edge, width: strip.width, top: stripTop + (strip.edge == .leading ? Self.cameraClearance : 0)) {
                         MarketTrendStrip(trends: trends, start: trendStartPage) { index in trendStart = index; showingTrend = true }
                             .id(model.market.rawValue)
-                            .frame(width: trailingInset)
-                            .offset(x: AdaptiveLayout.sideShift(strip: trailingInset))
                     }
-                    .padding(.top, 175)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .ignoresSafeArea(.container, edges: .trailing)
                 }
             }
-            .background(GeometryReader { inner in
-                Color.clear.preference(key: ScannerInsetKey.self, value: inner.safeAreaInsets.trailing)
-            })
-            .onPreferenceChange(ScannerInsetKey.self) { trailingInset = $0 }
+            .reportSideInsets { sideInsets = $0 }
+            .onChange(of: AdaptiveLayout.screenHeight(proxy.size, proxy.safeAreaInsets), initial: true) { _, height in screenHeight = height }
             .sheet(isPresented: $showingTrend) { MarketTrendSheet(trends: trends, start: trendStart) }
             // Glide between postures instead of jumping while the phone is opened or folded.
             .animation(.smooth(duration: 0.4), value: posture)
@@ -340,11 +342,6 @@ private struct CandidateRow: View {
         .overlay(Rectangle().stroke(AppTheme.amber, lineWidth: isSelected ? 2 : 0))
         .accessibilityElement(children: .combine)
     }
-}
-
-private struct ScannerInsetKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 /// "2:00 PM" today, or "Tue 2:00 PM" on another day.
