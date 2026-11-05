@@ -78,6 +78,50 @@ const memory = await memoryResponse.json();
 assert.equal(memory.available, true);
 assert.equal(memory.horizon_trading_days, 5);
 
+// Grading: a pick must exit at its stop or near its target, not at the fifth close, so losses are capped and early wins are kept.
+{
+  const updates = [];
+  const gradingDb = {
+    prepare(sql) {
+      const statement = {
+        args: [],
+        bind(...args) { statement.args = args; return statement; },
+        async all() {
+          if (sql.includes("ORDER BY generated_at ASC LIMIT 60")) {
+            return { results: [{ id: "rec-1", symbol: "TEST", market: "US", action: "IDEA", direction: "LONG", generated_at: "2026-10-26T15:00:00Z", current_price: 100, stop_price: 96, target_1: 108, horizon_trading_days: 5 }] };
+          }
+          return { results: [] };
+        },
+        async first() { return sql.includes("COUNT(*) AS total_calls") ? emptySummary : null; },
+        async run() { return { success: true }; },
+      };
+      return statement;
+    },
+    async batch(statements) { updates.push(...statements); return []; },
+  };
+  const bars = [
+    ["2026-10-27", 100, 101, 99, 100], ["2026-10-28", 100, 107.5, 100, 99], ["2026-10-29", 99, 100, 90, 90],
+    ["2026-10-30", 90, 91, 89, 90], ["2026-11-02", 90, 92, 88, 90],
+  ].map(([day, open, high, low, close]) => ({ begins_at: `${day}T00:00:00Z`, open_price: String(open), high_price: String(high), low_price: String(low), close_price: String(close), volume: 1000 }));
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ results: [{ symbol: "TEST", historicals: bars }] }), { status: 200, headers: { "content-type": "application/json" } });
+  try {
+    const gradingResponse = await workerModule.default.fetch(new Request("https://example.test/api/memory", {
+      method: "POST",
+      headers: { "content-type": "application/json", "oai-authenticated-user-id": "grader", "oai-authenticated-user-email": "g@example.com" },
+      body: "{}",
+    }), { DB: gradingDb, AUTH_MODE: "oai" }, { waitUntil() {} });
+    assert.equal(gradingResponse.status, 200);
+  } finally { globalThis.fetch = realFetch; }
+  assert.equal(updates.length, 1, "The pending pick must be settled");
+  const [settledAt, exitPrice, rawReturn, strategyReturn, , , grade] = updates[0].args;
+  assert.equal(grade, "TARGET", "Day two touches 90% of the way to target 1");
+  assert.equal(exitPrice, 107.2);
+  assert.equal(strategyReturn, 7.2, "The return is the exit, not the later fifth close");
+  assert.equal(rawReturn, -10, "The raw fifth-close change is kept for reference");
+  assert.ok(String(settledAt).startsWith("2026-10-28"));
+}
+
 // Public track record: wins, losses, stop-outs and open picks must all be counted, with no per-user data.
 const trackRows = [
   { direction: "LONG", status: "SETTLED", strategy_return_pct: 4, stop_hit: 0, target_hit: 1, generated_at: "2026-10-01T15:00:00Z" },

@@ -1475,7 +1475,7 @@ async function publicTrackRecord(db) {
     since: rows[0]?.generated_at || null,
     horizon_trading_days: 5,
     summary: summarizeTrackRecord(rows, Number(pending?.n || 0)),
-    methodology: "Every fresh US entry the scanner surfaces is recorded once per ticker, signal close and direction, at the price available when it first appeared. Each pick is graded against its own stop and first target using daily bars over the next five completed sessions; the return is measured to the fifth close. Wins, losses, stop-outs and still-open picks are all included, and none are removed. Percentages with few picks are not meaningful. This is research history, not a prediction or advice.",
+    methodology: "Every fresh US entry the scanner surfaces is recorded once per ticker, signal close and direction, at the price available when it first appeared. Each pick exits at the first of its own stop, 90% of the way to its first target, or the fifth completed daily close, using daily bars; a bar that touches both is counted as a stop. Wins, losses, stop-outs and still-open picks are all included, and none are removed. Percentages with few picks are not meaningful. This is research history, not a prediction or advice.",
   };
 }
 
@@ -1525,35 +1525,53 @@ async function fetchDailySettlementBars(symbols) {
   return bars;
 }
 
+// A graded pick leaves at the first of: its protective level, "near target" (this share of the way to target 1),
+// or the close of the last bar in the window. When a bar touches both levels the stop is assumed to come first.
+const NEAR_TARGET_FRACTION = 0.9;
+
 function gradeRecommendation(recommendation, path) {
   const entry = numeric(recommendation.current_price);
   const direction = recommendation.direction;
-  const exitBar = path.at(-1);
-  const exit = numeric(exitBar.close);
-  const rawReturnPct = entry ? (exit / entry - 1) * 100 : 0;
-  const strategyReturnPct = direction === "SHORT" ? -rawReturnPct : rawReturnPct;
+  const short = direction === "SHORT";
+  const sign = short ? -1 : 1;
+  const stop = numeric(recommendation.stop_price);
+  const target1 = numeric(recommendation.target_1);
+  const nearTarget = entry + NEAR_TARGET_FRACTION * (target1 - entry);
+  const lastBar = path.at(-1);
+  const windowClose = numeric(lastBar.close);
+  const rawReturnPct = entry ? (windowClose / entry - 1) * 100 : 0;
   const maximumHigh = Math.max(...path.map(bar => numeric(bar.high)));
   const minimumLow = Math.min(...path.map(bar => numeric(bar.low)));
-  const maxFavorablePct = entry ? (direction === "SHORT" ? (entry - minimumLow) / entry : (maximumHigh - entry) / entry) * 100 : 0;
-  const maxAdversePct = entry ? (direction === "SHORT" ? (maximumHigh - entry) / entry : (entry - minimumLow) / entry) * 100 : 0;
-  let firstEvent = null;
-  let targetHit = false;
-  let stopHit = false;
+  const maxFavorablePct = entry ? (short ? (entry - minimumLow) / entry : (maximumHigh - entry) / entry) * 100 : 0;
+  const maxAdversePct = entry ? (short ? (maximumHigh - entry) / entry : (entry - minimumLow) / entry) * 100 : 0;
+  let firstEvent = null, exitPrice = windowClose, exitBar = lastBar;
+  let targetHit = false, stopHit = false;
   for (const bar of path) {
-    const hitTarget = direction === "SHORT" ? numeric(bar.low) <= numeric(recommendation.target_1) : numeric(bar.high) >= numeric(recommendation.target_1);
-    const hitStop = direction === "SHORT" ? numeric(bar.high) >= numeric(recommendation.stop_price) : numeric(bar.low) <= numeric(recommendation.stop_price);
-    targetHit ||= hitTarget;
-    stopHit ||= hitStop;
-    if (!firstEvent && hitTarget && hitStop) firstEvent = "AMBIGUOUS";
-    else if (!firstEvent && hitTarget) firstEvent = "TARGET";
-    else if (!firstEvent && hitStop) firstEvent = "STOP";
+    const open = numeric(bar.open) || numeric(bar.close), high = numeric(bar.high), low = numeric(bar.low);
+    targetHit ||= short ? low <= target1 : high >= target1;
+    stopHit ||= short ? high >= stop : low <= stop;
+    if (firstEvent) continue;
+    const gapStop = short ? open >= stop : open <= stop;
+    const gapTarget = short ? open <= nearTarget : open >= nearTarget;
+    const touchStop = short ? high >= stop : low <= stop;
+    const touchTarget = short ? low <= nearTarget : high >= nearTarget;
+    if (gapStop) { firstEvent = "STOP"; exitPrice = open; }
+    else if (gapTarget) { firstEvent = "TARGET"; exitPrice = open; }
+    else if (touchStop && touchTarget) { firstEvent = "AMBIGUOUS"; exitPrice = stop; }
+    else if (touchStop) { firstEvent = "STOP"; exitPrice = stop; }
+    else if (touchTarget) { firstEvent = "TARGET"; exitPrice = nearTarget; }
+    if (firstEvent) exitBar = bar;
   }
+  const isPass = recommendation.action === "PASS";
+  // PASS calls were never traded, so they are measured to the window close; traded picks are measured to their exit.
+  const settledPrice = isPass ? windowClose : exitPrice;
+  const strategyReturnPct = entry ? sign * (settledPrice / entry - 1) * 100 : 0;
   let grade;
-  if (recommendation.action === "PASS") grade = strategyReturnPct > 0.5 ? "MISSED_MOVE" : strategyReturnPct < -0.5 ? "CORRECT_PASS" : "FLAT_PASS";
+  if (isPass) grade = strategyReturnPct > 0.5 ? "MISSED_MOVE" : strategyReturnPct < -0.5 ? "CORRECT_PASS" : "FLAT_PASS";
   else grade = firstEvent || (strategyReturnPct > 0.1 ? "WIN" : strategyReturnPct < -0.1 ? "LOSS" : "FLAT");
   return {
-    settledAt: exitBar.date,
-    exitPrice: round(exit, 4),
+    settledAt: isPass ? lastBar.date : exitBar.date,
+    exitPrice: round(settledPrice, 4),
     rawReturnPct: round(rawReturnPct, 3),
     strategyReturnPct: round(strategyReturnPct, 3),
     maxFavorablePct: round(maxFavorablePct, 3),
@@ -1642,7 +1660,7 @@ async function recommendationMemory(db, userId, env = {}) {
     },
     learning_note: learningNote,
     recent: recentResult?.results || [],
-    methodology: "Each call is stored once per user, ticker, signal close, and action. IDEA and WATCH results are graded from the actual price available when the report was generated to the fifth subsequent completed daily close. PASS calls are retained to measure missed moves. No orders or portfolio holdings are stored.",
+    methodology: "Each call is stored once per user, ticker, signal close, and action. IDEA and WATCH results are graded from the actual price available when the report was generated, and the call exits at the first of its protective level, 90% of the way to target 1, or the fifth subsequent completed daily close; a bar that touches both is counted as a stop. PASS calls are measured to the fifth close and retained to measure missed moves. No orders or portfolio holdings are stored.",
   };
 }
 
