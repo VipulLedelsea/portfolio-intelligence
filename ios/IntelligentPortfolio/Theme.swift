@@ -163,10 +163,3 @@ struct HingeReader: UIViewRepresentable {
 
     func updateUIView(_ uiView: UIView, context: Context) {}
 }
-
-/// The live hinge angle, kept apart from the app model on purpose: it changes many times a second while the phone
-/// is being opened, and only the debug strip needs it, so nothing else should redraw for it.
-@MainActor final class HingeProbe: ObservableObject {
-    static let shared = HingeProbe()
-    @Published var angle: Double?
-}

@@ -31,9 +31,8 @@ struct ContentView: View {
             }
         }
         .background(HingeReader { state, angle in
-            // Only a change of state reaches the layouts; the raw angle goes to the debug probe alone.
+            // Only a change of state reaches the layouts; the live angle changes too often to publish.
             if model.fold != state { model.fold = state }
-            HingeProbe.shared.angle = angle
         })
         .alert("IntelligentPortfolio", isPresented: Binding(
             get: { model.errorMessage != nil },

@@ -44,11 +44,6 @@ struct ScannerView: View {
                     .ignoresSafeArea(.container, edges: .trailing)
                 }
             }
-            #if DEBUG
-            .overlay(alignment: .bottomLeading) {
-                HingeStrip(size: proxy.size, insets: proxy.safeAreaInsets, fold: model.fold, posture: posture)
-            }
-            #endif
             .background(GeometryReader { inner in
                 Color.clear.preference(key: ScannerInsetKey.self, value: inner.safeAreaInsets.trailing)
             })
@@ -479,20 +474,3 @@ struct BuyRangeBar: View {
         .accessibilityLabel("Buy range: \(range.label).\(buy.flatMap { zone in zone.lo.flatMap { lo in zone.hi.map { hi in " Buy zone \(money(lo)) to \(money(hi))." } } } ?? "")")
     }
 }
-
-#if DEBUG
-private struct HingeStrip: View {
-    @ObservedObject private var probe = HingeProbe.shared
-    let size: CGSize
-    let insets: EdgeInsets
-    let fold: AdaptiveLayout.FoldState
-    let posture: AdaptiveLayout.Posture
-
-    var body: some View {
-        let screenH = AdaptiveLayout.screenHeight(size, insets)
-        Text("win \(Int(size.width))×\(Int(screenH)) · ratio \(String(format: "%.2f", screenH / max(size.width, 1))) · inset t\(Int(insets.top)) b\(Int(insets.bottom)) l\(Int(insets.leading)) r\(Int(insets.trailing)) · \(fold) ∠\(probe.angle.map { String(format: "%.2f", $0) } ?? "–") · \(posture)")
-            .font(.caption2.monospaced()).padding(4).background(.black.opacity(0.7)).foregroundStyle(.white)
-            .allowsHitTesting(false)
-    }
-}
-#endif
