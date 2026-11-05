@@ -16,6 +16,7 @@ final class AppModel: ObservableObject {
     @Published var discovery: DiscoveryResponse?
     @Published var analysis: AnalysisResponse?
     @Published var memory: MemoryResponse?
+    @Published var trackRecord: TrackRecordResponse?
     @Published var market: Market = .us
     @Published var isScanning = false
     @Published var isAnalyzing = false
@@ -152,6 +153,7 @@ final class AppModel: ObservableObject {
     func refreshAll() async {
         await refreshScanner()
         await refreshMemory()
+        await refreshTrackRecord()
         await refreshHoldings()
     }
 
@@ -282,6 +284,11 @@ final class AppModel: ObservableObject {
             analysis = try await api.analyze(symbol: symbol, market: market, token: token)
             await refreshMemory()
         } catch { report(error) }
+    }
+
+    /// Public data: a failure here keeps the last value and stays quiet instead of raising an alert.
+    func refreshTrackRecord() async {
+        if let record = try? await api.trackRecord() { trackRecord = record }
     }
 
     func refreshMemory() async {

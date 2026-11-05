@@ -49,6 +49,10 @@ actor APIClient {
         try await request(path: "/api/memory", token: token, body: [:] as [String: String])
     }
 
+    func trackRecord() async throws -> TrackRecordResponse {
+        try await request(path: "/api/track-record", method: "GET", body: Optional<String>.none)
+    }
+
     func revoke(token: String) async throws {
         let _: RevokeResponse = try await request(path: "/api/mobile/session/revoke", token: token, body: [:] as [String: String])
     }

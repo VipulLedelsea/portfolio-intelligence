@@ -9,6 +9,7 @@ struct MemoryView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("The system grades every research call after five completed market sessions.")
                         .foregroundStyle(AppTheme.muted)
+                    TrackRecordPanel(record: model.trackRecord)
                     if model.isGuest {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Connect an account to see your learning history.")
@@ -42,7 +43,8 @@ struct MemoryView: View {
             }
             .background(AppTheme.background)
             .navigationTitle("Learning memory")
-            .refreshable { await Task { await model.refreshMemory() }.value }
+            .task { await model.refreshTrackRecord() }
+            .refreshable { await Task { await model.refreshMemory(); await model.refreshTrackRecord() }.value }
         }
     }
 
@@ -87,3 +89,54 @@ private struct MemoryRow: View {
     }
 }
 
+
+/// App-wide results of every fresh scanner pick, wins and losses included. Always shows how many picks sit behind each number.
+struct TrackRecordPanel: View {
+    let record: TrackRecordResponse?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("SCANNER TRACK RECORD").font(.caption2).foregroundStyle(AppTheme.muted)
+            if let summary = record?.summary, record?.available == true {
+                let n = summary.settledPicks
+                if n == 0 {
+                    Text("No scanner picks have been graded yet. \(summary.pendingPicks) are waiting for their five-session window to close.")
+                        .foregroundStyle(AppTheme.muted)
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {
+                        stat("Graded picks", "\(n)")
+                        stat("Still open", "\(summary.pendingPicks)")
+                        stat("Win rate", percent(summary.winRatePct, signed: false))
+                        stat("Avg return", percent(summary.averageReturnPct, signed: true))
+                        stat("Avg win", percent(summary.averageWinPct, signed: true))
+                        stat("Avg loss", percent(summary.averageLossPct, signed: true))
+                        stat("Worst loss", percent(summary.worstLossPct, signed: true))
+                        stat("Stop hit", percent(summary.stopHitRatePct, signed: false))
+                    }
+                    if n < 30 {
+                        Text("Only \(n) graded so far. Small samples can swing widely, so treat these as early results.")
+                            .font(.footnote).foregroundStyle(AppTheme.amber)
+                    }
+                }
+                Text(record?.methodology ?? "")
+                    .font(.footnote).foregroundStyle(AppTheme.muted)
+            } else {
+                Text("Track record is loading or not available yet.").foregroundStyle(AppTheme.muted)
+            }
+        }
+        .panel()
+    }
+
+    private func stat(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading) {
+            Text(title.uppercased()).font(.caption2).foregroundStyle(AppTheme.muted)
+            Text(value).font(.title3.monospaced().bold())
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func percent(_ value: Double?, signed: Bool) -> String {
+        guard let value else { return "-" }
+        return String(format: signed ? "%+.2f%%" : "%.1f%%", value)
+    }
+}

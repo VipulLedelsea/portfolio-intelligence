@@ -259,6 +259,36 @@ struct MemoryRecord: Decodable, Identifiable, Sendable {
     let entryStatus: String
 }
 
+/// Public, app-wide record of every fresh scanner pick the app surfaced (not tied to any user).
+struct TrackRecordResponse: Decodable, Sendable {
+    let available: Bool
+    let since: String?
+    let horizonTradingDays: Int?
+    let summary: TrackRecordSummary?
+    let methodology: String?
+}
+
+struct TrackRecordSummary: Decodable, Sendable {
+    let settledPicks: Int
+    let pendingPicks: Int
+    let winRatePct: Double?
+    let averageReturnPct: Double?
+    let averageWinPct: Double?
+    let averageLossPct: Double?
+    let worstLossPct: Double?
+    let profitFactor: Double?
+    let stopHitRatePct: Double?
+    let targetHitRatePct: Double?
+    let long: TrackRecordSide
+    let short: TrackRecordSide
+}
+
+struct TrackRecordSide: Decodable, Sendable {
+    let samples: Int
+    let averageReturnPct: Double?
+    let winRatePct: Double?
+}
+
 struct APIError: Decodable, Error, LocalizedError, Sendable {
     let error: String
     var errorDescription: String? { error }

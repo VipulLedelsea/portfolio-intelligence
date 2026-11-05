@@ -78,6 +78,44 @@ const memory = await memoryResponse.json();
 assert.equal(memory.available, true);
 assert.equal(memory.horizon_trading_days, 5);
 
+// Public track record: wins, losses, stop-outs and open picks must all be counted, with no per-user data.
+const trackRows = [
+  { direction: "LONG", status: "SETTLED", strategy_return_pct: 4, stop_hit: 0, target_hit: 1, generated_at: "2026-10-01T15:00:00Z" },
+  { direction: "LONG", status: "SETTLED", strategy_return_pct: -2, stop_hit: 1, target_hit: 0, generated_at: "2026-10-02T15:00:00Z" },
+  { direction: "SHORT", status: "SETTLED", strategy_return_pct: -6, stop_hit: 1, target_hit: 0, generated_at: "2026-10-03T15:00:00Z" },
+  { direction: "SHORT", status: "SETTLED", strategy_return_pct: 2, stop_hit: 0, target_hit: 0, generated_at: "2026-10-04T15:00:00Z" },
+];
+const trackDb = {
+  prepare(sql) {
+    return {
+      bind(...args) { this.args = args; return this; },
+      async all() { return { results: sql.includes("status = 'SETTLED'") ? trackRows : [] }; },
+      async first() { return { n: 3 }; },
+      async run() { return { success: true }; },
+    };
+  },
+};
+const trackResponse = await workerModule.default.fetch(new Request("https://example.test/api/track-record"), { DB: trackDb }, { waitUntil() {} });
+assert.equal(trackResponse.status, 200, "Track record must be public");
+const track = await trackResponse.json();
+assert.equal(track.available, true);
+assert.equal(track.summary.settled_picks, 4);
+assert.equal(track.summary.pending_picks, 3);
+assert.equal(track.summary.win_rate_pct, 50);
+assert.equal(track.summary.average_return_pct, -0.5);
+assert.equal(track.summary.average_win_pct, 3);
+assert.equal(track.summary.average_loss_pct, -4);
+assert.equal(track.summary.worst_loss_pct, -6);
+assert.equal(track.summary.profit_factor, 0.75);
+assert.equal(track.summary.stop_hit_rate_pct, 50);
+assert.equal(track.summary.target_hit_rate_pct, 25);
+assert.equal(track.summary.long.samples, 2);
+assert.equal(track.summary.short.average_return_pct, -2);
+assert.equal(track.since, "2026-10-01T15:00:00Z");
+assert.ok(!JSON.stringify(track).includes("user_id"), "Track record must not expose per-user data");
+const emptyTrack = await (await workerModule.default.fetch(new Request("https://example.test/api/track-record"), {}, { waitUntil() {} })).json();
+assert.equal(emptyTrack.available, false);
+
 class MobileFakeDb {
   constructor() { this.pairings = new Map(); this.sessions = new Map(); }
   prepare(sql) {

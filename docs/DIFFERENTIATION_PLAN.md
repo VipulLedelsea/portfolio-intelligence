@@ -1,0 +1,83 @@
+# Differentiation plan (draft)
+
+Goal: beat Zacks, Seeking Alpha Quant, Danelfin and similar apps on trust and usefulness, while staying cheaper. Current price is $14.99/month (see `PAYWALL_SETUP.md`).
+
+Competitor pricing figures come from third-party aggregators and are unverified. Check each vendor's own page before using them in marketing.
+
+## What competitors decide on (and what we copy)
+
+| Source | Core signal | What we take |
+|---|---|---|
+| Zacks Rank | Analyst earnings-estimate revisions (agreement, magnitude, upside, surprise) | Revisions factor |
+| Seeking Alpha Quant | Value, Growth, Profitability, Momentum, EPS Revisions, graded against sector peers | Sector-relative percentile scoring |
+| Danelfin | ML over technical, fundamental and sentiment features, with subscores and explanations | Subscores and "why" breakdown |
+| Morningstar | Fair value, moat, uncertainty | Uncertainty haircut |
+
+## Workstream 1: Public, graded track record (build first)
+
+Why first: the data already exists. The `recommendations` table in `db/schema.ts` stores entry, stop, targets, status, grade, `rawReturnPct`, `strategyReturnPct`, `targetHit` and `stopHit`, per user.
+
+Steps:
+1. Add an aggregate endpoint in `worker/runtime.js`, for example `/api/track-record`. It computes, over settled recommendations: count, hit rate, average return, average win vs. average loss, stop-hit rate, and the worst drawdown. It exposes no per-user data.
+2. Include open and failed calls in every number. No cherry-picking, no deleting.
+3. Add a "Track record" screen in iOS (new view next to `AnalysisView.swift`) with a plain disclosure: past results do not predict future results.
+4. Optional: a public web page built by `scripts/build-site.mjs`.
+
+Done when: the screen shows live aggregates and a test confirms counts match the table, including losses.
+
+Risks: small sample sizes early on. Show the sample size next to every percentage.
+
+## Workstream 2: Deterministic factor layer
+
+Why: today's fundamentals and sentiment scores come from LLM prompts (`engine/portfolio_intel/agents.py`) and are unvalidated. Competitors lead with quantified, repeatable factors.
+
+Licensing findings (from third-party sources, unverified; confirm with each vendor):
+- FMP, Finnhub, Massive (formerly Polygon) and EODHD restrict their standard or personal plans to non-commercial use. Showing data to paying app users needs a commercial or redistribution license, usually by quote.
+- Alpha Vantage has no consensus estimates per one comparison site.
+- Commercial pricing is unknown and probably high relative to $14.99/month revenue at small scale.
+- Our current market data comes from Robinhood. Its licensing for a commercial app is unresearched and needs checking before App Store launch.
+
+Phasing by data source:
+- Phase A (no new license): momentum and relative strength from price history we already fetch.
+- Phase B (likely free, confirm EDGAR fair-access rules): quality and value factors (ROIC, margins, FCF yield) from SEC EDGAR filings.
+- Phase C (deferred): estimate revisions, once subscriber revenue justifies a commercial license. Get written quotes first for "display to paying mobile subscribers", including storage, caching and attribution limits.
+
+Steps:
+1. Get vendor quotes for Phase C and decide later. Do not block Phases A and B on it.
+2. Add a `FactorClient` in `engine/portfolio_intel/clients.py` that computes 6 to 12 month relative strength (Phase A) and later ROIC, margins and FCF yield (Phase B), with estimate revisions added only in Phase C.
+3. Compute each metric as a percentile within the stock's sector. The scanner already carries sector labels from the S&P 500 constituent feed.
+4. Produce subscores: Technical (existing Supertrend/ADX), Fundamental, Revisions, Risk. Add an uncertainty haircut for volatile or thin-data names.
+5. Feed the scores into `_score_candidate` in `engine/portfolio_intel/engine.py` and the scanner rows, and keep Supertrend as the mandatory entry trigger.
+6. Backtest before labeling anything "predictive". Compare factor-ranked picks against the S&P 500 and the current scanner over past data. If it does not help, ship it only as context, not as a score.
+7. Show the "why" in the app: which factors raised or lowered each rating.
+
+Done when: unit tests in `engine/tests/test_engine.py` cover the percentile math with fixed data, and a backtest report is saved.
+
+Risks: data licensing and cost, and revisions may already be priced in, so keep expectations modest.
+
+## Workstream 3: Holdings-aware guidance
+
+Why: few retail apps tie ideas to what you already own. We already have `holdings` and `holding_trades`, and the engine's portfolio review step.
+
+Steps:
+1. Compute sector and single-name concentration from open holdings.
+2. Flag scanner ideas that overlap heavily with existing exposure.
+3. Add per-holding status (stop breached, setup flipped, target reached), shown in `HoldingsView.swift`.
+4. Optional: push alerts when a held name's status changes.
+
+Done when: a holding that crosses its stop or flips direction shows an alert, covered by a test.
+
+Risks: push notifications need an APNs setup and a privacy review.
+
+## Pricing and growth (small, decide separately)
+
+- Add a free tier with a few delayed scanner results.
+- Add an annual plan in the $120 to $149 range.
+- Keep the "research, not advice" disclaimer on every screen with a rating, and avoid "beats the market" claims.
+
+## Suggested order
+
+1. Workstream 1 (days, no new data cost).
+2. Workstream 2 provider decision, then the build and backtest.
+3. Workstream 3.
+4. Pricing changes once the track record is live.

@@ -1269,10 +1269,7 @@ async function analyze(symbol, market = MARKETS.US, env = {}) {
   const bear = makeReport("bear", symbol, direction === "SHORT" ? technicalScore : 100 - technicalScore, 0.7, direction === "SHORT" ? "Trend, momentum, and Supertrend are aligned for the bearish case." : "Headline risk, volatility, and a close below Supertrend are the main reasons the long setup could fail.", candidate.cautions.length ? candidate.cautions : ["No setup is certain."], ["Risk is defined by the invalidation level."], true);
   const price = snapshot.price;
   const entryReference = candidate.signal_entry_price || price;
-  const riskDistance = Math.max(2 * candidate.signal_atr, entryReference * 0.0125);
-  const stop = direction === "SHORT" ? entryReference + riskDistance : Math.max(0.01, entryReference - riskDistance);
-  const target1 = direction === "SHORT" ? Math.max(0.01, entryReference - 2 * riskDistance) : entryReference + 2 * riskDistance;
-  const target2 = direction === "SHORT" ? Math.max(0.01, entryReference - 3 * riskDistance) : entryReference + 3 * riskDistance;
+  const { stop, target1, target2 } = scenarioLevels(direction, entryReference, candidate.signal_atr);
   const signalStartedAt = Date.parse(snapshot.supertrend.signal_bar_started_at);
   const postSignalBars = snapshot.history.filter(row => !Number.isFinite(signalStartedAt) || Date.parse(row.date) > signalStartedAt);
   const target1Reached = direction === "SHORT"
@@ -1387,6 +1384,87 @@ async function fromCache(request, cacheName, maxAge, producer, ctx) {
     ctx.waitUntil(cache.put(cacheKey, stored.clone()).catch(() => {}));
   }
   return payload;
+}
+
+const SCANNER_USER_ID = "system:scanner";
+
+// Protective level and the two scenario targets, shared by full reports and logged scanner picks.
+function scenarioLevels(direction, entry, atr) {
+  const riskDistance = Math.max(2 * atr, entry * 0.0125);
+  const short = direction === "SHORT";
+  return {
+    stop: short ? entry + riskDistance : Math.max(0.01, entry - riskDistance),
+    target1: short ? Math.max(0.01, entry - 2 * riskDistance) : entry + 2 * riskDistance,
+    target2: short ? Math.max(0.01, entry - 3 * riskDistance) : entry + 3 * riskDistance,
+  };
+}
+
+// Every fresh entry the scanner surfaces is logged once, under a system account, so the public track record
+// covers all picks the app showed rather than only the tickers users chose to analyze.
+async function recordScannerPicks(env, payload) {
+  if (!env.DB || payload?.market !== "US") return 0;
+  const statements = [];
+  for (const candidate of payload.candidates || []) {
+    const entry = numeric(candidate.signal_entry_price);
+    const atr = numeric(candidate.signal_atr);
+    if (!candidate.symbol || !(entry > 0) || !(atr > 0) || !candidate.signal_confirmed_at || !["LONG", "SHORT"].includes(candidate.direction)) continue;
+    const { stop, target1, target2 } = scenarioLevels(candidate.direction, entry, atr);
+    statements.push(env.DB.prepare(`INSERT OR IGNORE INTO recommendations (id, user_id, symbol, action, direction, generated_at,
+      signal_confirmed_at, entry_price, current_price, stop_price, target_1, target_2, confidence, entry_status, daily_adx,
+      horizon_trading_days, status) VALUES (?, ?, ?, 'IDEA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 5, 'PENDING')`).bind(
+      crypto.randomUUID(), SCANNER_USER_ID, candidate.symbol, candidate.direction, payload.generated_at,
+      candidate.signal_confirmed_at, round(entry, 4), round(numeric(candidate.price), 4), round(stop, 4), round(target1, 4), round(target2, 4),
+      round(clamp(numeric(candidate.score) / 100, 0, 1), 3), candidate.entry_status, numeric(candidate.daily_adx),
+    ));
+  }
+  if (statements.length) await env.DB.batch(statements);
+  return statements.length;
+}
+
+// Public aggregate over settled scanner picks. Losses, stop-outs and open calls are all counted; nothing is filtered.
+function summarizeTrackRecord(rows, pendingCount) {
+  const settled = rows.filter(row => row.status === "SETTLED");
+  const returns = settled.map(row => numeric(row.strategy_return_pct));
+  const wins = returns.filter(value => value > 0);
+  const losses = returns.filter(value => value < 0);
+  const mean = values => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+  const grossWins = wins.reduce((sum, value) => sum + value, 0);
+  const grossLosses = Math.abs(losses.reduce((sum, value) => sum + value, 0));
+  const share = predicate => settled.length ? round(settled.filter(predicate).length / settled.length * 100, 1) : null;
+  const byDirection = direction => {
+    const group = settled.filter(row => row.direction === direction);
+    const values = group.map(row => numeric(row.strategy_return_pct));
+    return { samples: group.length, average_return_pct: values.length ? round(mean(values), 3) : null, win_rate_pct: values.length ? round(values.filter(value => value > 0).length / values.length * 100, 1) : null };
+  };
+  return {
+    settled_picks: settled.length,
+    pending_picks: pendingCount,
+    win_rate_pct: share(row => numeric(row.strategy_return_pct) > 0),
+    average_return_pct: returns.length ? round(mean(returns), 3) : null,
+    average_win_pct: wins.length ? round(mean(wins), 3) : null,
+    average_loss_pct: losses.length ? round(mean(losses), 3) : null,
+    worst_loss_pct: returns.length ? round(Math.min(...returns), 3) : null,
+    profit_factor: grossLosses > 0 ? round(grossWins / grossLosses, 3) : null,
+    stop_hit_rate_pct: share(row => Boolean(row.stop_hit)),
+    target_hit_rate_pct: share(row => Boolean(row.target_hit)),
+    long: byDirection("LONG"),
+    short: byDirection("SHORT"),
+  };
+}
+
+async function publicTrackRecord(db) {
+  if (!db) return { available: false, reason: "Track record storage is not configured." };
+  const settledResult = await db.prepare(`SELECT direction, status, strategy_return_pct, stop_hit, target_hit, generated_at
+    FROM recommendations WHERE user_id = ? AND status = 'SETTLED' AND action != 'PASS' ORDER BY generated_at ASC LIMIT 5000`).bind(SCANNER_USER_ID).all();
+  const pending = await db.prepare("SELECT COUNT(*) AS n FROM recommendations WHERE user_id = ? AND status = 'PENDING'").bind(SCANNER_USER_ID).first();
+  const rows = settledResult?.results || [];
+  return {
+    available: true,
+    since: rows[0]?.generated_at || null,
+    horizon_trading_days: 5,
+    summary: summarizeTrackRecord(rows, Number(pending?.n || 0)),
+    methodology: "Every fresh US entry the scanner surfaces is recorded once per ticker, signal close and direction, at the price available when it first appeared. Each pick is graded against its own stop and first target using daily bars over the next five completed sessions; the return is measured to the fifth close. Wins, losses, stop-outs and still-open picks are all included, and none are removed. Percentages with few picks are not meaningful. This is research history, not a prediction or advice.",
+  };
 }
 
 async function rememberRecommendation(db, userId, report) {
@@ -1605,6 +1683,7 @@ async function refreshScan(env, market) {
     try {
       await env.DB.prepare("UPDATE scan_cache SET payload = ?, generated_at = ?, refreshing_until = NULL WHERE market = ?").bind(JSON.stringify(payload), generatedAt, market.id).run();
     } catch { /* memory copy still serves this instance */ }
+    try { await recordScannerPicks(env, payload); } catch { /* logging must never break a scan */ }
   }
 }
 
@@ -2316,6 +2395,10 @@ async function handle(request, env, ctx) {
     try { return await finishGoogleSignIn(request, env); } catch { return redirect("/?signin=failed"); }
   }
   if (request.method === "GET" && url.pathname === "/auth/dev") return devSignIn(request, env);
+  if (request.method === "GET" && url.pathname === "/api/track-record") {
+    try { return json(await publicTrackRecord(env.DB), 200, { "cache-control": "public, max-age=300" }); }
+    catch (error) { return json({ error: cleanError(error) }, 502); }
+  }
   if (request.method === "GET" && url.pathname === "/health") return json({ status: "ok", read_only: true, order_submission_supported: false, data_source: "Robinhood" });
   if (request.method === "GET" && url.pathname === "/api/access") {
     try {
@@ -2422,6 +2505,10 @@ export default {
     if (market) ctx.waitUntil((async () => {
       await refreshScanIfDue(env, market, ctx).catch(() => {});
       await refreshHoldingsIfDue(env, market).catch(() => {});
+      // Once an hour, grade scanner picks whose five-session window has closed.
+      if (market.id === "US" && env.DB && new Date(event.scheduledTime).getUTCMinutes() < 5) {
+        await settlePendingRecommendations(env.DB, SCANNER_USER_ID, env).catch(() => {});
+      }
     })());
   },
 };
