@@ -65,8 +65,12 @@ function fmtPrice(value, market = MARKETS.US) {
   return `${market.symbolPrefix}${(Number.isFinite(number) ? number : 0).toFixed(market.decimals(number))}`;
 }
 
+const openFormatters = new Map();
 function marketIsOpen(market, now = new Date()) {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: market.tz === "UTC" ? "America/New_York" : market.tz, weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now).filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+  const openTz = market.tz === "UTC" ? "America/New_York" : market.tz;
+  let openFormat = openFormatters.get(openTz);
+  if (!openFormat) { openFormat = new Intl.DateTimeFormat("en-US", { timeZone: openTz, weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }); openFormatters.set(openTz, openFormat); }
+  const parts = Object.fromEntries(openFormat.formatToParts(now).filter(part => part.type !== "literal").map(part => [part.type, part.value]));
   const minutes = Number(parts.hour) * 60 + Number(parts.minute);
   const weekday = parts.weekday;
   if (market.id === "FX") {
@@ -500,12 +504,26 @@ async function loadUniverse() {
   return records;
 }
 
+// Building an Intl.DateTimeFormat is one of the most expensive things a request can do (the first one in a fresh
+// Worker loads the locale data), so each kind is built once per time zone and reused.
+const clockFormatters = new Map(), dayFormatters = new Map();
+function marketClock(tz, instant) {
+  let formatter = clockFormatters.get(tz);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+    clockFormatters.set(tz, formatter);
+  }
+  return Object.fromEntries(formatter.formatToParts(instant).filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+}
+function marketDayFormatter(tz) {
+  let formatter = dayFormatters.get(tz);
+  if (!formatter) { formatter = new Intl.DateTimeFormat("en-CA", { timeZone: tz }); dayFormatters.set(tz, formatter); }
+  return formatter;
+}
+
 function normalizeBars(item, timeframe, market = MARKETS.US) {
   const now = Date.now();
-  const nowParts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
-    timeZone: market.tz, year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
-  }).formatToParts(new Date(now)).filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+  const nowParts = marketClock(market.tz, new Date(now));
   const currentMarketDate = `${nowParts.year}-${nowParts.month}-${nowParts.day}`;
   const marketMinutes = Number(nowParts.hour) * 60 + Number(nowParts.minute);
   return (item?.historicals || []).filter(bar => bar && !bar.interpolated).map(bar => {
@@ -657,13 +675,10 @@ function standardDeviation(values) {
 // Supertrend (10, 3) with the best profit factor and stable results across halves, while 30m and below lost money.
 // Each market day splits into chunks of four hourly bars (US: 09:30-13:30 and 13:30-16:00).
 function aggregateEntryBars(hourly, size, market) {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
-    timeZone: market.tz, year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
-  }).formatToParts(new Date()).filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+  const parts = marketClock(market.tz, new Date());
   const today = `${parts.year}-${parts.month}-${parts.day}`;
   const dayClosed = Number(parts.hour) * 60 + Number(parts.minute) >= market.dailyCloseMinutes;
-  const dayFormat = new Intl.DateTimeFormat("en-CA", { timeZone: market.tz });
+  const dayFormat = marketDayFormatter(market.tz);
   const days = new Map();
   for (const bar of hourly) {
     const begins = Date.parse(bar.date);
