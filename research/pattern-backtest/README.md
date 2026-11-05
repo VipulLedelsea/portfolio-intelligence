@@ -25,3 +25,10 @@ Signals fire at the close; entry is the next open; 0.1% cost per side; one open 
 - No strategy shows a clear edge: means are about -0.4% to +0.15% per trade after 0.2% costs, against a baseline near 0%.
 - Target 1 is reached in only 1 to 4% of 5-day trades; 50% of the way is reached about 17 to 21% of the time. A 2R target is too far for a one-week hold.
 - Exit rules cannot create profit from random entries. Only entries with real predictive power can, and none of these showed any beyond the survivorship-biased "up 20%" control.
+
+## Near-target fraction sweep (backtest3.mjs, 2026-11-05)
+
+`node backtest3.mjs 5` uses scanner-like levels (R = max(2 x 4H ATR, 1.25%), stop at 1R, target 1 at 2R, with the 4H ATR approximated as 0.55 of a daily ATR) and exits at 50% to 100% of target 1.
+
+- Differences between fractions are a few hundredths of a percent per trade, well inside noise. Lower fractions raise the win rate (about 51% at 50% vs 45% at 90%) but not the average return.
+- 90% is at or near the best mean in every set tested and is reached in 17 to 20% of 5-day trades, so it is kept. It is not a source of edge: every entry set, including the daily Supertrend approximation, averaged about zero or below after costs.
