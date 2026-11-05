@@ -38,7 +38,7 @@ struct HoldingsView: View {
                                 Rectangle().fill(AppTheme.line).frame(height: 10)
                                 VStack(spacing: 0) {
                                     SectionTabs(selection: $detail, cases: HoldingsSection.detailCases)
-                                    scrolling(detail)
+                                    detailPager
                                 }
                                 .frame(height: split.bottom)
                             }
@@ -50,7 +50,7 @@ struct HoldingsView: View {
                                 Rectangle().fill(AppTheme.line).frame(width: 1)
                                 VStack(spacing: 0) {
                                     SectionTabs(selection: $detail, cases: HoldingsSection.detailCases)
-                                    scrolling(detail)
+                                    detailPager
                                 }
                                 .frame(maxWidth: .infinity)
                             }
@@ -104,6 +104,16 @@ struct HoldingsView: View {
             }
         }
     }
+    /// The Portfolio, Performance and History pages beside or below Positions. Swiping moves between them and the tabs above follow.
+    private var detailPager: some View {
+        TabView(selection: $detail) {
+            ForEach(HoldingsSection.detailCases) { tab in
+                scrolling(tab).tag(tab)
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+    }
+
     private func scrolling(_ tab: HoldingsSection) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) { page(for: tab) }
@@ -117,29 +127,20 @@ struct HoldingsView: View {
     private var pager: some View {
         VStack(spacing: 0) {
             SectionTabs(selection: $section, cases: HoldingsSection.allCases)
-            // Native paging: one horizontal scroll view that snaps a full page at a time, so a swipe always
-            // follows the finger and the tab bar above and the page below can never disagree.
-            GeometryReader { geo in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 0) {
-                        ForEach(HoldingsSection.allCases) { tab in
-                            ScrollView {
-                                VStack(alignment: .leading, spacing: 14) { page(for: tab) }
-                                    .padding(16)
-                                    .readableWidth()
-                                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                            }
-                            .refreshable { await Task { await model.refreshHoldings(manual: true) }.value }
-                            .frame(width: geo.size.width, height: geo.size.height)
-                            .id(tab)
-                        }
+            // A paged TabView keeps swiping and the tab bar above in step; the pages scroll vertically on their own.
+            TabView(selection: $section) {
+                ForEach(HoldingsSection.allCases) { tab in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 14) { page(for: tab) }
+                            .padding(16)
+                            .readableWidth()
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
-                    .scrollTargetLayout()
+                    .refreshable { await Task { await model.refreshHoldings(manual: true) }.value }
+                    .tag(tab)
                 }
-                .scrollTargetBehavior(.paging)
-                .scrollPosition(id: Binding<HoldingsSection?>(get: { section }, set: { if let tab = $0 { section = tab } }))
-                .animation(.snappy, value: section)
             }
+            .tabViewStyle(.page(indexDisplayMode: .never))
         }
     }
 
@@ -304,13 +305,12 @@ private struct HeroCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
         .background(alignment: .topTrailing) {
-            Circle().fill((positive ? AppTheme.mint : AppTheme.red).opacity(0.10))
-                .frame(width: 170, height: 170).blur(radius: 40).offset(x: 40, y: -50)
+            RadialGradient(colors: [(positive ? AppTheme.mint : AppTheme.red).opacity(0.14), .clear], center: .center, startRadius: 0, endRadius: 100)
+                .frame(width: 200, height: 200).offset(x: 40, y: -50).allowsHitTesting(false)
         }
         .background(AppTheme.panel, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(AppTheme.hairline, lineWidth: 1))
-        .animation(.smooth, value: total.value)
         .accessibilityElement(children: .combine)
     }
 }

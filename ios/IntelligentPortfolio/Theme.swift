@@ -108,22 +108,19 @@ struct SectionLabel: View {
     }
 }
 
-/// Open or closed state of the US market as a small pill, with a pulsing dot while open.
+/// Open or closed state of the US market as a small pill. Static on purpose: a looping animation here kept the nav bar redrawing and made paging and taps unreliable.
 struct MarketPill: View {
-    @State private var pulse = false
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             let status = USMarketClock.status(context.date)
             HStack(spacing: 6) {
                 Circle().fill(status.isOpen ? AppTheme.mint : AppTheme.muted).frame(width: 6, height: 6)
-                    .opacity(status.isOpen && pulse ? 0.35 : 1)
                 Text(status.text.replacingOccurrences(of: "US market ", with: "Market "))
                     .font(.caption).foregroundStyle(AppTheme.muted).lineLimit(1)
             }
             .padding(.horizontal, 10).padding(.vertical, 5)
             .background(AppTheme.raised, in: Capsule())
         }
-        .onAppear { withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { pulse = true } }
     }
 }
 
