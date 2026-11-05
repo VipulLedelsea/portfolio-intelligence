@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = resolve(new URL("..", import.meta.url).pathname);
+const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const workerPath = resolve(root, "dist/server/index.js");
 const manifestPath = resolve(root, "dist/.openai/hosting.json");
 const htmlPath = resolve(root, "engine/portfolio_intel/dashboard.html");

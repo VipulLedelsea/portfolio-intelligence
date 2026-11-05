@@ -1,7 +1,8 @@
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = resolve(new URL("..", import.meta.url).pathname);
+const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const html = await readFile(resolve(root, "engine/portfolio_intel/dashboard.html"), "utf8");
 const runtime = await readFile(resolve(root, "worker/runtime.js"), "utf8");
 const output = resolve(root, "dist");
