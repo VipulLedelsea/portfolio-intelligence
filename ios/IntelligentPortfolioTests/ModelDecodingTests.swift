@@ -30,6 +30,17 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertNil(record.summary?.winRatePct)
     }
 
+    func testMarketTrendDecodesDayChangeAndOldPayloads() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let withChange = #"{"market":"US","index_symbol":"SPY","state":"MIXED","index_state":"DOWN","headline":"h","note":"n","label":"S&P 500","daily":"DOWN","four_hour":"DOWN","adx":16,"day_change_pct":0.82,"breadth_daily_pct":71}"#
+        let trend = try decoder.decode(MarketTrend.self, from: Data(withChange.utf8))
+        XCTAssertEqual(trend.state, "MIXED")
+        XCTAssertEqual(trend.dayChangePct, 0.82)
+        let old = #"{"index_symbol":"SPY","state":"DOWN","headline":"h","note":"n","label":"S&P 500","daily":"DOWN","four_hour":"DOWN","adx":16,"breadth_daily_pct":null}"#
+        XCTAssertNil(try decoder.decode(MarketTrend.self, from: Data(old.utf8)).dayChangePct)
+    }
+
     func testPairingExpiryParsesFractionalSeconds() throws {
         XCTAssertNotNil(PairingExpiryParser.date(from: "2026-10-31T12:00:00.000Z"))
     }

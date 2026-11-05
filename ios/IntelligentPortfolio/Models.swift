@@ -540,5 +540,6 @@ struct MarketTrend: Decodable, Sendable {
     let daily: String
     let fourHour: String
     let adx: Double
+    let dayChangePct: Double?
     let breadthDailyPct: Double?
 }

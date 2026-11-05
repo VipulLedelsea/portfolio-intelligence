@@ -1035,27 +1035,45 @@ const MARKET_INDEXES = {
   FX: [{ symbol: "DX-Y.NYB", label: "US Dollar Index" }],
 };
 
+// Share of scanned stocks in a daily uptrend at or above this reads as a strong majority, at or below the lower bound as a weak one.
+const BREADTH_STRONG_PCT = 60, BREADTH_WEAK_PCT = 40;
+
 function marketTrend(info, index, snapshots, withBreadth = true, marketId = null) {
   if (!info || !index) return null;
   const daily = index.daily_supertrend?.direction === "LONG" ? "UP" : "DOWN";
   const fourHour = index.supertrend?.direction === "LONG" ? "UP" : "DOWN";
   const all = [...snapshots.values()];
   const share = pick => all.length ? round(all.filter(snapshot => pick(snapshot) === "LONG").length / all.length * 100, 0) : null;
-  const state = daily === "UP" && fourHour === "UP" ? "UP" : daily === "DOWN" && fourHour === "DOWN" ? "DOWN" : "MIXED";
-  const headline = state === "UP" ? "Market is in an uptrend" : state === "DOWN" ? "Market is in a downtrend"
+  // Forex pairs are not stocks, so "share of pairs trending up" says nothing about the market and is left out there.
+  const showBreadth = withBreadth && marketId !== "FX";
+  const breadthDaily = showBreadth ? share(snapshot => snapshot.daily_supertrend?.direction) : null;
+  const indexState = daily === "UP" && fourHour === "UP" ? "UP" : daily === "DOWN" && fourHour === "DOWN" ? "DOWN" : "MIXED";
+  let state = indexState;
+  let headline = indexState === "UP" ? "Market is in an uptrend" : indexState === "DOWN" ? "Market is in a downtrend"
     : daily === "UP" ? "Choppy: daily up, 4H down" : "Choppy: daily down, 4H up";
-  const note = state === "UP" ? "Fresh long entries are moving with the market."
-    : state === "DOWN" ? "Long entries are going against the market. Watch protective levels closely."
+  let note = indexState === "UP" ? "Fresh long entries are moving with the market."
+    : indexState === "DOWN" ? "Long entries are going against the market. Watch protective levels closely."
     : daily === "UP" ? "A pullback inside an uptrend. Fresh entries are less reliable until the 4H turns up."
     : "A bounce inside a downtrend. Treat long entries with extra care.";
+  // The index trend line lags and can disagree with the stocks underneath it, so a strong split reads as mixed.
+  if (breadthDaily != null && indexState === "DOWN" && breadthDaily >= BREADTH_STRONG_PCT) {
+    state = "MIXED";
+    headline = "Mixed: index trend down, most stocks still up";
+    note = `The index trend line is down, but ${breadthDaily}% of stocks are in daily uptrends. The index tends to lag, so treat the market as mixed until it confirms.`;
+  } else if (breadthDaily != null && indexState === "UP" && breadthDaily <= BREADTH_WEAK_PCT) {
+    state = "MIXED";
+    headline = "Mixed: index trend up, few stocks up";
+    note = `The index trend line is up, but only ${breadthDaily}% of stocks are in daily uptrends. A narrow rally is less reliable.`;
+  }
   return {
-    state, headline, note,
+    state, index_state: indexState, headline, note,
     market: marketId, index_symbol: info.symbol, label: info.label,
     daily, four_hour: fourHour,
     adx: round(numeric(index.daily_adx?.value), 0),
-    breadth_daily_pct: withBreadth ? share(snapshot => snapshot.daily_supertrend?.direction) : null,
-    breadth_4h_pct: withBreadth ? share(snapshot => snapshot.supertrend?.direction) : null,
-    stocks_counted: withBreadth ? all.length : null,
+    day_change_pct: Number.isFinite(Number(index.return_1d_pct)) ? round(Number(index.return_1d_pct), 2) : null,
+    breadth_daily_pct: breadthDaily,
+    breadth_4h_pct: showBreadth ? share(snapshot => snapshot.supertrend?.direction) : null,
+    stocks_counted: showBreadth ? all.length : null,
     as_of: index.market_time || null,
   };
 }

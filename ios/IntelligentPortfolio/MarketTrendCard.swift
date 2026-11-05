@@ -39,6 +39,7 @@ struct MarketTrendCard: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 6, alignment: .leading)], alignment: .leading, spacing: 6) {
                 chip("Daily \(trend.daily == "UP" ? "up" : "down")")
                 chip("4H \(trend.fourHour == "UP" ? "up" : "down")")
+                if let change = trend.dayChangePct { chip(String(format: "Today %+.2f%%", change)) }
                 chip("ADX \(Int(trend.adx))")
                 if let breadth = trend.breadthDailyPct { chip("\(Int(breadth))% of stocks up") }
             }
