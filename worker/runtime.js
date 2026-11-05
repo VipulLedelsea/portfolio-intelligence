@@ -1704,7 +1704,7 @@ async function refreshScanIfDue(env, market, ctx, { force = false, wait = false 
   if (!force && age < refreshInterval(market)) return stored;
   if (!force && !marketIsOpen(market) && stored && age < AUTO_REFRESH_CLOSED_SECONDS) return stored;
   if (await claimScanRefresh(env, market)) {
-    const work = refreshScan(env, market).catch(() => backOffScan(env, market));
+    const work = refreshScan(env, market).catch(error => { console.error(`scan refresh failed for ${market.id}: ${cleanError(error)}`); return backOffScan(env, market); });
     ctx.waitUntil(work);
     if (!stored || wait) await work;
   }
