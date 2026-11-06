@@ -133,3 +133,7 @@ Fixed rules, no fitting. Path-aware 5-day long trades, levels move only after a 
 ### Target distance (ml_monitor.py targets, 2026-11-06)
 
 Stop 4 ATR with a target at 0.75 / 1 / 1.5 / 2 / 3 ATR, on stressed dips, all dips and random stock-days: the target is reached 59% to 67% / 48% to 55% / 30% to 35% / 18% to 21% / 6% to 7% of the time, and the win rate is 65% to 72% / 59% to 66% / 53% to 60% / 51% to 58% / 50% to 57%. Average return rises with distance up to about 2 ATR (for example +0.52% at 1 ATR and +0.56% at 2 ATR on stressed dips) and is flat beyond. A 4 ATR stop beats a 3 ATR stop at every target by 0.02% to 0.03% per trade, with 2% instead of 5% of trades stopped out. The app now uses target 1 at 1 ATR and target 2 at 2 ATR.
+
+### Conservative stops (ml_monitor.py conservative, 2026-11-06)
+
+Stop 1.5 to 4 ATR against targets 1, 1.5 and 2 ATR. Tighter stops cost little return and shrink the tail: on stressed dips, stop 2 ATR / target 1.5 ATR averaged +0.49% against +0.56% for 4 / 1.5, with 13.6% of trades stopped out instead of 2.1% and the worst 5% of trades averaging -8.0% instead of -9.2%. Stop 1.5 ATR was stopped out on 21% to 28% of trades and gave up more. The app now uses stop 2 ATR, target 1 at 1 ATR and target 2 at 2 ATR, which puts reward equal to risk at target 2. The protective ratchet was tested at a 4 ATR starting stop and has not been re-tested at 2.

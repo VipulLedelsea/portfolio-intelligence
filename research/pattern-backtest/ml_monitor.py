@@ -160,6 +160,8 @@ POLICIES = {
     "Combo: breakeven after +1 ATR + market tighten + let run": (combo(breakeven(1.0), market_tighten(-0.015, 1.5), let_run(1.0, 3.0)), 4, 2),
 }
 
+if len(sys.argv) > 1 and sys.argv[1] == "conservative":
+    POLICIES = {f"Stop {st} ATR / target {tg} ATR": (static, st, tg) for st in (1.5, 2, 2.5, 3, 4) for tg in (1, 1.5, 2)}
 if len(sys.argv) > 1 and sys.argv[1] == "targets":
     POLICIES = {f"Static stop {st} ATR / target {tg} ATR": (static, st, tg) for st in (3, 4) for tg in (0.75, 1, 1.5, 2, 3)}
 sv = spy_feat.spy_vol20

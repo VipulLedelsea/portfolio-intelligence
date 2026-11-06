@@ -427,7 +427,7 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
     const top = stressed.candidates[0];
     assert.equal(top.sharp, true, "RSI(2) under 5, below the 5-day average and down 5% in 3 days is a sharp dip");
     assert.ok(top.stop_price < top.signal_close && top.signal_close < top.target_1 && top.target_1 < top.target_2, "Dip levels must be ordered stop < close < target 1 < target 2");
-    assert.ok(Math.abs((top.signal_close - top.stop_price) / (top.target_1 - top.signal_close) - 4) < 0.4, "Stop is 4 ATR and target 1 is 1 ATR, so the stop is four times as far");
+    assert.ok(Math.abs((top.signal_close - top.stop_price) / (top.target_1 - top.signal_close) - 2) < 0.2, "Stop is 2 ATR and target 1 is 1 ATR, so the stop is twice as far");
     assert.ok(Math.abs((top.target_2 - top.signal_close) / (top.target_1 - top.signal_close) - 2) < 0.2, "Target 2 is 2 ATR and target 1 is 1 ATR");
     assert.equal(stressed.waiting.length, 0);
     const quiet = await scenario("b", symbol => /^S00\d$/.test(symbol));
@@ -507,7 +507,7 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
     assert.deepEqual(kindsFor("hold-bbb").sort(), ["INITIAL", "MARKET_TIGHTEN"]);
     const atrB = rows.find(r => r.id === "hold-bbb").monitor_atr;
     assert.ok(Math.abs(byId["hold-bbb"].stop_level - (100.4 - 1.5 * atrB)) < 0.01, "A sharp market drop pulls the stop up to 1.5 ATR under that day's close");
-    assert.ok(byId["hold-bbb"].stop_level > 100 - 4 * atrB && byId["hold-bbb"].stop_level < 100, "The market-tightened stop sits between the initial stop and the buy price");
+    assert.ok(byId["hold-bbb"].stop_level > 100 - 2 * atrB && byId["hold-bbb"].stop_level < 100, "The market-tightened stop sits between the initial stop and the buy price");
     assert.equal(byId["hold-bbb"].stop_basis, "RAISED");
     assert.match(byId["hold-bbb"].level_events.find(e => e.kind === "MARKET_TIGHTEN").reason, /S&P 500 fell 2\.1%/);
     // CCC already had a higher stop stored: a recompute must never lower it.

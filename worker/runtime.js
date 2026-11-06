@@ -1246,7 +1246,7 @@ function buyRange(direction, entry, atr, price) {
 // Long side only; shorts were not tested. The gate was chosen after seeing that dips cluster in selloffs, so every pick
 // is logged under its own strategy to confirm it on live results.
 const DIP_RSI_MAX = 10, DIP_SHARP_RSI = 5, DIP_SHARP_DROP_PCT = -5;
-const DIP_STOP_ATR = 4, DIP_TARGET_1_ATR = 1, DIP_TARGET_2_ATR = 2; // the same stock levels as STOP_ATR, TARGET_1_ATR and TARGET_2_ATR
+const DIP_STOP_ATR = 2, DIP_TARGET_1_ATR = 1, DIP_TARGET_2_ATR = 2; // the same stock levels as STOP_ATR, TARGET_1_ATR and TARGET_2_ATR
 const DIP_GATE_SPY_5D_PCT = -1.5, DIP_GATE_BREADTH = 0.06;
 
 function scoreDip(snapshot, metadata = {}) {
@@ -1291,7 +1291,7 @@ function buildDipScan(snapshots, spy, metadata) {
     scanned: ready.length, dip_count: dips.length,
     candidates: open ? dips.slice(0, 20) : [],
     waiting: open ? [] : dips.slice(0, 20),
-    method: "Dip scan: the close is above the 200-day average and RSI(2) is under 10; sharper dips (RSI(2) under 5, below the 5-day average, down 5% or more in 3 days) rank higher. Ideas appear only while the market is under stress. Entry is the next open, stop 4 daily ATRs below, targets 1 and 2 ATRs above, exit by the close of day 5.",
+    method: "Dip scan: the close is above the 200-day average and RSI(2) is under 10; sharper dips (RSI(2) under 5, below the 5-day average, down 5% or more in 3 days) rank higher. Ideas appear only while the market is under stress. Entry is the next open, stop 2 daily ATRs below, targets 1 and 2 ATRs above, exit by the close of day 5.",
   };
 }
 
@@ -1520,12 +1520,13 @@ const SCANNER_USER_ID = "system:scanner";
 function riskFloorFraction(marketId) { return marketId === "FX" ? 0.0025 : 0.0125; }
 
 // Protective level and the two scenario targets, shared by full reports and logged scanner picks.
-// Stocks use daily-ATR levels from the backtests in research/pattern-backtest (backtest8.mjs, ml_monitor.py): a wide 4 ATR
-// protective level (hit by about 2% of 5-day trades, against 5% at 3 ATR and 28% at 1.5 ATR, and a slightly better average
-// return), a first target 1 ATR away that is reached about half the time, and a second target 2 ATR away reached about one
-// time in five. Targets farther out were rarely reached in 5 days. Forex was not tested and keeps the earlier 2 x 4H-ATR "R"
-// levels at 2R and 3R.
-const STOP_ATR = 4, TARGET_1_ATR = 1, TARGET_2_ATR = 2;
+// Stocks use daily-ATR levels from the backtests in research/pattern-backtest (backtest8.mjs, ml_monitor.py): a 2 ATR protective
+// level, a first target 1 ATR away that is reached about half the time, and a second target 2 ATR away reached about one time
+// in five, so reward equals risk at target 2. A wider 4 ATR stop averaged about 0.06% to 0.07% more per trade and was hit by only
+// 2% of trades (against 12% to 17% at 2 ATR), but it put the stop four times farther than target 1, which is too much risk per
+// share to show as a recommendation; 2 ATR also cuts the average of the worst 5% of trades from about -9.2% to -8.0%. Targets
+// farther out were rarely reached in 5 days. Forex was not tested and keeps the earlier 2 x 4H-ATR "R" levels at 2R and 3R.
+const STOP_ATR = 2, TARGET_1_ATR = 1, TARGET_2_ATR = 2;
 function scenarioLevels(direction, entry, atr, marketId = "US", dailyAtr = 0) {
   const short = direction === "SHORT";
   if (marketId !== "FX" && dailyAtr > 0) {
@@ -2072,7 +2073,7 @@ async function holdingSnapshotsFor(env, market, symbols, { manual = false } = {}
 // ---- Position monitor: the protective ratchet (US positions) ----
 // Each pass recomputes a position's levels from its buy price, the ATR when monitoring began, the highest price seen since
 // entry, and the market. Levels only move in the safe direction (stop up, targets out), so a pass can be repeated at any time.
-//   Start:     stop 4 ATR below the buy price, target 1 at +1 ATR, target 2 at +2 ATR.
+//   Start:     stop 2 ATR below the buy price, target 1 at +1 ATR, target 2 at +2 ATR.
 //   Breakeven: once the price has traded 1 ATR above the buy price, the stop moves up to the buy price and the targets move
 //              out to +3 and +4 ATR ("let winners run").
 //   Market:    on any completed day the S&P 500 (SPY) fell 1.5% or more, the stop moves up to 1.5 ATR under that day's close.
@@ -2114,7 +2115,7 @@ function monitorLevels(row, snapshot, spy) {
     if (tightened > stop) { stop = tightened; events.push({ kind: "MARKET_TIGHTEN", reason: `The S&P 500 fell ${Math.abs(move * 100).toFixed(1)}% on ${bar.d}, so the protective level moved up to ${fmt(stop)}, one and a half daily ranges under that day's close.` }); }
   }
   const basis = stop > buy + 1e-9 ? "RAISED" : stop >= buy - 1e-9 ? "BREAKEVEN" : stop > baseStop + 1e-9 ? "RAISED" : "INITIAL";
-  const stopText = basis === "INITIAL" ? "four daily ranges below your buy price" : basis === "BREAKEVEN" ? "raised to your buy price once the trade gained one daily range" : "raised after a sharp market drop";
+  const stopText = basis === "INITIAL" ? "two daily ranges below your buy price" : basis === "BREAKEVEN" ? "raised to your buy price once the trade gained one daily range" : "raised after a sharp market drop";
   return { stop, target1, target2, atr, peak, basis, stopText, events };
 }
 
@@ -2152,7 +2153,7 @@ async function monitorHoldings(env, market) {
 }
 
 // A hold / watch / take-profit / exit read on a long position, from the same engine that ranks the scanner.
-// The protective level sits 4 daily ATRs (at least 1%) below the buy price; target 1 is 1 daily ATR above it and
+// The protective level sits 2 daily ATRs (at least 1%) below the buy price; target 1 is 1 daily ATR above it and
 // target 2 is 2 daily ATRs above (see STOP_ATR). US positions pass `levels` from the position monitor, which ratchets the stop up
 // and the targets out as the trade and the market develop; other markets use the fixed levels.
 function evaluateHolding(holding, snapshot, levels = null) {
@@ -2167,7 +2168,7 @@ function evaluateHolding(holding, snapshot, levels = null) {
   const stopLevel = levels ? levels.stop : Math.max(0.01, buy - Math.max(STOP_ATR * atr, buy * 0.01));
   const trailing = trend4h === "LONG" ? Math.max(stopLevel, numeric(snapshot.supertrend?.value)) : stopLevel;
   const target1 = levels ? levels.target1 : buy + TARGET_1_ATR * atr, target2 = levels ? levels.target2 : buy + TARGET_2_ATR * atr;
-  const stopText = levels ? levels.stopText : "four daily ranges below your buy price";
+  const stopText = levels ? levels.stopText : "two daily ranges below your buy price";
   const pnlPct = (price / buy - 1) * 100;
   const reasons = [];
   let action, headline;
