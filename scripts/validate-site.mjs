@@ -430,6 +430,9 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
     assert.ok(Math.abs((top.signal_close - top.stop_price) / (top.target_1 - top.signal_close) - 2) < 0.2, "Stop is 2 ATR and target 1 is 1 ATR, so the stop is twice as far");
     assert.ok(Math.abs((top.target_2 - top.signal_close) / (top.target_1 - top.signal_close) - 2) < 0.2, "Target 2 is 2 ATR and target 1 is 1 ATR");
     assert.equal(stressed.waiting.length, 0);
+    assert.equal(top.bars.length, 60, "Each dip pick carries 60 daily bars for its chart");
+    assert.deepEqual(top.reference_lines.map(line => line.key), ["low_20", "high_10", "high_20", "sma_20", "sma_50", "sma_200"], "Reference lines: 20-day low, 10- and 20-day highs, 20-, 50- and 200-day averages");
+    assert.ok(top.reference_lines.find(line => line.key === "low_20").value <= top.reference_lines.find(line => line.key === "high_20").value);
     const quiet = await scenario("b", symbol => /^S00\d$/.test(symbol));
     assert.equal(quiet.gate.open, false, "Ten dipping stocks with a calm SPY must leave the gate closed");
     assert.equal(quiet.candidates.length, 0, "No dip ideas while the market is calm");
@@ -500,6 +503,7 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
     assert.ok(atr > 0, "The ATR the levels are anchored to is stored once");
     // AAA reached buy + 1 ATR: stop to the buy price, targets out to +3 and +4 ATR.
     assert.ok(byId["hold-aaa"].stop_level >= 100 - 1e-6, "Once the trade has gained one ATR the stop must be at least the buy price");
+    assert.ok(byId["hold-aaa"].reference_lines.length >= 5 && byId["hold-aaa"].reference_lines.every(line => line.value > 0), "Holdings carry chart reference lines");
     assert.ok(Math.abs(byId["hold-aaa"].target_1 - (100 + 3 * atr)) < 0.01 && Math.abs(byId["hold-aaa"].target_2 - (100 + 4 * atr)) < 0.01, "Targets move out to 3 and 4 ATR");
     const kindsFor = id => events.filter(e => e.holding_id === id).map(e => e.kind);
     assert.deepEqual(kindsFor("hold-aaa").sort(), ["BREAKEVEN", "INITIAL", "TARGETS_RAISED"]);

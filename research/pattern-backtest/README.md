@@ -137,3 +137,12 @@ Stop 4 ATR with a target at 0.75 / 1 / 1.5 / 2 / 3 ATR, on stressed dips, all di
 ### Conservative stops (ml_monitor.py conservative, 2026-11-06)
 
 Stop 1.5 to 4 ATR against targets 1, 1.5 and 2 ATR. Tighter stops cost little return and shrink the tail: on stressed dips, stop 2 ATR / target 1.5 ATR averaged +0.49% against +0.56% for 4 / 1.5, with 13.6% of trades stopped out instead of 2.1% and the worst 5% of trades averaging -8.0% instead of -9.2%. Stop 1.5 ATR was stopped out on 21% to 28% of trades and gave up more. The app now uses stop 2 ATR, target 1 at 1 ATR and target 2 at 2 ATR, which puts reward equal to risk at target 2. The protective ratchet was tested at a 4 ATR starting stop and has not been re-tested at 2.
+
+### Chart-based levels (ml_chart.py, 2026-11-06)
+
+Stops under the 3-, 5-, 10- and 20-day low (minus 0.25 ATR, kept between 1 and 3 ATR), targets at the 5-, 10- and 20-day high or the 5-, 10- and 20-day average (kept between 0.5 and 3 ATR), against ATR levels, on stressed dips, all dips and random stock-days (5-day holds, same entries and costs as above).
+
+- **Stops under swing lows lost on every set.** On stressed dips every chart stop averaged 0.07% to 0.25% less per trade than a 2 ATR stop. A dip puts the stock at or near a fresh low, so a swing-low stop sits only about 1 ATR (2.5% to 3% of price) below the entry and was hit by 30% to 39% of trades, against 14% for 2 ATR. The 20-day low was the least bad, and still lost 0.07%.
+- **Targets at prior highs are far and rarely reached.** Reached 10% to 16% of the time at 2.4 to 3 ATR, with no gain in return. Targets at moving averages were close (about 1 ATR) and reached about half the time, but returned less.
+- **Hybrids that use the chart only to pull levels in did not help either.** A stop at the closer of 2 ATR and the 20-day low cost 0.02% to 0.1% per trade; a 2 ATR target capped just under the 10- or 20-day high changed the return by under 0.02% on dips (the prior high is almost never closer than 2 ATR after a dip), and about +0.01% on random stock-days.
+- **A more balanced fixed pair:** 2 ATR stop / 2 ATR target (reward equals risk) beat 2 / 1 on all three sets (+0.034%, +0.043% and +0.001% per trade), with the target reached about 21% of the time instead of 54%.

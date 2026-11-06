@@ -144,6 +144,8 @@ struct DipPick: Decodable, Identifiable, Hashable, Sendable {
     let stopPrice: Double
     let target1: Double
     let target2: Double
+    let referenceLines: [ReferenceLine]?
+    let bars: [DailyBar]?
 }
 
 struct Candidate: Decodable, Identifiable, Hashable, Sendable {
@@ -242,7 +244,24 @@ struct ChartPayload: Decodable, Sendable {
     let source: String?
     let series: [Candle]
     let levels: ScenarioLevels
+    /// Chart context (20-day low, recent highs, moving averages). Reference only: they do not set the stop or targets.
+    let referenceLines: [ReferenceLine]?
     let explanation: [String]?
+}
+
+struct ReferenceLine: Decodable, Identifiable, Hashable, Sendable {
+    var id: String { key }
+    let key: String
+    let label: String
+    let value: Double
+}
+
+struct DailyBar: Decodable, Hashable, Sendable {
+    let d: String
+    let o: Double
+    let h: Double
+    let l: Double
+    let c: Double
 }
 
 struct ScenarioLevels: Decodable, Sendable {
@@ -391,6 +410,7 @@ struct Holding: Decodable, Identifiable, Sendable {
     let trailingLevel: Double?
     let target1: Double?
     let target2: Double?
+    let referenceLines: [ReferenceLine]?
     /// The position monitor's recent changes to this position's levels, newest first, each with its reason.
     let levelEvents: [LevelEvent]?
     let trend4h: String?

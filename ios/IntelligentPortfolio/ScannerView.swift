@@ -520,6 +520,7 @@ private struct ScannerBoxHeader: View {
 /// The dip scan: a banner for the market gate, then the dips (only while the gate is open) with their stop and targets.
 private struct DipScanSection: View {
     let dip: DipScan
+    @State private var selected: DipPick?
 
     var body: some View {
         VStack(spacing: 12) {
@@ -540,7 +541,7 @@ private struct DipScanSection: View {
                 ListFrame {
                     ForEach(Array(picks.enumerated()), id: \.element.id) { index, pick in
                         if index > 0 { RowDivider() }
-                        DipRow(pick: pick, active: true)
+                        Button { selected = pick } label: { DipRow(pick: pick, active: true) }.buttonStyle(.plain)
                     }
                 }
             } else if let waiting = dip.waiting, !waiting.isEmpty {
@@ -553,7 +554,7 @@ private struct DipScanSection: View {
                 ListFrame {
                     ForEach(Array(waiting.prefix(8).enumerated()), id: \.element.id) { index, pick in
                         if index > 0 { RowDivider() }
-                        DipRow(pick: pick, active: false)
+                        Button { selected = pick } label: { DipRow(pick: pick, active: false) }.buttonStyle(.plain)
                     }
                 }
             }
@@ -561,6 +562,60 @@ private struct DipScanSection: View {
                 .font(.caption2).foregroundStyle(AppTheme.muted)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .sheet(item: $selected) { pick in DipDetailSheet(pick: pick) }
+    }
+}
+
+/// A dip pick's daily chart with its entry, stop and targets, and the chart reference lines beside them.
+private struct DipDetailSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let pick: DipPick
+    private func money(_ value: Double) -> String { PriceFormat.string(value, prefix: pick.currencySymbol, decimals: pick.priceDecimals) }
+    private var candles: [Candle] {
+        (pick.bars ?? []).map { Candle(date: $0.d, open: $0.o, high: $0.h, low: $0.l, close: $0.c, supertrend: nil, supertrendDirection: nil, barStatus: nil) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("\(pick.company) · \(pick.label)").font(.subheadline).foregroundStyle(AppTheme.muted)
+                    if candles.count > 1 {
+                        CandlestickChart(series: candles,
+                                         levels: ScenarioLevels(reference: pick.signalClose, current: pick.price, risk: pick.stopPrice, target1: pick.target1, target2: pick.target2),
+                                         referenceLines: pick.referenceLines ?? [])
+                            .aspectRatio(1.5, contentMode: .fit)
+                            .frame(minHeight: 240, maxHeight: 440)
+                            .panel()
+                        Text("Daily candles, last 60 sessions. Amber is the signal close, red the stop, green the targets, blue dotted lines the chart reference.")
+                            .font(.caption).foregroundStyle(AppTheme.muted)
+                    }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
+                        tile("Signal close", money(pick.signalClose))
+                        tile("Now", money(pick.price))
+                        tile("Stop (2 ATR)", money(pick.stopPrice))
+                        tile("Target 1 (1 ATR)", money(pick.target1))
+                        tile("Target 2 (2 ATR)", money(pick.target2))
+                        tile("RSI(2)", String(format: "%.0f", pick.rsi2))
+                    }
+                    ReferenceLinesList(lines: pick.referenceLines ?? [], currency: pick.currencySymbol, decimals: pick.priceDecimals)
+                }
+                .padding(16)
+            }
+            .background(AppTheme.background)
+            .navigationTitle(pick.symbol)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+        }
+    }
+
+    private func tile(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading) {
+            Text(title.uppercased()).font(.caption2).foregroundStyle(AppTheme.muted)
+            Text(value).font(.headline.monospaced())
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
     }
 }
 

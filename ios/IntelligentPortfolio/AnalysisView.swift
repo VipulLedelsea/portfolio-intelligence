@@ -182,7 +182,7 @@ struct AnalysisContent: View {
                 Group {
                     switch chartMode {
                     case .signal:
-                        CandlestickChart(series: chart.series, levels: chart.levels)
+                        CandlestickChart(series: chart.series, levels: chart.levels, referenceLines: chart.referenceLines ?? [])
                             .aspectRatio(1.5, contentMode: .fit)
                             .frame(minHeight: 240, maxHeight: 440)
                             .panel()
@@ -208,6 +208,7 @@ struct AnalysisContent: View {
                 }
             }
             levels(chart.levels, analysis: analysis)
+            ReferenceLinesList(lines: chart.referenceLines ?? [], currency: analysis.currencySymbol, decimals: analysis.priceDecimals)
         }
 
         VStack(alignment: .leading, spacing: 10) {
@@ -264,14 +265,47 @@ struct AnalysisContent: View {
     }
 }
 
-private struct CandlestickChart: View {
+/// Chart lines that give context (20-day low, recent highs, moving averages) but do not set any level.
+struct ReferenceLinesList: View {
+    let lines: [ReferenceLine]
+    let currency: String?
+    let decimals: Int?
+    var body: some View {
+        if !lines.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                SectionLabel(text: "Chart reference · does not set the levels")
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], alignment: .leading, spacing: 6) {
+                    ForEach(lines) { line in
+                        HStack {
+                            Text(line.label).font(.caption).foregroundStyle(AppTheme.muted)
+                            Spacer(minLength: 4)
+                            Text(PriceFormat.string(line.value, prefix: currency, decimals: decimals)).font(.caption.monospaced())
+                        }
+                    }
+                }
+                Text("Backtests found stops under swing lows and targets at prior highs did worse than the volatility-based levels, so these are for reading the chart only.")
+                    .font(.caption2).foregroundStyle(AppTheme.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .panel()
+        }
+    }
+}
+
+struct CandlestickChart: View {
     let series: [Candle]
     let levels: ScenarioLevels
+    var referenceLines: [ReferenceLine] = []
 
     var body: some View {
         Canvas { context, size in
             guard series.count > 1 else { return }
-            let allPrices = series.flatMap { [$0.low, $0.high] } + [levels.risk, levels.reference, levels.target1, levels.target2]
+            let basePrices = series.flatMap { [$0.low, $0.high] } + [levels.risk, levels.reference, levels.target1, levels.target2]
+            guard let baseLow = basePrices.min(), let baseHigh = basePrices.max(), baseHigh > baseLow else { return }
+            // Only reference lines near the visible prices are drawn, so a distant average never squashes the candles.
+            let pad = (baseHigh - baseLow) * 0.2
+            let shown = referenceLines.filter { $0.value >= baseLow - pad && $0.value <= baseHigh + pad }
+            let allPrices = basePrices + shown.map(\.value)
             guard let low = allPrices.min(), let high = allPrices.max(), high > low else { return }
             let range = high - low
             let xStep = size.width / CGFloat(series.count - 1)
@@ -294,6 +328,14 @@ private struct CandlestickChart: View {
                 line.move(to: CGPoint(x: 0, y: y(value)))
                 line.addLine(to: CGPoint(x: size.width, y: y(value)))
                 context.stroke(line, with: .color(color.opacity(0.8)), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+            }
+
+            for line in shown {
+                var path = Path()
+                path.move(to: CGPoint(x: 0, y: y(line.value)))
+                path.addLine(to: CGPoint(x: size.width, y: y(line.value)))
+                context.stroke(path, with: .color(AppTheme.sky.opacity(0.55)), style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
+                context.draw(Text(line.label).font(.system(size: 9)).foregroundColor(AppTheme.sky), at: CGPoint(x: size.width - 4, y: y(line.value) - 6), anchor: .trailing)
             }
         }
         .accessibilityLabel("Candlestick chart with entry, invalidation, and target levels")

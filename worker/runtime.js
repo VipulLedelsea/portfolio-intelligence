@@ -730,6 +730,20 @@ function dipInputs(closes, daily) {
   };
 }
 
+// Chart reference lines, shown beside the stop and targets so a position can be read against the chart. They do not set any
+// level: backtests (research/pattern-backtest, ml_chart.py) found swing-low stops and prior-high targets did worse than ATR levels.
+function chartRefs(closes, daily) {
+  const lows = daily.map(bar => bar.low), highs = daily.map(bar => bar.high);
+  const lowest = n => daily.length >= n ? Math.min(...lows.slice(-n)) : null;
+  const highest = n => daily.length >= n ? Math.max(...highs.slice(-n)) : null;
+  const average = n => closes.length >= n ? mean(closes.slice(-n)) : null;
+  return { low_20: round(lowest(20), 4), high_10: round(highest(10), 4), high_20: round(highest(20), 4), sma_20: round(average(20), 4), sma_50: round(average(50), 4), sma_200: round(average(200), 4) };
+}
+const REFERENCE_LABELS = { low_20: "20-day low", high_10: "10-day high", high_20: "20-day high", sma_20: "20-day average", sma_50: "50-day average", sma_200: "200-day average" };
+function referenceLines(refs) {
+  return Object.entries(REFERENCE_LABELS).map(([key, label]) => ({ key, label, value: refs?.[key] })).filter(line => Number.isFinite(line.value) && line.value > 0);
+}
+
 function snapshotFromPayload(symbol, dailyItem, signalItem, quote, market = MARKETS.US) {
   const daily = normalizeBars(dailyItem, "day", market);
   const signal = aggregateEntryBars(normalizeBars(signalItem, "hour", market), 4, market);
@@ -771,6 +785,8 @@ function snapshotFromPayload(symbol, dailyItem, signalItem, quote, market = MARK
     atr_14_pct: round(atr14 / price * 100, 3),
     dip: dipInputs(closes, daily),
     recent_daily: daily.slice(-12).map(bar => ({ d: String(bar.date).slice(0, 10), h: bar.high, l: bar.low, c: bar.close })),
+    chart_refs: chartRefs(closes, daily),
+    chart_daily: daily.slice(-60).map(bar => ({ d: String(bar.date).slice(0, 10), o: bar.open, h: bar.high, l: bar.low, c: bar.close })),
     signal_atr_14: round(signalAtr14, 4),
     signal_atr_14_pct: round(signalAtr14 / price * 100, 3),
     volume_ratio_5d_to_20d: hasVolume ? round(recentVolume / baseVolume, 3) : 1,
@@ -1266,6 +1282,8 @@ function scoreDip(snapshot, metadata = {}) {
     stop_price: round(Math.max(0.01, dip.close - stopDistance), 4),
     target_1: round(dip.close + DIP_TARGET_1_ATR * atr, 4), target_2: round(dip.close + DIP_TARGET_2_ATR * atr, 4),
     horizon_trading_days: 5,
+    reference_lines: referenceLines(snapshot.chart_refs),
+    bars: snapshot.chart_daily || [],
   };
 }
 
@@ -1465,6 +1483,7 @@ async function analyze(symbol, market = MARKETS.US, env = {}) {
       daily_supertrend: snapshot.daily_supertrend,
       daily_adx: snapshot.daily_adx,
       levels,
+      reference_lines: referenceLines(snapshot.chart_refs),
       target_return_pct: { target_1: round((target1 / entryReference - 1) * 100, 2), target_2: round((target2 / entryReference - 1) * 100, 2) },
       direction,
       stance: action,
@@ -2022,7 +2041,7 @@ async function refreshSharedHoldings(env, market, extra = []) {
     const fetched = await fetchSnapshots(symbols, market, env);
     if (!fetched.snapshots.size) throw new Error(fetched.errors?.[0]?.error || "No market data was returned");
     const snapshots = {};
-    for (const [symbol, { history, ...slim }] of fetched.snapshots) snapshots[symbol] = slim;
+    for (const [symbol, { history, chart_daily, ...slim }] of fetched.snapshots) snapshots[symbol] = slim;
     const payload = { snapshots, errors: (fetched.errors || []).slice(0, 50) };
     const generatedAt = new Date().toISOString();
     scanMemory.set(holdKey(market).id, { payload, generatedAt });
@@ -2209,6 +2228,7 @@ function evaluateHolding(holding, snapshot, levels = null) {
     pnl_value: round((price - buy) * shares, 2),
     pnl_pct: round(pnlPct, 2),
     stop_level: round(stopLevel, 4),
+    reference_lines: referenceLines(snapshot.chart_refs),
     stop_basis: levels ? levels.basis : "INITIAL",
     stop_note: levels ? levels.stopText : stopText,
     trailing_level: round(trailing, 4),

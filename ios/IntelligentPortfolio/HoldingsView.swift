@@ -457,6 +457,9 @@ private struct HoldingCard: View {
         if let note = holding.stopNote {
             Text("Protective level: \(note).").font(.caption).foregroundStyle(AppTheme.muted)
         }
+        if let lines = holding.referenceLines, !lines.isEmpty {
+            ReferenceLinesList(lines: lines, currency: symbol, decimals: decimals)
+        }
         if let events = holding.levelEvents?.filter({ $0.kind != "INITIAL" }), !events.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 SectionLabel(text: "Level changes")
