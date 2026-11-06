@@ -41,6 +41,22 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertNil(try decoder.decode(MarketTrend.self, from: Data(old.utf8)).dayChangePct)
     }
 
+    func testDipScanAndStrategyTrackRecordDecode() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let scan = #"{"candidates":[],"long_candidates":[],"short_candidates":[],"late_candidates":[],"universe_size":503,"successful":503,"fresh_entry_count":0,"method":"m","next_step":"n","dip_scan":{"available":true,"gate":{"open":false,"spy_5d_pct":0.4,"breadth_pct":1.2,"headline":"Calm market: no dip ideas","note":"n"},"scanned":503,"dip_count":1,"candidates":[],"waiting":[{"symbol":"AAA","company":"A","sector":"Tech","currency_symbol":"$","price_decimals":2,"price":150.5,"signal_close":151,"rsi2":3.2,"return_3d_pct":-6.1,"above_sma200_pct":9.5,"sharp":true,"score":82.5,"label":"Sharp dip in an uptrend","atr_14":4,"atr_14_pct":2.6,"stop_price":135,"target_1":159,"target_2":163,"horizon_trading_days":5}]}}"#
+        let discovery = try decoder.decode(DiscoveryResponse.self, from: Data(scan.utf8))
+        XCTAssertEqual(discovery.dipScan?.gate?.open, false)
+        let pick = try XCTUnwrap(discovery.dipScan?.waiting?.first)
+        XCTAssertEqual(pick.return3DPct, -6.1)
+        XCTAssertEqual(pick.target1, 159)
+        XCTAssertTrue(pick.sharp)
+        let summary = #"{"settled_picks":1,"pending_picks":0,"win_rate_pct":100,"average_return_pct":3,"average_win_pct":3,"average_loss_pct":null,"worst_loss_pct":3,"profit_factor":null,"stop_hit_rate_pct":0,"target_hit_rate_pct":100,"long":{"samples":1,"average_return_pct":3,"win_rate_pct":100},"short":{"samples":0,"average_return_pct":null,"win_rate_pct":null}}"#
+        let record = #"{"available":true,"since":null,"horizon_trading_days":5,"summary":\#(summary),"strategies":[{"id":"DIP_WAIT","label":"l","since":null,"summary":\#(summary)}],"methodology":"x"}"#
+        let decoded = try decoder.decode(TrackRecordResponse.self, from: Data(record.utf8))
+        XCTAssertEqual(decoded.strategies?.first?.id, "DIP_WAIT", "Strategy ids must survive the snake_case key conversion")
+    }
+
     func testPairingExpiryParsesFractionalSeconds() throws {
         XCTAssertNotNil(PairingExpiryParser.date(from: "2026-10-31T12:00:00.000Z"))
     }

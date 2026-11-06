@@ -446,13 +446,24 @@ private struct HoldingCard: View {
                 stat("Profit / loss", "\(signed(symbol, pnl)) (\(String(format: "%+.2f", pct))%)", color: pnl >= 0 ? AppTheme.mint : AppTheme.red)
                 if let v = holding.stopLevel { stat("Protective level", money(symbol, decimals, v)) }
                 if let v = holding.trailingLevel { stat("Trailing (4H)", money(symbol, decimals, v)) }
-                if let v = holding.target1 { stat("Target 1 (2R)", money(symbol, decimals, v)) }
-                if let v = holding.target2 { stat("Target 2 (3R)", money(symbol, decimals, v)) }
+                if let v = holding.target1 { stat("Target 1", money(symbol, decimals, v)) }
+                if let v = holding.target2 { stat("Target 2", money(symbol, decimals, v)) }
                 if let a = holding.trend4h, let d = holding.dailyTrend { stat("4H · Daily", "\(a) · \(d)") }
             }
         }
         ForEach(holding.reasons, id: \.self) { reason in
             Text("• \(reason)").font(.footnote).foregroundStyle(AppTheme.muted)
+        }
+        if let note = holding.stopNote {
+            Text("Protective level: \(note).").font(.caption).foregroundStyle(AppTheme.muted)
+        }
+        if let events = holding.levelEvents?.filter({ $0.kind != "INITIAL" }), !events.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                SectionLabel(text: "Level changes")
+                ForEach(events) { event in
+                    Text("• \(event.reason)").font(.caption).foregroundStyle(AppTheme.amber)
+                }
+            }
         }
         if let previous = holding.previousAction, previous != holding.action, holding.action != "NO_DATA" {
             Text("Changed from \(label(previous)) to \(holding.actionLabel)")

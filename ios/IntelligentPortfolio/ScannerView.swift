@@ -170,6 +170,15 @@ struct ScannerView: View {
 
                     if !trendInStrip, let trend = model.discovery?.marketTrend ?? trends.first { MarketTrendLine(trend: trend) { trendStart = trendStartPage; showingTrend = true } }
 
+                    ScannerBoxHeader(title: "Supertrend setups",
+                                     chip: discovery.candidates.isEmpty ? "None fresh" : "\(discovery.candidates.count) fresh",
+                                     tint: discovery.candidates.isEmpty ? AppTheme.muted : AppTheme.mint)
+                    if discovery.candidates.isEmpty {
+                        Text("No fresh Supertrend entries right now.")
+                            .font(.footnote).foregroundStyle(AppTheme.muted)
+                            .frame(maxWidth: .infinity, alignment: .leading).panel()
+                    }
+                    if !discovery.candidates.isEmpty {
                     ListFrame {
                         ForEach(Array(discovery.candidates.enumerated()), id: \.element.id) { index, candidate in
                             if index > 0 { RowDivider() }
@@ -178,6 +187,7 @@ struct ScannerView: View {
                             }
                             .buttonStyle(.plain)
                         }
+                    }
                     }
 
                     if let recent = discovery.recentSetups, !recent.isEmpty {
@@ -198,6 +208,15 @@ struct ScannerView: View {
                                 .buttonStyle(.plain)
                             }
                         }
+                    }
+
+                    if let dip = discovery.dipScan, dip.available {
+                        let ideas = dip.candidates?.count ?? 0
+                        ScannerBoxHeader(title: "Dip scan",
+                                         chip: dip.gate?.open == true ? "\(ideas) \(ideas == 1 ? "idea" : "ideas")" : "Market calm",
+                                         tint: dip.gate?.open == true ? AppTheme.mint : AppTheme.muted)
+                            .padding(.top, 18)
+                        DipScanSection(dip: dip)
                     }
                 } else if model.isScanning {
                     ProgressView("Loading the \(model.market.scanTitle) scan…")
@@ -476,5 +495,105 @@ struct BuyRangeBar: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Buy range: \(range.label).\(buy.flatMap { zone in zone.lo.flatMap { lo in zone.hi.map { hi in " Buy zone \(money(lo)) to \(money(hi))." } } } ?? "")")
+    }
+}
+
+
+/// A scanner's name with a small status pill, so each box says at a glance whether it has ideas.
+private struct ScannerBoxHeader: View {
+    let title: String
+    let chip: String
+    let tint: Color
+    var body: some View {
+        HStack {
+            Text(title).font(.title3.weight(.semibold))
+            Spacer()
+            Text(chip).font(.caption.weight(.semibold)).foregroundStyle(tint)
+                .padding(.horizontal, 10).padding(.vertical, 4).background(tint.opacity(0.15), in: Capsule())
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// The dip scan: a banner for the market gate, then the dips (only while the gate is open) with their stop and targets.
+private struct DipScanSection: View {
+    let dip: DipScan
+
+    var body: some View {
+        VStack(spacing: 12) {
+            if let gate = dip.gate {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: gate.open ? "bolt.fill" : "moon.zzz.fill")
+                        .foregroundStyle(gate.open ? AppTheme.mint : AppTheme.muted)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(gate.headline).font(.headline)
+                        Text(gate.note).font(.footnote).foregroundStyle(AppTheme.muted)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .panel()
+            }
+            if let picks = dip.candidates, !picks.isEmpty {
+                ListFrame {
+                    ForEach(Array(picks.enumerated()), id: \.element.id) { index, pick in
+                        if index > 0 { RowDivider() }
+                        DipRow(pick: pick, active: true)
+                    }
+                }
+            } else if let waiting = dip.waiting, !waiting.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    SectionLabel(text: "Dips waiting for market stress · not ideas")
+                    Text("These stocks are in a dip, but dips only paid off in backtests while the market was under stress.")
+                        .font(.caption).foregroundStyle(AppTheme.muted)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                ListFrame {
+                    ForEach(Array(waiting.prefix(8).enumerated()), id: \.element.id) { index, pick in
+                        if index > 0 { RowDivider() }
+                        DipRow(pick: pick, active: false)
+                    }
+                }
+            }
+            Text("Long ideas only, from a backtest on past data. Results are hypothetical, and each pick is logged to the track record so live results can confirm or reject the rule. Research, not advice.")
+                .font(.caption2).foregroundStyle(AppTheme.muted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct DipRow: View {
+    let pick: DipPick
+    let active: Bool
+    private func money(_ value: Double) -> String { PriceFormat.string(value, prefix: pick.currencySymbol, decimals: pick.priceDecimals) }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Monogram(symbol: pick.symbol, colour: active ? AppTheme.mint : AppTheme.muted)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(pick.symbol).font(.headline)
+                    if pick.sharp {
+                        Text("Sharp").font(.caption2.weight(.semibold)).foregroundStyle(AppTheme.amber)
+                            .padding(.horizontal, 7).padding(.vertical, 2).background(AppTheme.amber.opacity(0.15), in: Capsule())
+                    }
+                }
+                Text("\(pick.company) · \(Int(pick.score))/100").font(.caption).foregroundStyle(AppTheme.muted).lineLimit(1)
+                Text(String(format: "RSI(2) %.0f · 3-day %+.1f%% · %.1f%% above 200-day", pick.rsi2, pick.return3DPct, pick.aboveSma200Pct))
+                    .font(.caption2).foregroundStyle(AppTheme.muted)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(money(pick.price)).font(.headline)
+                Text("Stop \(money(pick.stopPrice))").font(.caption).foregroundStyle(AppTheme.red)
+                Text("Target \(money(pick.target1))").font(.caption).foregroundStyle(AppTheme.mint)
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .opacity(active ? 1 : 0.7)
+        .accessibilityElement(children: .combine)
     }
 }

@@ -50,6 +50,20 @@
       "when": 1793720094694,
       "tag": "0006_undo_entries",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1794003757872,
+      "tag": "0007_dip_strategy",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1794004871735,
+      "tag": "0008_position_monitor",
+      "breakpoints": true
     }
   ]
 }

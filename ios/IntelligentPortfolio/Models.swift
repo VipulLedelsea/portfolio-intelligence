@@ -89,6 +89,7 @@ struct DiscoveryResponse: Decodable, Sendable {
     let marketTrends: [MarketTrend]?
     let allMarketTrends: [MarketTrend]?
     let recentSetups: [RecentSetup]?
+    let dipScan: DipScan?
     let autoRefresh: Bool?
     let refreshedAt: String?
     let warmingUp: Bool?
@@ -102,6 +103,47 @@ struct DiscoveryResponse: Decodable, Sendable {
     let freshEntryCount: Int
     let method: String
     let nextStep: String
+}
+
+/// The second scanner mode: dips inside an uptrend, shown only while the market is under stress.
+struct DipScan: Decodable, Sendable {
+    let available: Bool
+    let reason: String?
+    let gate: DipGate?
+    let scanned: Int?
+    let dipCount: Int?
+    let candidates: [DipPick]?
+    let waiting: [DipPick]?
+    let method: String?
+}
+
+struct DipGate: Decodable, Sendable {
+    let open: Bool
+    let spy5DPct: Double?
+    let breadthPct: Double
+    let headline: String
+    let note: String
+}
+
+struct DipPick: Decodable, Identifiable, Hashable, Sendable {
+    var id: String { symbol }
+    let symbol: String
+    let company: String
+    let sector: String
+    let currencySymbol: String?
+    let priceDecimals: Int?
+    let price: Double
+    let signalClose: Double
+    let rsi2: Double
+    let return3DPct: Double
+    let aboveSma200Pct: Double
+    let sharp: Bool
+    let score: Double
+    let label: String
+    let atr14Pct: Double
+    let stopPrice: Double
+    let target1: Double
+    let target2: Double
 }
 
 struct Candidate: Decodable, Identifiable, Hashable, Sendable {
@@ -265,7 +307,16 @@ struct TrackRecordResponse: Decodable, Sendable {
     let since: String?
     let horizonTradingDays: Int?
     let summary: TrackRecordSummary?
+    /// One summary per scanner (Supertrend, dip scan, and dips seen while the market gate was closed), so they can be compared.
+    let strategies: [TrackRecordStrategy]?
     let methodology: String?
+}
+
+struct TrackRecordStrategy: Decodable, Identifiable, Sendable {
+    let id: String
+    let label: String
+    let since: String?
+    let summary: TrackRecordSummary
 }
 
 struct TrackRecordSummary: Decodable, Sendable {
@@ -310,6 +361,13 @@ struct HoldingsResponse: Decodable, Sendable {
     let disclaimer: String
 }
 
+struct LevelEvent: Decodable, Identifiable, Sendable {
+    var id: String { at + kind }
+    let at: String
+    let kind: String
+    let reason: String
+}
+
 struct Holding: Decodable, Identifiable, Sendable {
     let id: String
     let symbol: String
@@ -328,9 +386,13 @@ struct Holding: Decodable, Identifiable, Sendable {
     let pnlValue: Double?
     let pnlPct: Double?
     let stopLevel: Double?
+    /// Why the protective level sits where it does ("raised to your buy price once the trade gained one daily range", ...).
+    let stopNote: String?
     let trailingLevel: Double?
     let target1: Double?
     let target2: Double?
+    /// The position monitor's recent changes to this position's levels, newest first, each with its reason.
+    let levelEvents: [LevelEvent]?
     let trend4h: String?
     let dailyTrend: String?
     let previousAction: String?

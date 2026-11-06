@@ -95,11 +95,24 @@ private struct MemoryRow: View {
 /// App-wide results of every fresh scanner pick, wins and losses included. Always shows how many picks sit behind each number.
 struct TrackRecordPanel: View {
     let record: TrackRecordResponse?
+    @State private var strategy = "SUPERTREND"
+
+    /// The summary for the chosen scanner; falls back to the Supertrend summary from older servers.
+    private var chosen: TrackRecordStrategy? { record?.strategies?.first { $0.id == strategy } }
+    private var shownSummary: TrackRecordSummary? { chosen?.summary ?? record?.summary }
+    private func shortName(_ id: String) -> String { id == "SUPERTREND" ? "Supertrend" : id == "DIP" ? "Dip scan" : "Dip, gate closed" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionLabel(text: "Scanner track record")
-            if let summary = record?.summary, record?.available == true {
+            if let strategies = record?.strategies, strategies.count > 1 {
+                Picker("Scanner", selection: $strategy) {
+                    ForEach(strategies) { Text(shortName($0.id)).tag($0.id) }
+                }
+                .pickerStyle(.segmented)
+                if let label = chosen?.label { Text(label).font(.footnote).foregroundStyle(AppTheme.muted) }
+            }
+            if let summary = shownSummary, record?.available == true {
                 let n = summary.settledPicks
                 if n == 0 {
                     Text("No scanner picks have been graded yet. \(summary.pendingPicks) are waiting for their five-session window to close.")
