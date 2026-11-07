@@ -444,10 +444,10 @@ private struct HoldingCard: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: tileMinimum), spacing: 8)], spacing: 8) {
                 stat("Now", money(symbol, decimals, price))
                 stat("Profit / loss", "\(signed(symbol, pnl)) (\(String(format: "%+.2f", pct))%)", color: pnl >= 0 ? AppTheme.mint : AppTheme.red)
-                if let v = holding.stopLevel { stat("Protective level", money(symbol, decimals, v)) }
+                if let v = holding.stopLevel { stat("Exit line", money(symbol, decimals, v)) }
                 if let v = holding.trailingLevel { stat("Trailing (4H)", money(symbol, decimals, v)) }
-                if let v = holding.target1 { stat("Target 1", money(symbol, decimals, v)) }
-                if let v = holding.target2 { stat("Target 2", money(symbol, decimals, v)) }
+                if let v = holding.target1 { stat("Profit zone 1", money(symbol, decimals, v)) }
+                if let v = holding.target2 { stat("Profit zone 2", money(symbol, decimals, v)) }
                 if let a = holding.trend4h, let d = holding.dailyTrend { stat("4H · Daily", "\(a) · \(d)") }
             }
         }

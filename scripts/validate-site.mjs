@@ -76,7 +76,7 @@ const memoryResponse = await workerModule.default.fetch(new Request("https://exa
 assert.equal(memoryResponse.status, 200);
 const memory = await memoryResponse.json();
 assert.equal(memory.available, true);
-assert.equal(memory.horizon_trading_days, 5);
+assert.equal(memory.horizon_trading_days, 10);
 
 // Grading: a pick must exit at its stop or at its target, not at the fifth close, so losses are capped and early wins are kept.
 {
@@ -88,7 +88,11 @@ assert.equal(memory.horizon_trading_days, 5);
         bind(...args) { statement.args = args; return statement; },
         async all() {
           if (sql.includes("ORDER BY generated_at ASC LIMIT 60")) {
-            return { results: [{ id: "rec-1", symbol: "TEST", market: "US", action: "IDEA", direction: "LONG", generated_at: "2026-10-26T15:00:00Z", current_price: 100, stop_price: 96, target_1: 107, horizon_trading_days: 5 }] };
+            return { results: [{ id: "rec-1", symbol: "TEST", market: "US", action: "IDEA", direction: "LONG", generated_at: "2026-10-26T15:00:00Z", current_price: 100, stop_price: 96, target_1: 107, horizon_trading_days: 5 },
+              { id: "rec-2", symbol: "EARLY", market: "US", action: "IDEA", direction: "LONG", generated_at: "2026-10-26T15:00:00Z", current_price: 100, stop_price: 96, target_1: 107, horizon_trading_days: 10 },
+              { id: "rec-3", symbol: "WAIT", market: "US", action: "IDEA", direction: "LONG", generated_at: "2026-10-26T15:00:00Z", current_price: 100, stop_price: 96, target_1: 107, horizon_trading_days: 10 },
+              { id: "rec-4", symbol: "TRENDBRK", market: "US", action: "IDEA", direction: "LONG", generated_at: "2026-08-09T15:00:00Z", current_price: 90, stop_price: 80, target_1: 95, horizon_trading_days: 120 },
+              { id: "rec-5", symbol: "TRENDRUN", market: "US", action: "IDEA", direction: "LONG", generated_at: "2026-08-09T15:00:00Z", current_price: 90, stop_price: 80, target_1: 95, horizon_trading_days: 120 }] };
           }
           return { results: [] };
         },
@@ -104,7 +108,18 @@ assert.equal(memory.horizon_trading_days, 5);
     ["2026-10-30", 90, 91, 89, 90], ["2026-11-02", 90, 92, 88, 90],
   ].map(([day, open, high, low, close]) => ({ begins_at: `${day}T00:00:00Z`, open_price: String(open), high_price: String(high), low_price: String(low), close_price: String(close), volume: 1000 }));
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(JSON.stringify({ results: [{ symbol: "TEST", historicals: bars }] }), { status: 200, headers: { "content-type": "application/json" } });
+  // Supertrend picks run until a daily close under the line: 110 rising days (2026-05-01 on), then a break (TRENDBRK) or a continued rise (TRENDRUN).
+  const trendDay = index => new Date(Date.UTC(2026, 4, 1 + index)).toISOString();
+  const trendSeries = breaks => Array.from({ length: 118 }, (_, index) => {
+    const close = index < 110 ? 50 + 0.4 * index : breaks ? 94 - 12 * (index - 109) : 50 + 0.4 * index;
+    return { begins_at: trendDay(index), open_price: String(index < 110 || !breaks ? close - 0.1 : close + 6), high_price: String(close + 1), low_price: String(close - 1), close_price: String(close), volume: 1000 };
+  });
+  const shortBars = quiet => bars.slice(0, 3).map(bar => quiet ? { ...bar, high_price: "101", low_price: "99" } : bar);   // 3 of 10 days so far
+  globalThis.fetch = async input => {
+    const symbols = new URL(String(input)).searchParams.get("symbols").split(",");
+    const history = { TEST: bars, EARLY: shortBars(false), WAIT: shortBars(true), TRENDBRK: trendSeries(true), TRENDRUN: trendSeries(false) };
+    return new Response(JSON.stringify({ results: symbols.filter(symbol => history[symbol]).map(symbol => ({ symbol, historicals: history[symbol] })) }), { status: 200, headers: { "content-type": "application/json" } });
+  };
   try {
     const gradingResponse = await workerModule.default.fetch(new Request("https://example.test/api/memory", {
       method: "POST",
@@ -113,8 +128,17 @@ assert.equal(memory.horizon_trading_days, 5);
     }), { DB: gradingDb, AUTH_MODE: "oai" }, { waitUntil() {} });
     assert.equal(gradingResponse.status, 200);
   } finally { globalThis.fetch = realFetch; }
-  assert.equal(updates.length, 1, "The pending pick must be settled");
-  const [settledAt, exitPrice, rawReturn, strategyReturn, , , grade] = updates[0].args;
+  assert.equal(updates.length, 3, "The full-window pick, the pick that already hit its target and the Supertrend pick whose trend broke are settled; the quiet 3-of-10-day pick and the running trend wait");
+  const broke = updates.find(item => item.args.includes("rec-4"));
+  assert.ok(broke, "A Supertrend pick is graded when a daily close breaks the line");
+  assert.equal(broke.args[6], "TREND_BREAK");
+  assert.ok(broke.args[1] < 90, "The exit is the open after the break, below the 90 entry");
+  assert.ok(!updates.some(item => item.args.includes("rec-5")), "A Supertrend pick in an unbroken uptrend stays open: no time limit");
+  const early = updates.find(item => item.args.includes("rec-2"));
+  assert.ok(early, "A pick that has already touched target 1 is graded without waiting for its window to close");
+  assert.equal(early.args[6], "TARGET");
+  assert.ok(!updates.some(item => item.args.includes("rec-3")), "A pick that has touched neither level stays pending until its window closes");
+  const [settledAt, exitPrice, rawReturn, strategyReturn, , , grade] = updates.find(item => item.args.includes("rec-1")).args;
   assert.equal(grade, "TARGET", "Day two touches target 1");
   assert.equal(exitPrice, 107);
   assert.equal(strategyReturn, 7, "The return is the exit, not the later fifth close");
@@ -443,43 +467,44 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
     assert.equal(none.gate.open, false);
   } finally { globalThis.fetch = previousFetch; }
 }
-// Position monitor (protective ratchet): stop moves up to breakeven once the trade works, up again after a sharp market drop, never down.
+// Position monitor: the protective level follows the daily Supertrend line, only goes up, and the exit is a daily close under the line.
 {
   const previousFetch = globalThis.fetch;
   const dayAgo = days => new Date((nowSeconds - days * 86400) * 1000);
   const dateOf = days => dayAgo(days).toISOString().slice(0, 10);
-  const barsFor = closes => Array.from({ length: 130 }, (_, index) => {
+  const trendBars = override => Array.from({ length: 130 }, (_, index) => {
     const offset = 130 - index; // 130 days ago .. 1 day ago
-    const close = closes[offset] ?? 100;
-    return { begins_at: dayAgo(offset).toISOString(), open_price: String(close), high_price: String((closes.high?.[offset] ?? close) + 1), low_price: String(close - 1), close_price: String(close), volume: 1000 };
+    const close = override?.[offset] ?? 50 + 0.4 * index;
+    return { begins_at: dayAgo(offset).toISOString(), open_price: String(close), high_price: String(close + 1), low_price: String(close - 1), close_price: String(close), volume: 1000 };
   });
-  const aaa = Object.assign({ 4: 103, 3: 102, 2: 101, 1: 101 }, { high: { 4: 104, 3: 103, 2: 102, 1: 102 } });   // trades 4 above its buy price: reaches buy + 1 ATR
-  const bbb = Object.assign({ 4: 100, 3: 100, 2: 100.4, 1: 100 }, { high: {} });                                    // never works, but SPY drops on day 2
-  const spy = { 6: 100, 5: 100, 4: 100, 3: 100, 2: 97.9, 1: 98 };
-  const closesBySymbol = { AAA: aaa, BBB: bbb, CCC: bbb, DDD: bbb, SPY: spy };
+  const crash = { 3: 90, 2: 80, 1: 70 };                       // an uptrend whose last three closes break the line
+  const quotes = { EEE: "70", HHH: "92" };                     // HHH trades under its line today but has not closed there
   const hourly = series(300, 3600, nowSeconds - 4 * 3600, 100).map(r => ({ begins_at: new Date(r.time * 1000).toISOString(), open_price: String(r.open), high_price: String(r.high), low_price: String(r.low), close_price: String(r.close), volume: 1000 }));
   globalThis.fetch = async input => {
     const url = new URL(String(input));
     if (url.hostname !== "api.robinhood.com") return new Response("{}", { status: 404 });
     const symbols = url.searchParams.get("symbols").split(",");
-    if (!url.pathname.includes("historicals")) return new Response(JSON.stringify({ results: symbols.map(symbol => ({ symbol, last_trade_price: "100", adjusted_previous_close: "99" })) }), { status: 200 });
+    if (!url.pathname.includes("historicals")) return new Response(JSON.stringify({ results: symbols.map(symbol => ({ symbol, last_trade_price: quotes[symbol] || "101.6", adjusted_previous_close: "101" })) }), { status: 200 });
     const daily = url.searchParams.get("interval") === "day";
-    return new Response(JSON.stringify({ results: symbols.map(symbol => ({ symbol, historicals: daily ? barsFor(closesBySymbol[symbol] || {}) : hourly })) }), { status: 200 });
+    return new Response(JSON.stringify({ results: symbols.map(symbol => ({ symbol, historicals: daily ? trendBars(symbol === "EEE" ? crash : null) : hourly })) }), { status: 200 });
   };
   const cache = new Map(), events = [];
+  const row = (id, symbol, extra = {}) => ({ id, user_id: "alice", symbol, market: "US", shares: 10, buy_price: 96, bought_at: dateOf(6), created_at: "x", closed_at: null, sell_price: null, ...extra });
   const rows = [
-    { id: "hold-aaa", user_id: "alice", symbol: "AAA", market: "US", shares: 10, buy_price: 100, bought_at: dateOf(6), created_at: "x", closed_at: null, sell_price: null },
-    { id: "hold-bbb", user_id: "alice", symbol: "BBB", market: "US", shares: 10, buy_price: 100, bought_at: dateOf(6), created_at: "x", closed_at: null, sell_price: null },
-    { id: "hold-ccc", user_id: "alice", symbol: "CCC", market: "US", shares: 10, buy_price: 100, bought_at: dateOf(6), created_at: "x", closed_at: null, sell_price: null, monitor_atr: 2, stop_level: 99.5, target_1: 102, target_2: 104, peak_high: 100 },
+    row("hold-aaa", "AAA"),                                                                                              // fresh position in an uptrend
+    row("hold-bbb", "BBB", { monitor_atr: 2.4, stop_level: 90, target_1: 98.4, target_2: 100.8, peak_high: 101 }),     // stored stop far under the line
+    row("hold-ccc", "CCC", { monitor_atr: 2.4, stop_level: 99.9, target_1: 98.4, target_2: 100.8, peak_high: 101 }),    // stored stop already above the line
+    row("hold-eee", "EEE"),                                                                                              // the daily trend breaks
+    row("hold-hhh", "HHH"),                                                                                              // under the line intraday, daily trend still up
   ];
   const db = { prepare(sql) {
     const st = { args: [], bind: (...args) => { st.args = args; return st; } };
     st.run = async () => {
       const a = st.args;
       if (sql.startsWith("INSERT OR IGNORE INTO scan_cache")) { if (!cache.has(a[0])) cache.set(a[0], { payload: null, generated_at: a[1], refreshing_until: null }); return { success: true, meta: { changes: 1 } }; }
-      if (sql.startsWith("UPDATE scan_cache SET refreshing_until = ? WHERE market = ? AND")) { const row = cache.get(a[1]); const ok = row && (!row.refreshing_until || row.refreshing_until <= a[2]); if (ok) row.refreshing_until = a[0]; return { success: true, meta: { changes: ok ? 1 : 0 } }; }
-      if (sql.startsWith("UPDATE scan_cache SET refreshing_until = ? WHERE market = ?")) { const row = cache.get(a[1]); if (row) row.refreshing_until = a[0]; return { success: true }; }
-      if (sql.startsWith("UPDATE scan_cache SET payload")) { const row = cache.get(a[2]); if (row) { row.payload = a[0]; row.generated_at = a[1]; row.refreshing_until = null; } return { success: true }; }
+      if (sql.startsWith("UPDATE scan_cache SET refreshing_until = ? WHERE market = ? AND")) { const r = cache.get(a[1]); const ok = r && (!r.refreshing_until || r.refreshing_until <= a[2]); if (ok) r.refreshing_until = a[0]; return { success: true, meta: { changes: ok ? 1 : 0 } }; }
+      if (sql.startsWith("UPDATE scan_cache SET refreshing_until = ? WHERE market = ?")) { const r = cache.get(a[1]); if (r) r.refreshing_until = a[0]; return { success: true }; }
+      if (sql.startsWith("UPDATE scan_cache SET payload")) { const r = cache.get(a[2]); if (r) { r.payload = a[0]; r.generated_at = a[1]; r.refreshing_until = null; } return { success: true }; }
       if (sql.startsWith("UPDATE holdings SET monitor_atr")) {
         const r = rows.find(x => x.id === a[6]); // MAX() semantics, as in SQL
         r.monitor_atr ??= a[0]; r.stop_level = Math.max(r.stop_level ?? 0, a[1]); r.target_1 = Math.max(r.target_1 ?? 0, a[2]); r.target_2 = Math.max(r.target_2 ?? 0, a[3]); r.peak_high = Math.max(r.peak_high ?? 0, a[4]); r.monitor_at = a[5];
@@ -499,30 +524,37 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
     const asAlice = () => module.default.fetch(new Request("https://example.test/api/holdings", { method: "POST", headers: { "content-type": "application/json", "oai-authenticated-user-id": "alice", "oai-authenticated-user-email": "a@example.test" }, body: "{}" }), { DB: db, AUTH_MODE: "oai" }, { waitUntil() {} }).then(response => response.json());
     const first = await asAlice();
     const byId = Object.fromEntries(first.open.map(item => [item.id, item]));
-    const atr = rows.find(r => r.id === "hold-aaa").monitor_atr;
-    assert.ok(atr > 0, "The ATR the levels are anchored to is stored once");
-    // AAA reached buy + 1 ATR: stop to the buy price, targets out to +3 and +4 ATR.
-    assert.ok(byId["hold-aaa"].stop_level >= 100 - 1e-6, "Once the trade has gained one ATR the stop must be at least the buy price");
-    assert.ok(byId["hold-aaa"].reference_lines.length >= 5 && byId["hold-aaa"].reference_lines.every(line => line.value > 0), "Holdings carry chart reference lines");
-    assert.ok(Math.abs(byId["hold-aaa"].target_1 - (100 + 3 * atr)) < 0.01 && Math.abs(byId["hold-aaa"].target_2 - (100 + 4 * atr)) < 0.01, "Targets move out to 3 and 4 ATR");
     const kindsFor = id => events.filter(e => e.holding_id === id).map(e => e.kind);
-    assert.deepEqual(kindsFor("hold-aaa").sort(), ["BREAKEVEN", "INITIAL", "TARGETS_RAISED"]);
-    // BBB never worked, but SPY fell 2.1% on day 2: stop up to that day's close (100.4) minus 1.5 ATR.
-    assert.deepEqual(kindsFor("hold-bbb").sort(), ["INITIAL", "MARKET_TIGHTEN"]);
-    const atrB = rows.find(r => r.id === "hold-bbb").monitor_atr;
-    assert.ok(Math.abs(byId["hold-bbb"].stop_level - (100.4 - 1.5 * atrB)) < 0.01, "A sharp market drop pulls the stop up to 1.5 ATR under that day's close");
-    assert.ok(byId["hold-bbb"].stop_level > 100 - 2 * atrB && byId["hold-bbb"].stop_level < 100, "The market-tightened stop sits between the initial stop and the buy price");
-    assert.equal(byId["hold-bbb"].stop_basis, "RAISED");
-    assert.match(byId["hold-bbb"].level_events.find(e => e.kind === "MARKET_TIGHTEN").reason, /S&P 500 fell 2\.1%/);
-    // CCC already had a higher stop stored: a recompute must never lower it.
-    assert.ok(byId["hold-ccc"].stop_level >= 99.5, "The stop never moves down");
-    assert.equal(rows.find(r => r.id === "hold-ccc").stop_level, 99.5);
+    // AAA: the protective level starts at the daily Supertrend line, under the price, and the position is held.
+    const aaa = byId["hold-aaa"];
+    assert.equal(aaa.stop_basis, "LINE", "The protective level is the daily Supertrend line");
+    assert.ok(aaa.stop_level > 0 && aaa.stop_level < aaa.current_price, "The line sits under the price in an uptrend");
+    assert.match(aaa.stop_note, /Supertrend line/);
+    assert.ok(["HOLD", "WATCH"].includes(aaa.action), "An uptrend with the line intact is not an exit");
+    assert.deepEqual(kindsFor("hold-aaa"), ["INITIAL"]);
+    assert.ok(aaa.reference_lines.length >= 5 && aaa.reference_lines.every(line => line.value > 0), "Holdings carry chart reference lines");
+    // BBB: a stored stop far under the line is raised to the line, and the change is logged with its reason.
+    assert.ok(byId["hold-bbb"].stop_level > 90 + 1, "The protective level moves up with the line");
+    assert.ok(Math.abs(byId["hold-bbb"].stop_level - aaa.stop_level) < 0.01, "Both positions follow the same line");
+    assert.deepEqual(kindsFor("hold-bbb"), ["LINE_RAISED"]);
+    assert.match(byId["hold-bbb"].level_events[0].reason, /Supertrend line moved up/);
+    // CCC: a stored stop already above the line is never lowered.
+    assert.equal(byId["hold-ccc"].stop_level, 99.9, "The protective level never moves down");
+    assert.equal(rows.find(r => r.id === "hold-ccc").stop_level, 99.9);
+    // EEE: a daily close under the line is the exit.
+    assert.equal(byId["hold-eee"].action, "EXIT", "A completed daily close under the Supertrend line is the exit");
+    assert.match(byId["hold-eee"].headline, /daily trend has turned down/);
+    // HHH: under the line today but the daily trend has not turned: a warning to watch the close, not an exit.
+    assert.equal(byId["hold-hhh"].action, "WATCH", "Under the line intraday is a warning; the exit is a daily close");
+    assert.match(byId["hold-hhh"].headline, /only counts if the day closes/);
+    // No time limit and no profit-taking exit: reaching a profit zone does not change the action to take profit.
+    assert.ok(!first.open.some(item => item.action === "TAKE_PROFIT"), "US positions never get a take-profit exit");
     // A second pass changes nothing and adds no events.
     const count = events.length;
     await asAlice();
     assert.equal(events.length, count, "Repeating the pass must not log the same change twice");
     // The cron pass monitors positions without anyone opening the app.
-    rows.push({ id: "hold-ddd", user_id: "alice", symbol: "DDD", market: "US", shares: 1, buy_price: 100, bought_at: dateOf(6), created_at: "x", closed_at: null, sell_price: null });
+    rows.push(row("hold-ddd", "DDD", { shares: 1 }));
     cache.get("HOLD:US").generated_at = new Date(Date.now() - 3600 * 1000).toISOString(); // the shared snapshot is overdue, so the cron pass refreshes it first
     const pending = [];
     await module.default.scheduled({ cron: "*/5 13-21 * * 1-5", scheduledTime: Date.now() }, { DB: db }, { waitUntil: promise => pending.push(promise) });
@@ -594,14 +626,14 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
   const list = await (await as("alice", "/api/holdings")).json();
   assert.equal(list.open.length, 3);
   const bySymbol = Object.fromEntries(list.open.map(item => [item.symbol, item]));
-  assert.equal(bySymbol.NVDA.action, "EXIT", "A position far under its protective level must give an exit signal");
+  assert.ok(["HOLD", "WATCH"].includes(bySymbol.NVDA.action), "US positions exit on a daily Supertrend break, not on a distance from the buy price");
   assert.ok(bySymbol.NVDA.pnl_value < 0 && bySymbol.NVDA.reasons.length > 0);
-  assert.equal(bySymbol.MSFT.action, "TAKE_PROFIT", "A position past 2R in an uptrend must flag taking profit");
+  assert.notEqual(bySymbol.MSFT.action, "TAKE_PROFIT", "Reaching a profit zone in an uptrend is not a sell signal");
   assert.ok(["HOLD", "WATCH", "TAKE_PROFIT"].includes(bySymbol.AAPL.action));
   assert.ok(bySymbol.AAPL.trailing_level > 0 && bySymbol.AAPL.target_1 > bySymbol.AAPL.buy_price);
   assert.match(list.disclaimer, /not personal financial advice/);
   assert.ok([300, 600].includes(list.refresh_after_seconds), "The response must tell clients how soon to re-check");
-  assert.equal(db.rows.find(row => row.symbol === "NVDA").last_action, "EXIT", "The latest decision must be remembered so changes can be shown");
+  assert.equal(db.rows.find(row => row.symbol === "NVDA").last_action, bySymbol.NVDA.action, "The latest decision must be remembered so changes can be shown");
   assert.equal((await (await as("bob", "/api/holdings")).json()).open.length, 0, "Holdings must stay private to their owner");
   const fetchesAfterList = holdingFetches;
   for (const body of [{}, { refresh: true }, {}, { refresh: true }]) await as("alice", "/api/holdings", body);

@@ -7,7 +7,7 @@ struct MemoryView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("The system grades every research call after five completed market sessions.")
+                    Text("US Supertrend ideas are followed until the daily Supertrend breaks and graded at the next open, with no time limit. Other calls are graded when they hit a level or after ten completed market sessions.")
                         .foregroundStyle(AppTheme.muted)
                     TrackRecordPanel(record: model.trackRecord)
                     if model.isGuest {
@@ -115,7 +115,7 @@ struct TrackRecordPanel: View {
             if let summary = shownSummary, record?.available == true {
                 let n = summary.settledPicks
                 if n == 0 {
-                    Text("No scanner picks have been graded yet. \(summary.pendingPicks) are waiting for their five-session window to close.")
+                    Text("No scanner picks have been graded yet. \(summary.pendingPicks) are still running: Supertrend picks close when the daily trend breaks.")
                         .foregroundStyle(AppTheme.muted)
                 } else {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {

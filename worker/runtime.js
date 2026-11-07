@@ -1281,7 +1281,7 @@ function scoreDip(snapshot, metadata = {}) {
     atr_14: round(atr, 4), atr_14_pct: round(atr / dip.close * 100, 2),
     stop_price: round(Math.max(0.01, dip.close - stopDistance), 4),
     target_1: round(dip.close + DIP_TARGET_1_ATR * atr, 4), target_2: round(dip.close + DIP_TARGET_2_ATR * atr, 4),
-    horizon_trading_days: 5,
+    horizon_trading_days: 10,
     reference_lines: referenceLines(snapshot.chart_refs),
     bars: snapshot.chart_daily || [],
   };
@@ -1309,7 +1309,7 @@ function buildDipScan(snapshots, spy, metadata) {
     scanned: ready.length, dip_count: dips.length,
     candidates: open ? dips.slice(0, 20) : [],
     waiting: open ? [] : dips.slice(0, 20),
-    method: "Dip scan: the close is above the 200-day average and RSI(2) is under 10; sharper dips (RSI(2) under 5, below the 5-day average, down 5% or more in 3 days) rank higher. Ideas appear only while the market is under stress. Entry is the next open, stop 2 daily ATRs below, targets 1 and 2 ATRs above, exit by the close of day 5.",
+    method: "Dip scan: the close is above the 200-day average and RSI(2) is under 10; sharper dips (RSI(2) under 5, below the 5-day average, down 5% or more in 3 days) rank higher. Ideas appear only while the market is under stress. Entry is the next open, stop 2 daily ATRs below, targets 1 and 2 ATRs above, exit when the stop or a target is hit, or by the close of day 10 (most trades finish in 2 to 5 days).",
   };
 }
 
@@ -1414,7 +1414,7 @@ async function analyze(symbol, market = MARKETS.US, env = {}) {
   const bear = makeReport("bear", symbol, direction === "SHORT" ? technicalScore : 100 - technicalScore, 0.7, direction === "SHORT" ? "Trend, momentum, and Supertrend are aligned for the bearish case." : "Headline risk, volatility, and a close below Supertrend are the main reasons the long setup could fail.", candidate.cautions.length ? candidate.cautions : ["No setup is certain."], ["Risk is defined by the invalidation level."], true);
   const price = snapshot.price;
   const entryReference = candidate.signal_entry_price || price;
-  const { stop, target1, target2 } = scenarioLevels(direction, entryReference, candidate.signal_atr, market.id, candidate.daily_atr);
+  const { stop, target1, target2, stop_kind } = pickLevels(direction, entryReference, candidate.signal_atr, market.id, candidate.daily_atr, candidate.daily_supertrend_value);
   const signalStartedAt = Date.parse(snapshot.supertrend.signal_bar_started_at);
   const postSignalBars = snapshot.history.filter(row => !Number.isFinite(signalStartedAt) || Date.parse(row.date) > signalStartedAt);
   const target1Reached = direction === "SHORT"
@@ -1426,12 +1426,15 @@ async function analyze(symbol, market = MARKETS.US, env = {}) {
   if (target1Reached) vetoReasons.push("Scenario target 1 was already reached after the signal; this entry is no longer actionable");
   const approved = vetoReasons.length === 0 && technicalScore >= 65 && candidate.entry_eligible && !target1Reached;
   const action = approved ? "IDEA" : candidate.entry_eligible && !target1Reached && technicalScore >= 55 ? "WATCH" : "PASS";
-  const levels = { reference: round(entryReference, 4), current: round(price, 4), risk: round(stop, 4), target_1: round(target1, 4), target_2: round(target2, 4) };
+  const levels = { reference: round(entryReference, 4), current: round(price, 4), risk: round(stop, 4), target_1: round(target1, 4), target_2: round(target2, 4), exit_kind: stop_kind };
   const chartExplanation = [
     `Confirmed daily Supertrend is ${candidate.daily_supertrend_direction}; ${candidate.daily_aligned ? "it agrees with" : "it conflicts with"} the ${direction} 4-hour trigger.`,
     `Daily ADX (14) is ${candidate.daily_adx.toFixed(1)} versus ${candidate.daily_adx_prior.toFixed(1)} five sessions ago; regime gate: ${candidate.regime_eligible ? "PASS" : "VETO"}.`,
     `4H Supertrend (10, 3) flipped ${direction} at ${snapshot.supertrend.signal_confirmed_at}; the anchored signal entry is ${fmtPrice(entryReference, market)}.`,
     `Current price is ${candidate.extension_atr >= 0 ? "+" : ""}${candidate.extension_atr.toFixed(2)} ATR from that entry; status: ${candidate.entry_status.replaceAll("_", " ")}.`,
+    stop_kind === "SUPERTREND_LINE"
+      ? `Exit rule: leave when a day closes ${direction === "SHORT" ? "over" : "under"} the daily Supertrend line (${fmtPrice(stop, market)}), at the next open. There is no time limit and no fixed target; the profit zones are for reference only. Exits on early warnings (a moving average, fading ADX, a weak market) lowered returns in tests.`
+      : `Protective level ${fmtPrice(stop, market)}.`,
     ...candidate.reasons.slice(1, 3),
     ...vetoReasons,
     ...contextWarnings,
@@ -1533,10 +1536,24 @@ async function fromCache(request, cacheName, maxAge, producer, ctx) {
 }
 
 const SCANNER_USER_ID = "system:scanner";
+// Supertrend picks are graded on a trend break; a pick whose window is at least this many days is graded that way, and this is also its safety limit.
+const TREND_EXIT_DAYS = 120;
 
 // Smallest protective distance as a share of price. 1.25% suits stocks; a forex pair's typical 2 ATR is only
 // about 0.3% to 0.6%, so the stock floor made forex stops far too wide and first targets almost unreachable.
 function riskFloorFraction(marketId) { return marketId === "FX" ? 0.0025 : 0.0125; }
+
+// Levels for a Supertrend pick. For US stocks the exit is the daily Supertrend line itself: the pick is closed when a day CLOSES under it
+// (for a short, over it), filled at the next open, with no time limit. Backtests (research/pattern-backtest, ml_st_support.py and
+// ml_st_exits.py) found short targets and short hold limits have no edge on Supertrend entries, that this exit earned +1.6% per trade
+// against -0.07% for the 2 ATR stop and 1 ATR target, and that every early-warning exit added on top (close under a moving average, ADX
+// fading, the market under its 50-day average, a tighter trail) lowered the average. The targets stay as optional profit zones only.
+function pickLevels(direction, entry, atr, marketId = "US", dailyAtr = 0, dailyLine = 0) {
+  const levels = scenarioLevels(direction, entry, atr, marketId, dailyAtr);
+  const short = direction === "SHORT", line = numeric(dailyLine);
+  if (marketId === "US" && line > 0 && (short ? line > entry : line < entry)) return { ...levels, stop: line, stop_kind: "SUPERTREND_LINE" };
+  return { ...levels, stop_kind: "ATR" };
+}
 
 // Protective level and the two scenario targets, shared by full reports and logged scanner picks.
 // Stocks use daily-ATR levels from the backtests in research/pattern-backtest (backtest8.mjs, ml_monitor.py): a 2 ATR protective
@@ -1573,10 +1590,10 @@ async function recordScannerPicks(env, payload) {
     const entry = numeric(candidate.signal_entry_price);
     const atr = numeric(candidate.signal_atr);
     if (!candidate.symbol || !(entry > 0) || !(atr > 0) || !candidate.signal_confirmed_at || !["LONG", "SHORT"].includes(candidate.direction)) continue;
-    const { stop, target1, target2 } = scenarioLevels(candidate.direction, entry, atr, "US", numeric(candidate.daily_atr));
+    const { stop, target1, target2 } = pickLevels(candidate.direction, entry, atr, "US", numeric(candidate.daily_atr), candidate.daily_supertrend_value);
     statements.push(env.DB.prepare(`INSERT OR IGNORE INTO recommendations (id, user_id, symbol, action, direction, generated_at,
       signal_confirmed_at, entry_price, current_price, stop_price, target_1, target_2, confidence, entry_status, daily_adx,
-      horizon_trading_days, status) VALUES (?, ?, ?, 'IDEA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 5, 'PENDING')`).bind(
+      horizon_trading_days, status) VALUES (?, ?, ?, 'IDEA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${TREND_EXIT_DAYS}, 'PENDING')`).bind(
       crypto.randomUUID(), SCANNER_USER_ID, candidate.symbol, candidate.direction, payload.generated_at,
       candidate.signal_confirmed_at, round(entry, 4), round(numeric(candidate.price), 4), round(stop, 4), round(target1, 4), round(target2, 4),
       round(clamp(numeric(candidate.score) / 100, 0, 1), 3), candidate.entry_status, numeric(candidate.daily_adx),
@@ -1591,7 +1608,7 @@ async function recordScannerPicks(env, payload) {
         if (!pick.symbol || !(pick.signal_close > 0) || !pick.signal_as_of) continue;
         statements.push(env.DB.prepare(`INSERT OR IGNORE INTO recommendations (id, user_id, symbol, action, direction, generated_at,
           signal_confirmed_at, entry_price, current_price, stop_price, target_1, target_2, confidence, entry_status, daily_adx,
-          horizon_trading_days, status, strategy) VALUES (?, ?, ?, ?, 'LONG', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 5, 'PENDING', ?)`).bind(
+          horizon_trading_days, status, strategy) VALUES (?, ?, ?, ?, 'LONG', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 10, 'PENDING', ?)`).bind(
           crypto.randomUUID(), SCANNER_USER_ID, pick.symbol, action, payload.generated_at, pick.signal_as_of,
           round(pick.signal_close, 4), round(numeric(pick.price), 4), pick.stop_price, pick.target_1, pick.target_2,
           round(clamp(numeric(pick.score) / 100, 0, 1), 3), strategy === "DIP" ? "DIP_GATE_OPEN" : "DIP_GATE_CLOSED", strategy,
@@ -1655,10 +1672,10 @@ async function publicTrackRecord(db) {
   return {
     available: true,
     since: supertrend[0]?.generated_at || null,
-    horizon_trading_days: 5,
+    horizon_trading_days: 10,
     summary: strategies[0].summary,
     strategies,
-    methodology: "Every fresh US entry a scanner surfaces is recorded once per ticker and signal close, at the price available when it first appeared, under the scanner that produced it. Each pick exits at the first of its own stop, its first target, or the close of the fifth trading day, with a stop assumed first when one bar touches both. Open picks, stopped picks and losers are all counted. Backtests are hypothetical; only these live results are a record."
+    methodology: "Every fresh US entry a scanner surfaces is recorded once per ticker and signal close, at the price available when it first appeared, under the scanner that produced it. Supertrend picks are followed until a daily bar closes under the daily Supertrend line (over it for a short), and are graded at the next open; there is no target and no time limit beyond a 120-day safety limit. Dip picks exit at the first of their own stop, first target, or the close of the tenth trading day, and are graded as soon as a level is hit. Open picks, stopped picks and losers are all counted. Backtests are hypothetical; only these live results are a record."
   };
 }
 
@@ -1675,14 +1692,16 @@ async function rememberRecommendation(db, userId, report) {
   const columns = `id, user_id, symbol, action, direction, generated_at, signal_confirmed_at,
     entry_price, current_price, stop_price, target_1, target_2, confidence,
     entry_status, daily_adx, horizon_trading_days, status`;
+  // US Supertrend ideas and watches are followed until the trend breaks (TREND_EXIT_DAYS is only a safety limit); PASS calls and other markets keep a 10-day window.
+  const horizon = (report.market || "US") === "US" && report.action !== "PASS" ? TREND_EXIT_DAYS : 10;
   let result;
   try {
     result = await db.prepare(`INSERT OR IGNORE INTO recommendations (${columns}, market)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 5, 'PENDING', ?)`).bind(...values, report.market || "US").run();
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)`).bind(...values, horizon, report.market || "US").run();
   } catch (error) {
     if ((report.market || "US") !== "US") throw error;
     result = await db.prepare(`INSERT OR IGNORE INTO recommendations (${columns})
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 5, 'PENDING')`).bind(...values).run();
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`).bind(...values, horizon).run();
   }
   return Boolean(result?.success);
 }
@@ -1712,6 +1731,44 @@ async function fetchDailySettlementBars(symbols) {
 // that target 1 is a short 1 ATR move),
 // or the close of the last bar in the window. When a bar touches both levels the stop is assumed to come first.
 const NEAR_TARGET_FRACTION = 1.0;
+
+// Grades a Supertrend pick by the rule tested best: hold until a daily bar CLOSES under the Supertrend line (over it for a short), then fill at the
+// next open. There is no target. A pick still open after its safety limit is graded at that day's close. Returns null while the pick is still running.
+function gradeTrendExit(recommendation, bars) {
+  const rows = bars.map(bar => ({ ...bar }));
+  try { calculateSupertrend(rows, 10, 3, "1d"); } catch { return null; }
+  const short = recommendation.direction === "SHORT", sign = short ? -1 : 1;
+  const entry = numeric(recommendation.current_price);
+  const generatedDate = String(recommendation.generated_at).slice(0, 10);
+  const horizon = Math.max(1, Number(recommendation.horizon_trading_days) || TREND_EXIT_DAYS);
+  const path = rows.filter(row => row.date.slice(0, 10) > generatedDate);
+  if (!path.length || !entry) return null;
+  const against = short ? "LONG" : "SHORT";
+  const breakIndex = path.findIndex(row => row.supertrend_direction === against);
+  let exitBar, exitPrice, grade, used;
+  if (breakIndex >= 0 && breakIndex + 1 < path.length && breakIndex + 1 < horizon) {
+    exitBar = path[breakIndex + 1]; exitPrice = numeric(exitBar.open) || numeric(exitBar.close); grade = "TREND_BREAK"; used = path.slice(0, breakIndex + 2);
+  } else if (path.length >= horizon) {
+    exitBar = path[horizon - 1]; exitPrice = numeric(exitBar.close); grade = "TIME_LIMIT"; used = path.slice(0, horizon);
+  } else return null;   // still running, or the break happened on the latest bar and the next open is not known yet
+  const highs = used.map(bar => numeric(bar.high)), lows = used.map(bar => numeric(bar.low));
+  const strategyReturnPct = sign * (exitPrice / entry - 1) * 100;
+  return {
+    settledAt: exitBar.date, exitPrice: round(exitPrice, 4), rawReturnPct: round(strategyReturnPct, 3), strategyReturnPct: round(strategyReturnPct, 3),
+    maxFavorablePct: round((short ? (entry - Math.min(...lows)) / entry : (Math.max(...highs) - entry) / entry) * 100, 3),
+    maxAdversePct: round((short ? (Math.max(...highs) - entry) / entry : (entry - Math.min(...lows)) / entry) * 100, 3),
+    grade, targetHit: false, stopHit: grade === "TREND_BREAK",
+  };
+}
+
+// True when any bar in the path reaches the stop or target 1, so the exit is already decided.
+function touchesLevel(recommendation, path) {
+  const short = recommendation.direction === "SHORT";
+  const entry = numeric(recommendation.current_price), stop = numeric(recommendation.stop_price), target = entry + NEAR_TARGET_FRACTION * (numeric(recommendation.target_1) - entry);
+  return path.some(bar => short
+    ? numeric(bar.high) >= stop || numeric(bar.low) <= target || numeric(bar.open) >= stop || numeric(bar.open) <= target
+    : numeric(bar.low) <= stop || numeric(bar.high) >= target || numeric(bar.open) <= stop || numeric(bar.open) >= target);
+}
 
 function gradeRecommendation(recommendation, path) {
   const entry = numeric(recommendation.current_price);
@@ -1782,8 +1839,18 @@ async function settlePendingRecommendations(db, userId, env = {}) {
   for (const recommendation of pending) {
     const generatedDate = String(recommendation.generated_at).slice(0, 10);
     const horizon = Math.max(1, Number(recommendation.horizon_trading_days) || 5);
+    if (horizon >= 60 && recommendation.action !== "PASS") {
+      const full = histories.get(`${recommendation.market || "US"}:${recommendation.symbol}`) || [];
+      const trend = gradeTrendExit(recommendation, full);
+      if (trend) updates.push(db.prepare(`UPDATE recommendations SET status = 'SETTLED', settled_at = ?, exit_price = ?, raw_return_pct = ?,
+        strategy_return_pct = ?, max_favorable_pct = ?, max_adverse_pct = ?, grade = ?, target_hit = ?, stop_hit = ?
+        WHERE id = ? AND user_id = ? AND status = 'PENDING'`).bind(trend.settledAt, trend.exitPrice, trend.rawReturnPct, trend.strategyReturnPct,
+        trend.maxFavorablePct, trend.maxAdversePct, trend.grade, 0, trend.stopHit ? 1 : 0, recommendation.id, userId));
+      continue;
+    }
     const path = (histories.get(`${recommendation.market || "US"}:${recommendation.symbol}`) || []).filter(bar => bar.date.slice(0, 10) > generatedDate).slice(0, horizon);
-    if (path.length < horizon) continue;
+    // A pick is graded as soon as a level is hit instead of waiting out the whole window; otherwise it waits for the window to close.
+    if (!path.length || (path.length < horizon && !touchesLevel(recommendation, path))) continue;
     const grade = gradeRecommendation(recommendation, path);
     updates.push(db.prepare(`UPDATE recommendations SET status = 'SETTLED', settled_at = ?, exit_price = ?, raw_return_pct = ?,
       strategy_return_pct = ?, max_favorable_pct = ?, max_adverse_pct = ?, grade = ?, target_hit = ?, stop_hit = ?
@@ -1832,7 +1899,7 @@ async function recommendationMemory(db, userId, env = {}) {
     available: true,
     newly_settled: newlySettled,
     settlement_warning: settlementWarning,
-    horizon_trading_days: 5,
+    horizon_trading_days: 10,
     summary: {
       total_calls: Number(summary?.total_calls || 0),
       pending_calls: Number(summary?.pending_calls || 0),
@@ -1844,7 +1911,7 @@ async function recommendationMemory(db, userId, env = {}) {
     },
     learning_note: learningNote,
     recent: recentResult?.results || [],
-    methodology: "Each call is stored once per user, ticker, signal close, and action. IDEA and WATCH results are graded from the actual price available when the report was generated, and the call exits at the first of its protective level, target 1, or the fifth subsequent completed daily close; a bar that touches both is counted as a stop. PASS calls are measured to the fifth close and retained to measure missed moves. No orders or portfolio holdings are stored.",
+    methodology: "Each call is stored once per user, ticker, signal close, and action. IDEA and WATCH results are graded from the actual price available when the report was generated, and a US idea or watch is followed until a daily bar closes under the daily Supertrend line (over it for a short) and graded at the next open, with a 120-day safety limit. Ideas in other markets exit at the first of the protective level, target 1, or the tenth subsequent completed daily close. PASS calls are measured to the tenth close and retained to measure missed moves. No orders or portfolio holdings are stored.",
   };
 }
 
@@ -2034,10 +2101,8 @@ async function refreshSharedHoldings(env, market, extra = []) {
   if (!env.DB || !(await claimScanRefresh(env, holdKey(market)))) return false;
   try {
     const rows = (await env.DB.prepare("SELECT symbol FROM holdings WHERE market = ? AND closed_at IS NULL GROUP BY symbol ORDER BY COUNT(*) DESC LIMIT ?").bind(market.id, HOLDING_SHARED_SYMBOLS).all()).results || [];
-    const held = [...new Set([...extra, ...rows.map(row => row.symbol)])].filter(symbol => symbol !== MONITOR_MARKET_SYMBOL);
-    if (!held.length) { await backOffScan(env, holdKey(market), 0); return false; }
-    // SPY rides along for US positions: the monitor tightens stops on days the market falls sharply.
-    const symbols = (market.id === "US" ? [MONITOR_MARKET_SYMBOL, ...held] : held).slice(0, HOLDING_SHARED_SYMBOLS);
+    const symbols = [...new Set([...extra, ...rows.map(row => row.symbol)])].slice(0, HOLDING_SHARED_SYMBOLS);
+    if (!symbols.length) { await backOffScan(env, holdKey(market), 0); return false; }
     const fetched = await fetchSnapshots(symbols, market, env);
     if (!fetched.snapshots.size) throw new Error(fetched.errors?.[0]?.error || "No market data was returned");
     const snapshots = {};
@@ -2089,21 +2154,18 @@ async function holdingSnapshotsFor(env, market, symbols, { manual = false } = {}
   return { snapshots: new Map([...(shared?.snapshots || []), ...direct.snapshots]), errors: [...(shared?.errors || []), ...(direct.errors || [])] };
 }
 
-// ---- Position monitor: the protective ratchet (US positions) ----
-// Each pass recomputes a position's levels from its buy price, the ATR when monitoring began, the highest price seen since
-// entry, and the market. Levels only move in the safe direction (stop up, targets out), so a pass can be repeated at any time.
-//   Start:     stop 2 ATR below the buy price, target 1 at +1 ATR, target 2 at +2 ATR.
-//   Breakeven: once the price has traded 1 ATR above the buy price, the stop moves up to the buy price and the targets move
-//              out to +3 and +4 ATR ("let winners run").
-//   Market:    on any completed day the S&P 500 (SPY) fell 1.5% or more, the stop moves up to 1.5 ATR under that day's close.
-// Backtested (ml_monitor.py, fixed rules, 5-day trades): this lowers the average loss and the share of deep losers but gives up
-// about 0.03% to 0.06% of average return per trade and some win rate, and no rule that moves levels raised the average return.
-// It is protection, not extra profit. Rules were tested for 5-day holds on US stocks; later days apply them unchanged.
-const MONITOR_MARKET_SYMBOL = "SPY";
-const RATCHET_BREAKEVEN_ATR = 1, RATCHET_RUN_TARGET_1_ATR = 3, RATCHET_RUN_TARGET_2_ATR = 4;
-const RATCHET_MARKET_DROP = -0.015, RATCHET_MARKET_DIST_ATR = 1.5;
+// ---- Position monitor (US positions): the protective level follows the daily Supertrend line ----
+// Each pass recomputes a position's levels from its buy price, the ATR when monitoring began, the highest price seen since entry and the daily
+// Supertrend line. Levels only move in the safe direction (the protective level up, never down), so a pass can be repeated at any time.
+//   Protective level: the daily Supertrend line while the daily trend is up, and it rises as the trend continues. Before the line exists (or if it
+//                     is unavailable) it is 2 ATR under the buy price.
+//   Exit:             when a daily bar CLOSES under the line (the daily trend turns down). The exit is not a price touch, and no time limit applies.
+//   Profit zones:     +1 and +2 ATR over the buy price, for reference only; reaching them does not mean sell.
+// Tested on Supertrend entries (ml_st_exits.py): exiting on the line earned +1.8% per trade; adding an early-warning exit (close under a moving
+// average, ADX fading, the market under its 50-day average, a tighter trail) lowered the average each time, so those are shown as warnings only.
+const MONITOR_LINE_STEP_ATR = 0.5;   // a rise in the protective level smaller than this is applied silently, not logged as an event
 
-function monitorLevels(row, snapshot, spy) {
+function monitorLevels(row, snapshot) {
   const market = MARKETS[row.market] || MARKETS.US;
   const fmt = value => fmtPrice(value, market);
   const buy = Number(row.buy_price);
@@ -2112,36 +2174,26 @@ function monitorLevels(row, snapshot, spy) {
   const bars = (snapshot.recent_daily || []).filter(bar => bar.d > boughtDate);
   const price = numeric(snapshot.price);
   const peak = Math.max(numeric(row.peak_high), buy, price, ...bars.map(bar => numeric(bar.h)));
-  const spyMoves = new Map();
-  const spyBars = spy?.recent_daily || [];
-  for (let index = 1; index < spyBars.length; index += 1) spyMoves.set(spyBars[index].d, spyBars[index].c / spyBars[index - 1].c - 1);
-  const baseStop = Math.max(0.01, buy - Math.max(STOP_ATR * atr, buy * 0.01));
+  const trendUp = snapshot.daily_supertrend?.direction === "LONG";
+  const line = trendUp ? numeric(snapshot.daily_supertrend?.value) : 0;
+  const fallbackStop = Math.max(0.01, buy - Math.max(2 * atr, buy * 0.01));
+  const persisted = numeric(row.stop_level);
   const firstRun = row.stop_level == null;
-  let stop = Math.max(numeric(row.stop_level), baseStop);
-  let target1 = Math.max(numeric(row.target_1), buy + TARGET_1_ATR * atr);
-  let target2 = Math.max(numeric(row.target_2), buy + TARGET_2_ATR * atr);
+  let stop = Math.max(persisted, line > 0 && line < price ? line : 0, firstRun ? fallbackStop : 0);
+  stop = Math.max(stop, persisted);
+  const target1 = Math.max(numeric(row.target_1), buy + TARGET_1_ATR * atr), target2 = Math.max(numeric(row.target_2), buy + TARGET_2_ATR * atr);
   const events = [];
-  if (firstRun) events.push({ kind: "INITIAL", reason: `Levels set from your buy price ${fmt(buy)} and the stock's typical daily range (${fmt(atr)}): protective level ${fmt(stop)}, targets ${fmt(target1)} and ${fmt(target2)}.` });
-  if (peak >= buy + RATCHET_BREAKEVEN_ATR * atr) {
-    if (stop < buy) { stop = buy; events.push({ kind: "BREAKEVEN", reason: `The price reached ${fmt(buy + RATCHET_BREAKEVEN_ATR * atr)}, one typical daily range above your buy price, so the protective level moved up to your buy price ${fmt(buy)}.` }); }
-    const run1 = buy + RATCHET_RUN_TARGET_1_ATR * atr, run2 = buy + RATCHET_RUN_TARGET_2_ATR * atr;
-    if (target1 < run1 - 1e-9) { target1 = run1; target2 = Math.max(target2, run2); events.push({ kind: "TARGETS_RAISED", reason: `With the trade working, the targets moved out to ${fmt(target1)} and ${fmt(target2)} to let the gain run.` }); }
-  }
-  for (const bar of bars) {
-    const move = spyMoves.get(bar.d);
-    if (move === undefined || move > RATCHET_MARKET_DROP) continue;
-    const tightened = numeric(bar.c) - RATCHET_MARKET_DIST_ATR * atr;
-    if (tightened > stop) { stop = tightened; events.push({ kind: "MARKET_TIGHTEN", reason: `The S&P 500 fell ${Math.abs(move * 100).toFixed(1)}% on ${bar.d}, so the protective level moved up to ${fmt(stop)}, one and a half daily ranges under that day's close.` }); }
-  }
-  const basis = stop > buy + 1e-9 ? "RAISED" : stop >= buy - 1e-9 ? "BREAKEVEN" : stop > baseStop + 1e-9 ? "RAISED" : "INITIAL";
-  const stopText = basis === "INITIAL" ? "two daily ranges below your buy price" : basis === "BREAKEVEN" ? "raised to your buy price once the trade gained one daily range" : "raised after a sharp market drop";
-  return { stop, target1, target2, atr, peak, basis, stopText, events };
+  if (firstRun) events.push({ kind: "INITIAL", reason: `Protective level set at ${fmt(stop)} (${line > 0 && stop === line ? "the daily Supertrend line" : "two daily ranges under your buy price, because the daily Supertrend line is not available"}). It rises with the trend and you exit if a day closes under it.` });
+  else if (stop - persisted >= MONITOR_LINE_STEP_ATR * atr) events.push({ kind: "LINE_RAISED", reason: `The daily Supertrend line moved up to ${fmt(stop)}, so your protective level moved up with it.` });
+  const basis = line > 0 && stop >= line - 1e-9 ? "LINE" : stop > buy + 1e-9 ? "RAISED" : "INITIAL";
+  const stopText = basis === "LINE" ? "the daily Supertrend line, which rises as the trend continues; exit if a day closes under it" : basis === "RAISED" ? "raised with the daily Supertrend line" : "two daily ranges under your buy price until the daily Supertrend line is available";
+  return { stop, target1, target2, atr, peak, basis, stopText, events, line };
 }
 
 // Writes only what changed. MAX() in SQL keeps a stale read from ever lowering a level that another pass has already raised.
 function monitorStatements(env, row, levels, price, now) {
   const statements = [];
-  const changed = levels.events.length > 0 || row.monitor_atr == null || levels.peak > numeric(row.peak_high) * 1.0005;
+  const changed = levels.events.length > 0 || row.monitor_atr == null || levels.peak > numeric(row.peak_high) * 1.0005 || levels.stop > numeric(row.stop_level) + 1e-9;
   if (!changed) return statements;
   statements.push(env.DB.prepare(`UPDATE holdings SET monitor_atr = COALESCE(monitor_atr, ?), stop_level = MAX(COALESCE(stop_level, 0), ?),
     target_1 = MAX(COALESCE(target_1, 0), ?), target_2 = MAX(COALESCE(target_2, 0), ?), peak_high = MAX(COALESCE(peak_high, 0), ?), monitor_at = ?
@@ -2165,7 +2217,7 @@ async function monitorHoldings(env, market) {
   for (const row of rows) {
     const snapshot = snapshots[row.symbol];
     if (!snapshot) continue;
-    try { statements.push(...monitorStatements(env, row, monitorLevels(row, snapshot, snapshots[MONITOR_MARKET_SYMBOL]), numeric(snapshot.price), now)); } catch { /* one bad row must not stop the rest */ }
+    try { statements.push(...monitorStatements(env, row, monitorLevels(row, snapshot), numeric(snapshot.price), now)); } catch { /* one bad row must not stop the rest */ }
   }
   for (let index = 0; index < statements.length; index += 50) await env.DB.batch(statements.slice(index, index + 50));
   return statements.length;
@@ -2191,7 +2243,32 @@ function evaluateHolding(holding, snapshot, levels = null) {
   const pnlPct = (price / buy - 1) * 100;
   const reasons = [];
   let action, headline;
-  if (price <= stopLevel) {
+  const sma20 = numeric(snapshot.sma_20);
+  if (levels) {
+    // US positions: exit only when the daily Supertrend turns down (a completed daily close under the line). Anything else that suggests the
+    // trend may fade is a warning, because exits on those signals lowered returns in tests (ml_st_exits.py).
+    const warnings = [];
+    if (trend4h === "SHORT") warnings.push("The 4-hour Supertrend has turned down. This is an early warning, not the exit.");
+    if (adx < 20) warnings.push(`Daily ADX is ${adx.toFixed(1)}, below 20, so the trend is losing strength.`);
+    if (sma20 && price < sma20) warnings.push(`Price is under its 20-day average (${fmt(sma20)}).`);
+    if (price <= stopLevel && dailyTrend !== "SHORT") warnings.push(`Price is at or under the protective level ${fmt(stopLevel)}. The exit is a day CLOSING under it, so a close under it today means exit at the next open.`);
+    if (dailyTrend === "SHORT") {
+      action = "EXIT";
+      headline = "The daily trend has turned down";
+      reasons.push("A completed daily close is under the daily Supertrend line, which is the exit that tested best for Supertrend trades. Exit at the next open.");
+      reasons.push(...warnings.filter(text => !text.startsWith("Price is at or under")));
+    } else if (warnings.length) {
+      action = "WATCH";
+      headline = price <= stopLevel ? "Under the exit line: it only counts if the day closes there" : "The trend may be weakening";
+      reasons.push(...warnings);
+      reasons.push("These are warnings only. Exiting on them lowered returns in tests; the exit is the daily Supertrend line.");
+    } else {
+      action = "HOLD";
+      headline = price >= target1 ? "Trend is intact (profit zone reached, stay with the trend)" : "Trend is intact";
+      reasons.push(`The daily trend is up and the exit line is ${fmt(stopLevel)}. There is no time limit: stay in while the daily Supertrend holds.`);
+      if (price >= target1) reasons.push(`The first profit zone ${fmt(target1)} has been reached. Reaching it does not mean sell; selling early lowered returns in tests.`);
+    }
+  } else if (price <= stopLevel) {
     action = "EXIT";
     headline = "Price is below the protective level for this position";
     reasons.push(`Price ${fmt(price)} is under the protective level ${fmt(stopLevel)} (${stopText}).`);
@@ -2379,7 +2456,7 @@ async function listHoldings(request, env) {
     symbolsByMarket.get(row.market).add(row.symbol);
   }
   const loaded = new Map();
-  for (const [marketId, symbols] of symbolsByMarket) if (MARKETS[marketId]) loaded.set(marketId, await holdingSnapshotsFor(env, MARKETS[marketId], [...symbols, ...(marketId === "US" ? [MONITOR_MARKET_SYMBOL] : [])], { manual }));
+  for (const [marketId, symbols] of symbolsByMarket) if (MARKETS[marketId]) loaded.set(marketId, await holdingSnapshotsFor(env, MARKETS[marketId], [...symbols], { manual }));
   const now = new Date().toISOString();
   const updates = [];
   const eventsByHolding = new Map();
@@ -2395,7 +2472,7 @@ async function listHoldings(request, env) {
       const snapshot = loaded.get(row.market)?.snapshots.get(row.symbol);
       let levels = null;
       if (snapshot && row.market === "US") {
-        levels = monitorLevels(row, snapshot, loaded.get("US")?.snapshots.get(MONITOR_MARKET_SYMBOL));
+        levels = monitorLevels(row, snapshot);
         const fresh = monitorStatements(env, row, levels, numeric(snapshot.price), now);
         updates.push(...fresh);
         if (levels.events.length) eventsByHolding.set(row.id, [...levels.events.map(event => ({ at: now, kind: event.kind, reason: event.reason })).reverse(), ...(eventsByHolding.get(row.id) || [])].slice(0, 5));
@@ -2818,7 +2895,7 @@ async function handle(request, env, ctx) {
         try { memoryLogged = await rememberRecommendation(env.DB, user.id, payload); }
         catch { memoryLogged = false; }
       }
-      return json({ ...payload, memory_logged: memoryLogged, memory_horizon_trading_days: 5 });
+      return json({ ...payload, memory_logged: memoryLogged, memory_horizon_trading_days: 10 });
     }
     if (url.pathname === "/api/grade") return json({ error: "Public grading is disabled; this deployment stores no visitor portfolio data." }, 405);
     return json({ error: "Not found" }, 404);
@@ -2839,7 +2916,7 @@ export default {
       await refreshScanIfDue(env, market, ctx).catch(() => {});
       await refreshHoldingsIfDue(env, market).catch(() => {});
       await monitorHoldings(env, market).catch(() => {});
-      // Once an hour, grade scanner picks whose five-session window has closed.
+      // Once an hour, grade scanner picks that hit a level or whose window has closed.
       if (market.id === "US" && env.DB && new Date(event.scheduledTime).getUTCMinutes() < 5) {
         await settlePendingRecommendations(env.DB, SCANNER_USER_ID, env).catch(() => {});
       }

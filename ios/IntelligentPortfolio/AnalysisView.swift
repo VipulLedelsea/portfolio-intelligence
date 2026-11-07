@@ -238,9 +238,9 @@ struct AnalysisContent: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: tileMinimum), spacing: 10)], spacing: 10) {
             level("Signal entry", format(levels.reference))
             level("Current", format(levels.current))
-            level("Invalidation", format(levels.risk))
-            level("Target 1", format(levels.target1))
-            level("Target 2", format(levels.target2))
+            level("Exit line (daily Supertrend)", format(levels.risk))
+            level("Profit zone 1 (optional)", format(levels.target1))
+            level("Profit zone 2 (optional)", format(levels.target2))
         }
     }
 
