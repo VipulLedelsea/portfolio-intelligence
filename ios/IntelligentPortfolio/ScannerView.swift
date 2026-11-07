@@ -6,6 +6,7 @@ struct ScannerView: View {
     @State private var sideInsets = SideInsets()
     @State private var screenHeight: CGFloat = 1000
     @State private var showingTrend = false
+    @State private var showingRecent = false
     @State private var trendStart = 0
     @ScaledMetric(relativeTo: .largeTitle) private var heroSize = 34
 
@@ -191,21 +192,39 @@ struct ScannerView: View {
                     }
 
                     if let recent = discovery.recentSetups, !recent.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            SectionLabel(text: "Recent setups · last 24 hours")
-                            Text("Fresh entries that dropped out, with why and how the price has moved since the signal.")
-                                .font(.caption)
-                                .foregroundStyle(AppTheme.muted)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, 14)
-                        ListFrame {
-                            ForEach(Array(recent.enumerated()), id: \.element.id) { index, setup in
-                                if index > 0 { RowDivider() }
-                                Button { selected = setup.candidate } label: {
-                                    RecentSetupRow(setup: setup, isSelected: selectable && selected == setup.candidate)
+                        // A drop-down: closed by default so the list of fresh setups stays the first thing on screen.
+                        Button {
+                            withAnimation(.snappy(duration: 0.25)) { showingRecent.toggle() }
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    SectionLabel(text: "Recent setups · last 24 hours · \(recent.count)")
+                                    Text("Fresh entries that dropped out, with why and how the price has moved since the signal.")
+                                        .font(.caption)
+                                        .foregroundStyle(AppTheme.muted)
+                                        .multilineTextAlignment(.leading)
                                 }
-                                .buttonStyle(.plain)
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.down")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(AppTheme.muted)
+                                    .rotationEffect(.degrees(showingRecent ? 180 : 0))
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 14)
+                        .accessibilityHint(showingRecent ? "Hides the recent setups" : "Shows the recent setups")
+                        if showingRecent {
+                            ListFrame {
+                                ForEach(Array(recent.enumerated()), id: \.element.id) { index, setup in
+                                    if index > 0 { RowDivider() }
+                                    Button { selected = setup.candidate } label: {
+                                        RecentSetupRow(setup: setup, isSelected: selectable && selected == setup.candidate)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
                         }
                     }
