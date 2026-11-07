@@ -801,7 +801,7 @@ globalThis.fetch = realFetch;
   assert.deepEqual(Object.keys(by).sort(), ["BBB", "CCC"], "Only setups that dropped within a day, and are not fresh again, belong in the recent list");
   assert.equal(by.BBB.drop_reason, "Price ran 1.2 ATR past the signal");
   assert.equal(by.BBB.since_signal_pct, 3, "The move since the signal must be shown");
-  assert.equal(by.CCC.drop_reason, "Entry window closed");
+  assert.equal(by.CCC.drop_reason, "Signal is too old to list");
   assert.equal(by.CCC.since_signal_pct, -3);
   assert.equal(by.BBB.dropped_at, nowIso, "A newly dropped setup is stamped with the time it was noticed");
   assert.equal(by.BBB.first_seen_at, "2026-11-03T15:00:00.000Z", "The first-seen time falls back to the previous scan");

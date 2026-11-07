@@ -6,7 +6,13 @@ const STRIPE_API = "https://api.stripe.com/v1";
 const SUBSCRIPTION_PRICE_CENTS = 1499;
 const SCAN_CACHE_SECONDS = 300;
 const ANALYSIS_CACHE_SECONDS = 90;
-const MAX_ENTRY_AGE_BARS = 1;
+// A setup stays on the main list while the price is still close to its buy point, however many days old it is. It moves to Recent setups when the
+// price runs away (EXTENDED), falls back through the buy point (WEAKENING), or the daily trend or its strength fails. Age alone no longer removes it:
+// before this a setup was dropped after about a day. Tests on Supertrend entries (research/pattern-backtest/README.md, ml_st_age.py) found setups up
+// to 30 days old that were still within half an ATR of the original buy point earned about +0.9% to +1.5% per trade, close to fresh flips, while
+// setups that had already run past it earned about +0.6% to +0.7%. This limit (4-hour bars, about 2 per day, so about 20 trading days) only stops
+// ancient signals from being listed.
+const MAX_ENTRY_AGE_BARS = 40;
 const MAX_ENTRY_EXTENSION_ATR = 0.5;
 const MAX_ADVERSE_EXTENSION_ATR = 0.75;
 const MOBILE_PAIRING_MINUTES = 10;
@@ -1139,7 +1145,7 @@ function marketTrend(info, index, snapshots, withBreadth = true, marketId = null
 // ---- Entry window timing: when does each setup stop being a fresh entry, and what happened to the ones that did ----
 const RECENT_SETUP_HOURS = 24;
 const DROP_REASONS = {
-  LATE_TREND: () => "Entry window closed",
+  LATE_TREND: () => "Signal is too old to list",
   EXTENDED_DO_NOT_CHASE: c => `Price ran ${Math.abs(c.extension_atr).toFixed(1)} ATR past the signal`,
   SIGNAL_WEAKENING: c => `Price fell ${Math.abs(c.extension_atr).toFixed(1)} ATR below the signal`,
   DAILY_CONFLICT: () => "Daily trend turned against it",
@@ -1329,15 +1335,11 @@ async function discover(market = MARKETS.US, env = {}, previous = null) {
   const dipScan = market.id === "US" ? buildDipScan(snapshots, indexSnapshots.get("SPY"), metadata) : null;
   const candidates = allCandidates.filter(candidate => candidate.entry_eligible);
   const lateCandidates = allCandidates.filter(candidate => !candidate.entry_eligible);
-  // When each fresh setup stops counting as an entry (after MAX_ENTRY_AGE_BARS + 1 completed bars), and when it was first seen.
+  // When each fresh setup was first seen. There is no closing time: a setup leaves the list when its price runs away or the trend fails, not when time runs out.
   const nowIso = new Date().toISOString();
-  const sample = snapshots.values().next().value;
-  const barEnds = sample ? nextBarEnds(sessionBarEnds(sample.history, market), market) : [];
   const previousFirstSeen = new Map((previous?.candidates || []).map(item => [item.symbol, item.first_seen_at || previous.generated_at]));
   for (const candidate of candidates) {
     candidate.first_seen_at = previousFirstSeen.get(candidate.symbol) || nowIso;
-    const closing = barEnds[MAX_ENTRY_AGE_BARS - Number(candidate.signal_age_bars || 0)];
-    if (closing) candidate.window_closes_at = closing.toISOString();
   }
   const recent = recentSetups(previous, allCandidates, new Set(candidates.map(candidate => candidate.symbol)), nowIso);
   const longCandidates = candidates.filter(candidate => candidate.direction === "LONG").sort((a, b) => b.long_score - a.long_score || a.symbol.localeCompare(b.symbol));
