@@ -49,7 +49,8 @@ assert.doesNotMatch(html, /Open Long|Open Short|Auto-execute/i, "The read-only i
 assert.match(html, /TradingView 4H/, "The dashboard must offer an embedded TradingView chart");
 assert.match(source, /frame-src https:\/\/www\.tradingview-widget\.com/, "The CSP must allow only the TradingView widget frame");
 assert.doesNotMatch(source, /script-src[^;]*\*/, "The CSP must not allow wildcard script sources");
-assert.match(html, /Learning memory/, "The dashboard must show persistent recommendation learning");
+assert.match(html, /Top ideas/, "The dashboard must show the Top ideas ranking");
+assert.match(html, /Learning memory/,"The dashboard must show persistent recommendation learning");
 const accessResponse = await workerModule.default.fetch(new Request("https://example.test/api/access"), {}, { waitUntil() {} });
 const access = await accessResponse.json();
 assert.equal(access.paywall_enabled, false);
