@@ -309,7 +309,9 @@ function renderAlerts(a){
  if(!a||!a.items||!a.items.length){box.classList.add('hidden');return}
  box.classList.remove('hidden');
  box.innerHTML=`<div class="h-head" style="margin-bottom:6px">Alerts${a.unseen?` · ${a.unseen} new`:''}</div>`+a.items.slice(0,6).map(i=>`<div class="status" style="margin:6px 0;padding:10px 12px;border:1px solid ${i.severity==='high'?'#7a2f2f':'#2c3a4a'};${i.seen_at?'opacity:.7':''}"><b>${i.seen_at?'':'● '}${esc(i.title)}</b> <span style="float:right">${esc(ago(i.at))}</span><br>${esc(i.detail)}</div>`).join('');
- if(a.unseen)post('/api/holdings/alerts/seen').catch(()=>{});
+ // Mark only what was shown, and only once the page is actually in view for a few seconds.
+ const shown=a.items.slice(0,6).filter(i=>!i.seen_at).map(i=>i.id);
+ if(shown.length)setTimeout(()=>{if(!document.hidden)post('/api/holdings/alerts/seen',{ids:shown}).catch(()=>{})},4000);
 }
 function card(h){const s=h.currency_symbol,d=h.price_decimals,has=h.action!=='NO_DATA';
  const changed=h.previous_action&&h.previous_action!==h.action&&has?`Changed from ${LABEL[h.previous_action]} to ${LABEL[h.action]} ${ago(h.action_since)}`:has?`${LABEL[h.action]} since ${ago(h.action_since)}`:'';

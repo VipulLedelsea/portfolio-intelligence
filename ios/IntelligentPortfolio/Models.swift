@@ -675,6 +675,10 @@ struct UndoEntryBody: Encodable, Sendable {
     let id: String
 }
 
+struct AlertsSeenBody: Encodable, Sendable {
+    let ids: [String]
+}
+
 struct HoldingsBody: Encodable, Sendable {
     let refresh: Bool
 }

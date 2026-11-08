@@ -138,6 +138,7 @@ final class AppModel: ObservableObject {
         analysis = nil
         memory = nil
         holdings = nil
+        briefing = nil
         holdingStats = nil
         connectionState = .disconnected
     }
@@ -220,8 +221,11 @@ final class AppModel: ObservableObject {
 
     /// Marks the alerts as seen once the user has had a chance to read them, so the next visit shows only what is new.
     func markAlertsSeen() async {
-        guard let token, (holdings?.alerts?.unseen ?? 0) > 0 else { return }
-        try? await api.markAlertsSeen(token: token)
+        guard let token, let alerts = holdings?.alerts, alerts.unseen > 0 else { return }
+        // Only the alerts that were on screen are marked, so one that arrives while the list is open stays new.
+        let shown = alerts.items.prefix(6).filter { $0.seenAt == nil }.map(\.id)
+        guard !shown.isEmpty else { return }
+        try? await api.markAlertsSeen(ids: shown, token: token)
     }
 
     /// How long the Holdings tab waits before re-checking: a minute while a market is open, ten when closed.
@@ -365,6 +369,7 @@ final class AppModel: ObservableObject {
         analysis = nil
         memory = nil
         holdings = nil
+        briefing = nil
         holdingStats = nil
         connectionState = .disconnected
     }
@@ -382,6 +387,7 @@ final class AppModel: ObservableObject {
             analysis = nil
             memory = nil
         holdings = nil
+        briefing = nil
         holdingStats = nil
             connectionState = .disconnected
         } catch { report(error) }

@@ -31,12 +31,14 @@ assert.equal(verifyDebateClaims([ok, ok, ok, ok], facts, keys).kept.length, 3, "
 let calls = 0;
 const env = { AI: { run: async (model, p) => { calls++; const sys = p.messages[0].content;
   if (sys.includes("BULL analyst")) return { response: JSON.stringify({ claims: [ok, { text: "Win rate was 85% in the backtest.", facts: [{ key: "backtest_win_rate_pct", value: 85 }] }] }) };
-  if (sys.includes("BEAR analyst")) return { response: JSON.stringify({ claims: [{ text: "Earnings are expected in 5 days, inside a 10-day hold.", facts: [{ key: "earnings_in_days", value: 5 }] }] }) };
-  if (sys.includes("You answer")) return { response: JSON.stringify({ rebuttals: [{ to: "R1", text: "The sample is 1010 trades.", facts: [{ key: "backtest_trades", value: 1010 }] }, { to: "ZZ", text: "A rebuttal aimed at nothing real.", facts: [{ key: "stop_pct", value: 11.5 }] }] }) };
+  if (sys.includes("BEAR analyst")) return { response: JSON.stringify({ claims: [{ text: "Earnings are expected in 5 days, inside a 10-day hold.", facts: [{ key: "earnings_in_days", value: 5 }] }, { text: "The stop sits 11.5% from entry, wide for a 10-day idea.", facts: [{ key: "stop_pct", value: 11.5 }] }] }) };
+  // The first rebuttal has a wrong figure and is dropped; the second is valid and must keep ITS target (R2), not the dropped row's (R1).
+  if (sys.includes("You answer")) return { response: JSON.stringify({ rebuttals: [{ to: "R1", text: "The sample is only 5 trades.", facts: [{ key: "backtest_trades", value: 5 }] }, { to: "R2", text: "The sample is 1010 trades.", facts: [{ key: "backtest_trades", value: 1010 }] }, { to: "ZZ", text: "A rebuttal aimed at nothing real.", facts: [{ key: "stop_pct", value: 11.5 }] }] }) };
   return { response: JSON.stringify({ leaning: "bear", verdict: "Earnings in 5 days outweigh the edge.", strongest_bull: "B1", strongest_bear: "R1", would_change_my_mind: "Earnings passing quietly." }) }; } } };
 const result = await runDebate(env, item, "DOWN");
-assert.equal(result.bull.length, 1); assert.equal(result.bear.length, 1);
-assert.equal(result.rebuttals.bull.length, 1, "The valid rebuttal survives"); assert.equal(result.rebuttals.bear.length, 0, "A rebuttal aimed at an unknown claim is dropped");
+assert.equal(result.bull.length, 1); assert.equal(result.bear.length, 2);
+assert.equal(result.rebuttals.bull.length, 1, "The valid rebuttal survives"); assert.equal(result.rebuttals.bull[0].to, "R2", "A kept rebuttal keeps its own target after an earlier one is dropped");
+assert.equal(result.rebuttals.bear.length, 0, "A rebuttal aimed at an unknown claim is dropped");
 assert.equal(result.judge.leaning, "bear"); assert.ok(result.dropped_claims >= 2);
 assert.equal(calls, 5, "Two cases, two rebuttals and one verdict");
 const noCase = await runDebate({ AI: { run: async () => ({ response: JSON.stringify({ claims: [] }) }) } }, item, "DOWN");
