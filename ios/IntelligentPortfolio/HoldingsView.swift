@@ -68,11 +68,6 @@ struct HoldingsView: View {
             .toolbar {
                 if !model.isGuest {
                     ToolbarItem(placement: .principal) { MarketPill() }
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button { Task { await model.refreshHoldings(manual: true) } } label: { Image(systemName: "arrow.clockwise") }
-                            .disabled(model.isLoadingHoldings)
-                            .accessibilityLabel("Refresh holdings")
-                    }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button { showingAdd = true } label: { Image(systemName: "plus") }
                             .accessibilityLabel("Add a holding")
@@ -120,7 +115,6 @@ struct HoldingsView: View {
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .refreshable { await Task { await model.refreshHoldings(manual: true) }.value }
         .id(tab)
     }
 
@@ -136,7 +130,6 @@ struct HoldingsView: View {
                             .readableWidth()
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
-                    .refreshable { await Task { await model.refreshHoldings(manual: true) }.value }
                     .tag(tab)
                 }
             }

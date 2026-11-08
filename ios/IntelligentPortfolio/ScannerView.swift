@@ -7,6 +7,7 @@ struct ScannerView: View {
     @State private var screenHeight: CGFloat = 1000
     @State private var showingTrend = false
     @State private var showingRecent = false
+    @State private var showingScanners = false
     @State private var trendStart = 0
     @ScaledMetric(relativeTo: .largeTitle) private var heroSize = 34
 
@@ -171,6 +172,32 @@ struct ScannerView: View {
 
                     if !trendInStrip, let trend = model.discovery?.marketTrend ?? trends.first { MarketTrendLine(trend: trend) { trendStart = trendStartPage; showingTrend = true } }
 
+                    if let ranking = discovery.ranking, ranking.available {
+                        RankedIdeasSection(ranking: ranking)
+                    }
+
+                    // The separate scanner lists stay available, closed by default, now that the ranked list above covers all of them.
+                    Button {
+                        withAnimation(.snappy(duration: 0.25)) { showingScanners.toggle() }
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                SectionLabel(text: "By scanner")
+                                Text("The Supertrend, dip and pattern lists, one by one.")
+                                    .font(.caption).foregroundStyle(AppTheme.muted)
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.down").font(.footnote.weight(.semibold)).foregroundStyle(AppTheme.muted)
+                                .rotationEffect(.degrees(showingScanners ? 180 : 0))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 6)
+                    .accessibilityHint(showingScanners ? "Hides the separate scanner lists" : "Shows the separate scanner lists")
+
+                    if showingScanners || discovery.ranking?.available != true {
                     ScannerBoxHeader(title: "Supertrend setups",
                                      chip: discovery.candidates.isEmpty ? "None fresh" : "\(discovery.candidates.count) fresh",
                                      tint: discovery.candidates.isEmpty ? AppTheme.muted : AppTheme.mint)
@@ -246,6 +273,7 @@ struct ScannerView: View {
                             .padding(.top, 18)
                         PatternScanSection(pattern: pattern)
                     }
+                    }
                 } else if model.isScanning {
                     ProgressView("Loading the \(model.market.scanTitle) scan…")
                         .tint(AppTheme.amber)
@@ -255,7 +283,6 @@ struct ScannerView: View {
             .padding(16)
         }
         .background(AppTheme.background)
-        .refreshableIf(!model.market.isAutomatic) { await Task { await model.refreshScanner(manual: true) }.value }
     }
 
     private var marketMenu: some View {
@@ -300,20 +327,9 @@ struct ScannerView: View {
             marketMenu
             Text("Confirmed daily and 4-hour Supertrend, strengthening ADX, and entry-extension controls rank the \(model.market.scanTitle).")
                 .foregroundStyle(AppTheme.muted)
-            if model.market.isAutomatic {
-                Label(autoRefreshText, systemImage: "clock.arrow.circlepath")
-                    .font(.footnote)
-                    .foregroundStyle(AppTheme.muted)
-            } else {
-                Button {
-                    Task { await model.refreshScanner(manual: true) }
-                } label: {
-                    Label(model.isScanning ? "Scanning…" : "Refresh scan", systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AppTheme.amber)
-                .disabled(model.isScanning)
-            }
+            Label(autoRefreshText, systemImage: "clock.arrow.circlepath")
+                .font(.footnote)
+                .foregroundStyle(AppTheme.muted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 12)
@@ -591,6 +607,204 @@ private struct DipScanSection: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .sheet(item: $selected) { pick in DipDetailSheet(pick: pick) }
+    }
+}
+
+/// Top ideas: every scanner's setups in one ranked list. Each row says which scanner found it, and the numbers come from the scanner.
+private struct RankedIdeasSection: View {
+    let ranking: RankedIdeas
+    @State private var selected: RankedIdea?
+    @State private var showingSkipped = false
+
+    private var sourceChip: (String, Color) {
+        ranking.source == "ai" ? ("Ranked by AI", AppTheme.mint) : ("Ranked by rules", AppTheme.muted)
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ScannerBoxHeader(title: "Top ideas", chip: sourceChip.0, tint: sourceChip.1)
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: ranking.nothingCompelling ? "moon.zzz.fill" : "list.number")
+                    .foregroundStyle(ranking.nothingCompelling ? AppTheme.muted : AppTheme.mint)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(ranking.headline).font(.headline)
+                    if ranking.source != "ai" {
+                        Text("Ordered by fixed rules (backtest edge, reward to risk, alignment, entry, liquidity, freshness). The AI explanation is not switched on.")
+                            .font(.footnote).foregroundStyle(AppTheme.muted)
+                    }
+                    if let notes = ranking.orderingNotes, !notes.isEmpty {
+                        Text(notes).font(.footnote).foregroundStyle(AppTheme.muted)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .panel()
+            if ranking.items.isEmpty {
+                Text("No ideas passed the filters right now.").font(.footnote).foregroundStyle(AppTheme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ListFrame {
+                    ForEach(Array(ranking.items.enumerated()), id: \.element.id) { index, idea in
+                        if index > 0 { RowDivider() }
+                        Button { selected = idea } label: { RankedRow(idea: idea) }.buttonStyle(.plain)
+                    }
+                }
+            }
+            if !ranking.rejected.isEmpty {
+                Button {
+                    withAnimation(.snappy(duration: 0.25)) { showingSkipped.toggle() }
+                } label: {
+                    HStack {
+                        SectionLabel(text: "Skipped · \(ranking.rejected.count)")
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.down").font(.footnote.weight(.semibold)).foregroundStyle(AppTheme.muted)
+                            .rotationEffect(.degrees(showingSkipped ? 180 : 0))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if showingSkipped {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(ranking.rejected) { item in
+                            Text("\(item.symbol) · \(item.tag): \(item.reason)").font(.caption).foregroundStyle(AppTheme.muted)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            if !ranking.dataGaps.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    SectionLabel(text: "What this ranking can't see")
+                    ForEach(ranking.dataGaps, id: \.self) { gap in
+                        Text("• \(gap)").font(.caption2).foregroundStyle(AppTheme.muted)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Text("Research, not advice. Prices come from the scanners; scores use each scanner's backtest, which is hypothetical. Live results are in the track record.")
+                .font(.caption2).foregroundStyle(AppTheme.muted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .sheet(item: $selected) { idea in RankedDetailSheet(idea: idea, method: ranking.method) }
+    }
+}
+
+private func scannerTint(_ strategy: String) -> Color {
+    switch strategy {
+    case "SUPERTREND": AppTheme.mint
+    case "DIP": AppTheme.amber
+    default: AppTheme.muted
+    }
+}
+
+private struct RankedRow: View {
+    let idea: RankedIdea
+    private func money(_ value: Double) -> String { PriceFormat.string(value, prefix: idea.currencySymbol, decimals: idea.priceDecimals) }
+    private var long: Bool { idea.direction == "LONG" }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text("\(idea.rank)").font(.subheadline.weight(.bold).monospaced()).foregroundStyle(AppTheme.muted).frame(width: 24, alignment: .trailing).padding(.top, 2)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 8) {
+                    Text(idea.symbol).font(.headline)
+                    Text(idea.tag).font(.caption2.weight(.semibold)).foregroundStyle(scannerTint(idea.strategy))
+                        .padding(.horizontal, 7).padding(.vertical, 2).background(scannerTint(idea.strategy).opacity(0.15), in: Capsule())
+                    Text(long ? "Long" : "Short").font(.caption2.weight(.semibold)).foregroundStyle(long ? AppTheme.mint : AppTheme.red)
+                }
+                Text(idea.reason).font(.caption).foregroundStyle(AppTheme.muted).fixedSize(horizontal: false, vertical: true)
+                Text("Score \(Int(idea.score)) · \(idea.confidence) confidence").font(.caption2.weight(.semibold)).foregroundStyle(idea.confidence == "High" ? AppTheme.mint : AppTheme.muted)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(money(idea.price)).font(.headline)
+                Text("Stop \(money(idea.stop))").font(.caption).foregroundStyle(AppTheme.red)
+                if let target = idea.target1 { Text("Target \(money(target))").font(.caption).foregroundStyle(AppTheme.mint) }
+                else { Text("Trend line exit").font(.caption).foregroundStyle(AppTheme.muted) }
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A ranked idea in full: chart, entry, stop, targets, exit rule, the evidence behind its score, and the bull and bear case when the model wrote them.
+private struct RankedDetailSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let idea: RankedIdea
+    let method: String?
+    private var long: Bool { idea.direction == "LONG" }
+    private func money(_ value: Double) -> String { PriceFormat.string(value, prefix: idea.currencySymbol, decimals: idea.priceDecimals) }
+    private var candles: [Candle] {
+        (idea.bars ?? []).map { Candle(date: $0.d, open: $0.o, high: $0.h, low: $0.l, close: $0.c, supertrend: nil, supertrendDirection: nil, barStatus: nil) }
+    }
+    /// Supertrend ideas have no target, so the chart shows 1 and 2 ATR zones from the entry for reference only.
+    private var chartTarget1: Double { idea.target1 ?? (idea.entry + (long ? 1 : -1) * (idea.atr ?? 0)) }
+    private var chartTarget2: Double { idea.target2 ?? (idea.entry + (long ? 2 : -2) * (idea.atr ?? 0)) }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("\(idea.company) · \(idea.tag) · \(long ? "Long" : "Short")").font(.subheadline).foregroundStyle(AppTheme.muted)
+                    Text(idea.reason).font(.callout)
+                    if candles.count > 1 {
+                        CandlestickChart(series: candles,
+                                         levels: ScenarioLevels(reference: idea.entry, current: idea.price, risk: idea.stop, target1: chartTarget1, target2: chartTarget2),
+                                         referenceLines: [])
+                            .aspectRatio(1.5, contentMode: .fit)
+                            .frame(minHeight: 240, maxHeight: 440)
+                            .panel()
+                    }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
+                        tile("Score", "\(Int(idea.score)) · \(idea.confidence)")
+                        tile("Entry (signal)", money(idea.entry))
+                        tile("Now", money(idea.price))
+                        tile("Stop", money(idea.stop))
+                        if let t1 = idea.target1 { tile("Target 1", money(t1)) }
+                        if let t2 = idea.target2 { tile("Target 2", money(t2)) }
+                        if let rr = idea.rrT1 { tile("Reward to risk", String(format: "%.1f to target 1", rr)) }
+                        if let ext = idea.fromEntryAtr { tile("From entry", String(format: "%+.1f ATR", ext)) }
+                    }
+                    block("Exit", idea.exitRule)
+                    if let note = idea.alignmentNote { block("Trend and market", note) }
+                    block("Backtest behind the score",
+                          String(format: "%+.2f%% per trade, %.0f%% wins, %@ trades. ", idea.evidence.evPct, idea.evidence.winRatePct, idea.evidence.n.formatted()) + idea.evidence.note
+                          + (idea.evidence.experimental ? " Experimental: not recommended." : ""))
+                    if let bull = idea.bull { block("Bull case", bull) }
+                    if let bear = idea.bear { block("Bear case", bear) }
+                    if let invalid = idea.invalidation { block("What invalidates it", invalid) }
+                    if idea.crowded == true { block("Crowding", "Other ideas in the same sector and direction rank higher, so this is largely the same bet.") }
+                    Text("Research, not advice. Levels are research scenarios, not orders.").font(.caption2).foregroundStyle(AppTheme.muted)
+                }
+                .padding(16)
+            }
+            .background(AppTheme.background)
+            .navigationTitle(idea.symbol)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+        }
+    }
+
+    private func block(_ title: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            SectionLabel(text: title)
+            Text(text).font(.footnote).foregroundStyle(AppTheme.muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
+    }
+
+    private func tile(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading) {
+            Text(title.uppercased()).font(.caption2).foregroundStyle(AppTheme.muted)
+            Text(value).font(.headline.monospaced()).minimumScaleFactor(0.7).lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
     }
 }
 

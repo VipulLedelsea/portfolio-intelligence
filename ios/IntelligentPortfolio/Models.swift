@@ -57,8 +57,8 @@ enum Market: String, CaseIterable, Identifiable, Sendable {
         case .forex: "Forex"
         }
     }
-    /// BSE and forex scans refresh on the server schedule and cannot be refreshed by hand.
-    var isAutomatic: Bool { self != .us }
+    /// Every scan refreshes on the server schedule and cannot be refreshed by hand.
+    var isAutomatic: Bool { true }
     var scanTitle: String {
         switch self {
         case .us: "S&P 500"
@@ -91,6 +91,7 @@ struct DiscoveryResponse: Decodable, Sendable {
     let recentSetups: [RecentSetup]?
     let dipScan: DipScan?
     let patternScan: PatternScan?
+    let ranking: RankedIdeas?
     let autoRefresh: Bool?
     let refreshedAt: String?
     let warmingUp: Bool?
@@ -104,6 +105,75 @@ struct DiscoveryResponse: Decodable, Sendable {
     let freshEntryCount: Int
     let method: String
     let nextStep: String
+}
+
+/// One ranked list of every scanner's ideas. `source` is "ai" when a Claude model ranked them and "rules" when the fixed scoring did.
+struct RankedIdeas: Decodable, Sendable {
+    let available: Bool
+    let source: String
+    let model: String?
+    let headline: String
+    let nothingCompelling: Bool
+    let marketState: String?
+    let items: [RankedIdea]
+    let rejected: [RankedReject]
+    let dataGaps: [String]
+    let orderingNotes: String?
+    let method: String?
+}
+
+struct RankedReject: Decodable, Identifiable, Sendable {
+    var id: String
+    let symbol: String
+    let strategy: String
+    let tag: String
+    let reason: String
+}
+
+struct RankedEvidence: Decodable, Hashable, Sendable {
+    let label: String
+    let n: Int
+    let winRatePct: Double
+    let evPct: Double
+    let experimental: Bool
+    let note: String
+}
+
+struct RankedIdea: Decodable, Identifiable, Hashable, Sendable {
+    let id: String
+    let rank: Int
+    let symbol: String
+    let company: String
+    let sector: String
+    let strategy: String
+    let tag: String
+    let detail: String?
+    let direction: String
+    let currencySymbol: String?
+    let priceDecimals: Int?
+    let price: Double
+    let entry: Double
+    let stop: Double
+    let target1: Double?
+    let target2: Double?
+    let atr: Double?
+    let exitRule: String
+    let stopPct: Double?
+    let rrT1: Double?
+    let rrT2: Double?
+    let fromEntryAtr: Double?
+    let ageDays: Int?
+    let alignmentNote: String?
+    let score: Double
+    let confidence: String
+    let reason: String
+    let sources: [String]?
+    let crowded: Bool?
+    let evidence: RankedEvidence
+    let bull: String?
+    let bear: String?
+    let invalidation: String?
+    let bars: [DailyBar]?
 }
 
 /// The third scanner mode (experimental): candlestick patterns on a breakout or breakdown day.

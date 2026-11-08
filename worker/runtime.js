@@ -20,12 +20,18 @@ const MOBILE_SESSION_DAYS = 90;
 const WEB_SESSION_DAYS = 30;
 const SESSION_COOKIE = "ip_session";
 const OAUTH_STATE_COOKIE = "ip_oauth_state";
+// Refresh schedule for the whole system. Nothing is refreshed by hand: every scan is produced by the cron jobs (wrangler.toml), and a
+// request only reads the stored result. A US scan takes about 15 to 45 seconds and about 25 outgoing requests (the free plan allows
+// 50 per run), so US is scanned every 15 minutes while the market is open, at most once an hour for BSE and forex, and rarely when closed.
+// The scan lock lasts 4 minutes, longer than any scan, so two scans never overlap. Holdings are re-checked on the same 15-minute beat
+// and the AI ranking at most every 30 minutes, run after the scan so it can never delay it.
 const AUTO_REFRESH_OPEN_SECONDS = 55 * 60;
-const US_REFRESH_OPEN_SECONDS = 5 * 60;
+const US_REFRESH_OPEN_SECONDS = 15 * 60;
 const AUTO_REFRESH_CLOSED_SECONDS = 6 * 60 * 60;
 const AUTO_REFRESH_LOCK_SECONDS = 4 * 60;
 const AUTO_REFRESH_BACKOFF_SECONDS = 15 * 60;
-const MANUAL_REFRESH_MIN_SECONDS = 60;
+const AI_RANKING_MIN_GAP_SECONDS = 30 * 60;
+const MEMORY_SETTLE_MIN_GAP_SECONDS = 30 * 60;
 const EXTERNAL_ANALYSIS_CACHE_SECONDS = 15 * 60;
 const YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/";
 const TWELVE_DATA = "https://api.twelvedata.com/time_series";
@@ -54,7 +60,7 @@ const FOREX_PAIRS = [
 ];
 
 const MARKETS = {
-  US: { id: "US", name: "S&P 500", label: "US stocks", provider: "robinhood", auto: false, tz: "America/New_York", dailyCloseMinutes: 16 * 60, currency: "USD", symbolPrefix: "$", decimals: () => 2 },
+  US: { id: "US", name: "S&P 500", label: "US stocks", provider: "robinhood", auto: true, tz: "America/New_York", dailyCloseMinutes: 16 * 60, currency: "USD", symbolPrefix: "$", decimals: () => 2 },
   IN: { id: "IN", name: "Sensex 30", label: "India (BSE)", provider: "external", auto: true, tz: "Asia/Kolkata", dailyCloseMinutes: 15 * 60 + 35, currency: "INR", symbolPrefix: "₹", decimals: () => 2, universe: SENSEX_30, yahoo: symbol => symbol.startsWith("^") ? symbol : `${symbol}.BO`, twelve: symbol => symbol, twelveExchange: "BSE", tradingView: symbol => `BSE:${symbol.replace(/[^A-Z0-9_-]/g, "_")}` },
   FX: { id: "FX", name: "Major forex pairs", label: "Forex", provider: "external", auto: true, tz: "UTC", dailyCloseMinutes: Infinity, currency: "", symbolPrefix: "", decimals: value => value >= 20 ? 3 : 5, universe: FOREX_PAIRS, yahoo: symbol => symbol.includes("-") ? symbol : `${symbol}=X`, twelve: symbol => `${symbol.slice(0, 3)}/${symbol.slice(3)}`, tradingView: symbol => `FX:${symbol}` },
 };
@@ -1404,6 +1410,383 @@ function buildPatternScan(snapshots, metadata) {
   };
 }
 
+// ---- Unified ranking: one list for every idea from every scanner ----
+// The scanners (Supertrend, dip, pattern) feed one ranked "Top ideas" list, each row tagged with the scanner that found it. Code does the
+// arithmetic (levels, risk, distance, hard filters, a rules score); when an Anthropic key is configured, a Claude model then ranks the
+// survivors and writes the reasoning, and the app takes every price from the scanner's own numbers, never from the model.
+// Backtest evidence per scanner comes from research/pattern-backtest/README.md. n is the number of backtested trades.
+const RANK_EVIDENCE = {
+  SUPERTREND: { label: "Supertrend", n: 503, win_rate_pct: 45, avg_win_pct: 11.3, avg_loss_pct: -6.2, ev_pct: 1.61, experimental: false,
+    note: "Daily Supertrend flip with the ADX gate, held until a daily close under the Supertrend line (about 34 days on average); no target. About 500 trades over four years in a mostly rising market; the edge was larger in the first half." },
+  DIP: { label: "Dip", n: 4754, win_rate_pct: 69, avg_win_pct: null, avg_loss_pct: null, ev_pct: 0.66, experimental: false,
+    note: "Dip above the 200-day average while SPY was down 1.5% or more over 5 days, 5-day hold. The gate was chosen after seeing the data, and the trades cluster in a few selloff weeks; calm-market dips lost money." },
+  DIP_SHARP: { label: "Dip", n: 1010, win_rate_pct: 72, avg_win_pct: null, avg_loss_pct: null, ev_pct: 1.14, experimental: false,
+    note: "Sharper dip (RSI(2) under 5, down 5% or more in 3 days) while SPY was down 1.5% or more over 5 days. Fewer trades, more clustered in a few selloff weeks." },
+  PATTERN_LONG: { label: "Pattern", n: 347, win_rate_pct: 55, avg_win_pct: null, avg_loss_pct: null, ev_pct: -0.37, experimental: true,
+    note: "Bullish candlestick pattern on a 20-day-high breakout with volume 1.4x average, 5-day hold with 2 ATR stop and 1 ATR target. It did worse than breakouts without a pattern (-0.2% to -0.5% per trade) and lost money in absolute terms." },
+  PATTERN_SHORT: { label: "Pattern", n: 379, win_rate_pct: 57, avg_win_pct: null, avg_loss_pct: null, ev_pct: -0.61, experimental: true,
+    note: "Bearish candlestick pattern on a 20-day-low breakdown with volume 1.4x average, 5-day hold. Beat breakdowns without a pattern by about +0.6% but still lost money in absolute terms, and the edge sat mostly in the first half." },
+};
+const RANK_MAX_STOP_PCT = 12, RANK_MAX_CHASE_ATR = 1.5, RANK_STALE_DAYS = 6, RANK_MIN_PROVEN_TRADES = 100, RANK_MAX_ITEMS = 30;
+
+const rankDaysOld = date => { const t = Date.parse(String(date).slice(0, 10)); return Number.isFinite(t) ? Math.max(0, Math.round((Date.now() - t) / 86400000)) : null; };
+
+function rankItem(base) {
+  const { direction, entry, stop, target_1: t1, target_2: t2, price } = base;
+  const long = direction === "LONG", risk = Math.abs(entry - stop);
+  const reward = t => Number.isFinite(t) ? Math.abs(t - entry) : null;
+  return {
+    ...base,
+    stop_pct: entry > 0 ? round(risk / entry * 100, 2) : null,
+    stop_atr: base.atr > 0 ? round(risk / base.atr, 2) : null,
+    rr_t1: risk > 0 && reward(t1) !== null ? round(reward(t1) / risk, 2) : null,
+    rr_t2: risk > 0 && reward(t2) !== null ? round(reward(t2) / risk, 2) : null,
+    from_entry_atr: base.atr > 0 ? round((long ? price - entry : entry - price) / base.atr, 2) : null,
+    stop_hit: long ? price <= stop : price >= stop,
+  };
+}
+
+function rankHardFilter(item) {
+  if (item.stop_hit) return "The stop is already hit.";
+  if (item.stop_pct !== null && item.stop_pct > RANK_MAX_STOP_PCT) return `The stop is ${item.stop_pct}% from entry, wider than the ${RANK_MAX_STOP_PCT}% limit.`;
+  if (item.strategy !== "SUPERTREND" && item.from_entry_atr !== null && item.from_entry_atr > RANK_MAX_CHASE_ATR) return `Price has already run ${item.from_entry_atr} ATR past the signal close (limit ${RANK_MAX_CHASE_ATR}).`;
+  if (item.age_days !== null && item.age_days > RANK_STALE_DAYS && item.strategy !== "SUPERTREND") return `The signal is ${item.age_days} days old.`;
+  return null;
+}
+
+// Rules score, 0-100, with the weights of the ranking brief: expected value 35, reward to risk 20, trend and market alignment 15,
+// entry quality 15, liquidity 10, freshness 5. Used to order the list when no AI key is set, and handed to the model as a reference.
+function rankRulesScore(item) {
+  const ev = item.evidence.ev_pct;
+  const evPart = clamp((ev + 1) / 3 * 100, 0, 100);
+  const rrRef = item.strategy === "SUPERTREND" ? 1.8 : (item.rr_t2 ?? item.rr_t1 ?? 1);
+  const rrPart = clamp(rrRef / 3 * 100, 0, 100);
+  const alignPart = item.alignment_score;
+  const entryPart = clamp(100 - 40 * clamp(Math.max(0, item.from_entry_atr ?? 0) / RANK_MAX_CHASE_ATR, 0, 1) - (item.stop_atr > 3 ? 25 : 0) - (item.stop_atr < 1 ? 15 : 0), 0, 100);
+  const liquidityPart = item.volume_ratio >= 1.4 ? 75 : 55; // dollar volume is not in the feed, so liquidity is judged from the volume ratio only
+  const age = item.age_days ?? 0;
+  const freshPart = age <= 1 ? 100 : age <= 3 ? 65 : age <= 5 ? 35 : 10;
+  let score = 0.35 * evPart + 0.2 * rrPart + 0.15 * alignPart + 0.15 * entryPart + 0.1 * liquidityPart + 0.05 * freshPart;
+  if (item.evidence.experimental) score -= 12;
+  if (item.evidence.n < RANK_MIN_PROVEN_TRADES) score -= 10;
+  if (ev <= 0) score = Math.min(score, 40);
+  return round(clamp(score, 0, 100), 1);
+}
+
+function rankConfidence(item) {
+  const e = item.evidence;
+  if (e.ev_pct > 0.5 && e.n >= 500 && item.alignment_score >= 70) return "High";
+  if (e.ev_pct > 0) return "Med";
+  return "Low";
+}
+
+function rankRulesReason(item) {
+  const e = item.evidence, signed = value => `${value >= 0 ? "+" : ""}${value}`;
+  const parts = [`${e.label}: backtest ${signed(e.ev_pct)}% per trade, ${e.win_rate_pct}% wins (${e.n.toLocaleString("en-US")} trades)`];
+  if (item.rr_t1 !== null) parts.push(`R:R ${item.rr_t1} to target 1`);
+  else parts.push("exits on the daily trend line");
+  if (item.from_entry_atr !== null) parts.push(`${item.from_entry_atr} ATR from the entry`);
+  if (e.experimental) parts.push("experimental, not recommended");
+  return parts.join(" · ");
+}
+
+function buildRanking({ candidates, dipScan, patternScan, snapshots, trend }) {
+  const marketState = trend?.state || "UNKNOWN";
+  const agrees = direction => marketState === "UP" ? (direction === "LONG" ? 100 : 25) : marketState === "DOWN" ? (direction === "SHORT" ? 100 : 25) : 55;
+  const raw = [];
+  for (const c of candidates || []) {
+    const entry = numeric(c.signal_entry_price), atr = numeric(c.daily_atr) || numeric(c.signal_atr);
+    if (!(entry > 0) || !["LONG", "SHORT"].includes(c.direction)) continue;
+    const levels = pickLevels(c.direction, entry, numeric(c.signal_atr), "US", numeric(c.daily_atr), c.daily_supertrend_value);
+    raw.push({
+      strategy: "SUPERTREND", evidence_key: "SUPERTREND", symbol: c.symbol, company: c.company, sector: c.sector, direction: c.direction, price: c.price,
+      entry: round(entry, 4), stop: round(levels.stop, 4), target_1: null, target_2: null, atr, atr_pct: atr > 0 ? round(atr / entry * 100, 2) : null,
+      volume_ratio: null, age_days: rankDaysOld(c.signal_confirmed_at), scanner_score: c.score, tag: "Supertrend", detail: c.label,
+      exit_rule: "Leave when a day closes " + (c.direction === "SHORT" ? "over" : "under") + " the daily Supertrend line, at the next open. No fixed target and no time limit.",
+      alignment_score: Math.round((agrees(c.direction) + (c.daily_aligned && c.daily_adx >= 20 ? 100 : 40)) / 2),
+      alignment_note: `Daily Supertrend ${c.daily_supertrend_direction}, daily ADX ${c.daily_adx}${c.daily_adx_rising ? " and rising" : ""}; market ${marketState.toLowerCase()}.`,
+      currency_symbol: c.currency_symbol, price_decimals: c.price_decimals,
+    });
+  }
+  if (dipScan?.available && dipScan.gate?.open) {
+    for (const d of dipScan.candidates || []) {
+      raw.push({
+        strategy: "DIP", evidence_key: d.sharp ? "DIP_SHARP" : "DIP", symbol: d.symbol, company: d.company, sector: d.sector, direction: "LONG", price: d.price,
+        entry: d.signal_close, stop: d.stop_price, target_1: d.target_1, target_2: d.target_2, atr: d.atr_14, atr_pct: d.atr_14_pct,
+        volume_ratio: null, age_days: rankDaysOld(d.signal_as_of), scanner_score: d.score, tag: d.sharp ? "Sharp dip" : "Dip", detail: d.label,
+        exit_rule: "Leave at the stop, at target 1, or at the close of day 10, whichever comes first.",
+        alignment_score: 70, alignment_note: `Stock above its 200-day average; the market-stress gate is open (SPY ${dipScan.gate.spy_5d_pct ?? "n/a"}% over 5 days).`,
+        currency_symbol: d.currency_symbol, price_decimals: d.price_decimals,
+      });
+    }
+  }
+  if (patternScan?.available) {
+    for (const p of [...(patternScan.breakouts || []), ...(patternScan.breakdowns || [])]) {
+      raw.push({
+        strategy: "PATTERN", evidence_key: p.direction === "LONG" ? "PATTERN_LONG" : "PATTERN_SHORT", symbol: p.symbol, company: p.company, sector: p.sector, direction: p.direction, price: p.price,
+        entry: p.signal_close, stop: p.stop_price, target_1: p.target_1, target_2: p.target_2, atr: p.atr_14, atr_pct: p.atr_14_pct,
+        volume_ratio: p.volume_ratio, age_days: rankDaysOld(p.signal_as_of), scanner_score: p.score, tag: "Pattern", detail: p.label,
+        exit_rule: `Leave at the stop, at target 1 or 2, when a day closes back ${p.direction === "LONG" ? "under" : "over"} ${p.failure_level}, or at the close of day 10.`,
+        alignment_score: agrees(p.direction), alignment_note: `Close beyond the 20-day ${p.direction === "LONG" ? "high" : "low"} on ${p.volume_ratio}x volume; market ${marketState.toLowerCase()}.`,
+        currency_symbol: p.currency_symbol, price_decimals: p.price_decimals,
+      });
+    }
+  }
+  const byListPosition = new Map();
+  for (const strategy of ["SUPERTREND", "DIP", "PATTERN"]) raw.filter(r => r.strategy === strategy).sort((a, b) => b.scanner_score - a.scanner_score).forEach((r, i) => byListPosition.set(r, i + 1));
+  const items = [], rejected = [];
+  for (const r of raw) {
+    const item = rankItem({ ...r, id: `${r.strategy}:${r.symbol}:${r.direction}`, evidence: RANK_EVIDENCE[r.evidence_key], scanner_rank_in_list: byListPosition.get(r) });
+    const reason = rankHardFilter(item);
+    if (reason) rejected.push({ id: item.id, symbol: item.symbol, strategy: item.strategy, tag: item.tag, reason });
+    else items.push(item);
+  }
+  for (const item of items) item.rules_score = rankRulesScore(item);
+  items.sort((a, b) => b.rules_score - a.rules_score || a.symbol.localeCompare(b.symbol));
+  // Same sector and direction: the third and later setups are the same bet, so they lose ground.
+  const seen = new Map();
+  for (const item of items) {
+    const key = `${item.sector}|${item.direction}`, count = seen.get(key) || 0;
+    seen.set(key, count + 1);
+    if (count >= 2) item.rules_score = round(Math.max(0, item.rules_score - 8 * (count - 1)), 1);
+    item.crowded = count >= 2;
+  }
+  items.sort((a, b) => b.rules_score - a.rules_score || a.symbol.localeCompare(b.symbol));
+  const kept = items.slice(0, RANK_MAX_ITEMS);
+  kept.forEach((item, index) => {
+    item.rank = index + 1;
+    item.score = item.rules_score;
+    item.confidence = rankConfidence(item);
+    item.reason = rankRulesReason(item);
+    item.sources = ["rules"];
+    if (index < 12) item.bars = snapshots.get(item.symbol)?.chart_daily || [];
+    delete item.evidence_key;
+  });
+  const positive = kept.filter(item => item.evidence.ev_pct > 0);
+  return {
+    available: true, source: "rules", model: null,
+    headline: positive.length ? `${positive.length} idea${positive.length === 1 ? "" : "s"} with a positive backtest edge today` : (kept.length ? "Nothing here has a positive backtest edge today" : "No scanner ideas today"),
+    nothing_compelling: !positive.length,
+    market_state: marketState,
+    items: kept, rejected: rejected.slice(0, 40),
+    data_gaps: ["No earnings calendar or news feed is connected, so earnings or events inside the holding window are not checked.", "Dollar volume is not in the data feed; liquidity is judged from the volume ratio only.", "Backtest figures are per strategy, not per stock, and most were tested on the S&P 500 in a mostly rising market."],
+    ordering_notes: null, deep_dives: [],
+    method: "Rules: expected value from each scanner's backtest 35%, reward to risk 20%, trend and market alignment 15%, entry quality 15%, liquidity 10%, freshness 5%. Experimental and unproven scanners are penalised, negative-edge scanners are capped, and a third setup in the same sector and direction loses ground. Hard filters drop setups with a stop already hit, a stop wider than 12%, a chase of more than 1.5 ATR, or a stale signal.",
+  };
+}
+
+const RANKING_SYSTEM_PROMPT = `ROLE
+You are a disciplined swing-trading analyst reviewing every setup currently produced by our scanner. Rank them from best to worst by risk-adjusted expected value, and say clearly which to skip. You are not giving personalized financial advice; you are scoring rule-based setups for a research tool.
+
+INPUT
+You receive one JSON object: market context, the strategy evidence (backtest win rate, average win and loss where known, expected value per trade, sample size), the setups that passed the code's hard filters (each with entry, stop, targets, risk, reward to risk, distance from entry in ATR, age, alignment, a rules_score and rules rank), and the setups the code already rejected. Use ONLY this data. If a field is missing, say so and lower confidence. Never invent prices, statistics or news. Do not output any price: the app takes all prices from the input.
+
+HOW TO SCORE (0-100)
+- 35% expected value: use the strategy's own backtest figures (ev_pct per trade, win rate, sample size). Dips and Pattern ideas are graded on their own stop and first target within 10 days; Supertrend ideas have no target and exit on a daily close under the trend line, so judge them by their average win versus average loss, not by reward to the first target. Do not apply a single reward-to-risk cutoff across strategies: dips use a 2 ATR stop with a 1 ATR first target by design.
+- 20% reward to risk of this specific trade.
+- 15% trend and market alignment.
+- 15% entry quality: closeness to the entry and stop size relative to ATR.
+- 10% liquidity and slippage risk (dollar volume is not available: say so).
+- 5% freshness.
+Penalize experimental strategies, small backtest samples, strategies whose backtest expected value is zero or negative (they cannot be High confidence and should not sit in the top tier), crowding in one sector, and setups that are really the same bet. Make sure the top 10 is not all one strategy or one direction unless the evidence strongly justifies it. You may reject additional setups with a one-line reason.
+
+RULES
+- Prefer fewer, higher-conviction picks over a long list. Be explicit when the honest answer is "nothing here is compelling today".
+- Do not recommend position sizes or say "buy"; present ranked research.
+- Show numbers from the input in your reasons (for example "backtest +1.6% per trade, 45% wins, 503 trades").
+- Write plain, short sentences. No markdown.
+
+OUTPUT
+Reply with ONE JSON object and nothing else, with exactly these keys:
+{
+ "headline": string, at most 140 characters, the one-line takeaway for today,
+ "nothing_compelling": boolean,
+ "ranked": [ { "id": string copied from the input, "score": integer 0-100, "confidence": "High" | "Med" | "Low", "reason": one sentence, at most 170 characters } ] best to worst, including only setups worth listing,
+ "deep_dives": [ { "id": string, "bull": one or two sentences, "bear": one or two sentences, "invalidation": one sentence } ] for the top 5 ranked setups,
+ "rejected": [ { "id": string, "reason": one short sentence } ] for setups you drop beyond the code's own rejections,
+ "data_gaps": [ strings ] anything missing or uncertain,
+ "ordering_notes": string, where your order disagrees with the scanners' own ordering or the rules_score, and why (empty string if none)
+}`;
+
+function rankInputHash(items) {
+  let h = 2166136261;
+  for (const text of items.map(item => `${item.id}|${item.stop}|${item.target_1}`).sort().join(";")) { h ^= text.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
+  return h.toString(36);
+}
+
+function rankModelInput(ranking, market) {
+  const slim = item => ({ id: item.id, symbol: item.symbol, company: item.company, sector: item.sector, strategy: item.strategy, tag: item.tag, detail: item.detail, direction: item.direction,
+    price: item.price, entry: item.entry, stop: item.stop, target_1: item.target_1, target_2: item.target_2, exit_rule: item.exit_rule, stop_pct: item.stop_pct, stop_atr: item.stop_atr,
+    rr_to_target_1: item.rr_t1, rr_to_target_2: item.rr_t2, from_entry_atr: item.from_entry_atr, age_days: item.age_days, atr_pct: item.atr_pct, volume_ratio: item.volume_ratio,
+    alignment: item.alignment_note, scanner_rank_within_its_list: item.scanner_rank_in_list, scanner_score: item.scanner_score, rules_score: item.rules_score, rules_rank: item.rank,
+    same_sector_crowded: item.crowded, evidence: Object.keys(RANK_EVIDENCE).find(key => RANK_EVIDENCE[key] === item.evidence) });
+  return {
+    as_of: new Date().toISOString().slice(0, 10), market: market || "US", market_trend: ranking.market_state,
+    strategy_evidence: RANK_EVIDENCE,
+    hard_filters_applied_by_code: { stop_wider_than_pct: RANK_MAX_STOP_PCT, chase_beyond_atr: RANK_MAX_CHASE_ATR, stale_after_days: RANK_STALE_DAYS, stop_already_hit: true },
+    setups: ranking.items.map(slim),
+    rejected_by_code: ranking.rejected.map(({ id, reason }) => ({ id, reason })),
+  };
+}
+
+const RANKING_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    headline: { type: "string" }, nothing_compelling: { type: "boolean" },
+    ranked: { type: "array", items: { type: "object", properties: { id: { type: "string" }, score: { type: "integer" }, confidence: { type: "string", enum: ["High", "Med", "Low"] }, reason: { type: "string" } }, required: ["id", "score", "confidence", "reason"] } },
+    deep_dives: { type: "array", items: { type: "object", properties: { id: { type: "string" }, bull: { type: "string" }, bear: { type: "string" }, invalidation: { type: "string" } }, required: ["id", "bull", "bear", "invalidation"] } },
+    rejected: { type: "array", items: { type: "object", properties: { id: { type: "string" }, reason: { type: "string" } }, required: ["id", "reason"] } },
+    data_gaps: { type: "array", items: { type: "string" } }, ordering_notes: { type: "string" },
+  },
+  required: ["headline", "nothing_compelling", "ranked", "deep_dives", "rejected", "data_gaps", "ordering_notes"],
+};
+const WORKERS_AI_RANKING_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+
+function parseModelJson(text) {
+  const start = text.indexOf("{"), end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) throw new Error("The model did not return JSON");
+  return JSON.parse(text.slice(start, end + 1));
+}
+
+// Workers AI: an open model that runs on Cloudflare itself, through the AI binding. No API key and no outside account.
+async function callWorkersAiRanking(env, input) {
+  const model = env.RANKING_MODEL || WORKERS_AI_RANKING_MODEL;
+  const body = { messages: [{ role: "system", content: RANKING_SYSTEM_PROMPT }, { role: "user", content: JSON.stringify(input) }], max_tokens: 5000, temperature: 0.2 };
+  // A model call that hangs is abandoned after 100 seconds, so it can never hold the run open.
+  const run = params => Promise.race([env.AI.run(model, params), new Promise((_, reject) => setTimeout(() => reject(new Error("The AI model took too long")), 100000))]);
+  let result;
+  try { result = await run({ ...body, response_format: { type: "json_schema", json_schema: RANKING_JSON_SCHEMA } }); }
+  catch (error) {
+    if (/too long/.test(cleanError(error))) throw error;
+    console.error(`Workers AI json mode failed, retrying plain: ${cleanError(error)}`);
+    result = await run(body);
+  }
+  const out = result?.response ?? result;
+  return { parsed: typeof out === "string" ? parseModelJson(out) : out, model };
+}
+
+async function callRankingModel(env, input) {
+  if (env.AI && env.RANKING_PROVIDER !== "anthropic") return callWorkersAiRanking(env, input);
+  const request = withFallback => ({
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2026-10-21", ...(withFallback ? { "anthropic-beta": "server-side-fallback-2026-07-01" } : {}) },
+    body: JSON.stringify({
+      model: env.RANKING_MODEL || "claude-opus-5-5", max_tokens: 12000, output_config: { effort: "high" }, ...(withFallback ? { fallbacks: "default" } : {}),
+      system: RANKING_SYSTEM_PROMPT, messages: [{ role: "user", content: JSON.stringify(input) }],
+    }),
+    signal: AbortSignal.timeout(240000),
+  });
+  let response = await fetch("https://api.anthropic.com/v1/messages", request(true));
+  if (response.status === 400) response = await fetch("https://api.anthropic.com/v1/messages", request(false));
+  if (!response.ok) throw new Error(`Anthropic API returned HTTP ${response.status}`);
+  const data = await response.json();
+  if (data.stop_reason === "refusal") throw new Error("The model declined the request");
+  if (data.stop_reason === "max_tokens") throw new Error("The model's answer was cut off");
+  const text = (data.content || []).filter(block => block.type === "text").map(block => block.text).join("");
+  return { parsed: parseModelJson(text), model: data.model || env.RANKING_MODEL || "claude-opus-5-5" };
+}
+
+// Keeps only what can be trusted: known ids, bounded scores, short text. Anything else is dropped rather than shown.
+function validateAiRanking(parsed, validIds) {
+  const str = (value, max) => typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, max) : "";
+  const seen = new Set(), ranked = [];
+  for (const row of Array.isArray(parsed?.ranked) ? parsed.ranked : []) {
+    const id = str(row?.id, 80), score = Number(row?.score);
+    if (!validIds.has(id) || seen.has(id) || !Number.isFinite(score)) continue;
+    seen.add(id);
+    ranked.push({ id, score: Math.round(clamp(score, 0, 100)), confidence: ["High", "Med", "Low"].includes(row.confidence) ? row.confidence : "Low", reason: str(row.reason, 200) });
+  }
+  const deep = [], deepSeen = new Set();
+  for (const row of Array.isArray(parsed?.deep_dives) ? parsed.deep_dives : []) {
+    const id = str(row?.id, 80);
+    if (!validIds.has(id) || deepSeen.has(id)) continue;
+    deepSeen.add(id);
+    deep.push({ id, bull: str(row.bull, 420), bear: str(row.bear, 420), invalidation: str(row.invalidation, 260) });
+  }
+  const rejected = [];
+  for (const row of Array.isArray(parsed?.rejected) ? parsed.rejected : []) {
+    const id = str(row?.id, 80);
+    if (validIds.has(id) && !seen.has(id)) rejected.push({ id, reason: str(row.reason, 200) });
+  }
+  if (!ranked.length && !rejected.length) return null;
+  return {
+    headline: str(parsed.headline, 160), nothing_compelling: Boolean(parsed.nothing_compelling), ranked, deep_dives: deep.slice(0, 5), rejected,
+    data_gaps: (Array.isArray(parsed.data_gaps) ? parsed.data_gaps : []).map(g => str(g, 220)).filter(Boolean).slice(0, 8), ordering_notes: str(parsed.ordering_notes, 600),
+  };
+}
+
+const RANK_ROW = { id: "RANK:US" };
+async function readAiRanking(env) {
+  if (!env.DB) return scanMemory.get(RANK_ROW.id) || null;
+  try {
+    const row = await env.DB.prepare("SELECT payload, generated_at, refreshing_until FROM scan_cache WHERE market = ? LIMIT 1").bind(RANK_ROW.id).first();
+    if (row?.payload) return { ...JSON.parse(row.payload), generated_at: row.generated_at, refreshing_until: row.refreshing_until };
+  } catch { /* table or row missing */ }
+  return null;
+}
+
+// Starts a model ranking when the set of ideas changed (or the last one is over three hours old), at most once every 20 minutes. Never blocks a scan.
+async function ensureAiRanking(env, payload, ctx) {
+  const ranking = payload?.ranking;
+  if (!(env.AI || env.ANTHROPIC_API_KEY) || !env.DB || !ranking?.items?.length) return;
+  const hash = rankInputHash(ranking.items);
+  const stored = await readAiRanking(env);
+  const age = stored ? (Date.now() - Date.parse(stored.generated_at)) / 1000 : Infinity;
+  if (stored && stored.input_hash === hash && age < 3 * 3600) return;
+  if (age < AI_RANKING_MIN_GAP_SECONDS) return;
+  try {
+    await env.DB.prepare("INSERT OR IGNORE INTO scan_cache (market, payload, generated_at, refreshing_until) VALUES (?, NULL, ?, NULL)").bind(RANK_ROW.id, new Date(0).toISOString()).run();
+    const now = new Date();
+    const claimed = await env.DB.prepare("UPDATE scan_cache SET refreshing_until = ? WHERE market = ? AND (refreshing_until IS NULL OR refreshing_until <= ?)")
+      .bind(new Date(now.getTime() + 6 * 60 * 1000).toISOString(), RANK_ROW.id, now.toISOString()).run();
+    if (!(Number(claimed?.meta?.changes ?? 0) > 0)) return;
+  } catch { return; }
+  const work = (async () => {
+    const validIds = new Set(ranking.items.map(item => item.id));
+    let record = { input_hash: hash, error: null, result: null, model: null };
+    try {
+      const { parsed, model } = await callRankingModel(env, rankModelInput(ranking, payload.market));
+      record.result = validateAiRanking(parsed, validIds);
+      record.model = model;
+      if (!record.result) record.error = "The model's answer had no usable ranking";
+    } catch (error) { record.error = cleanError(error); console.error(`AI ranking failed: ${record.error}`); }
+    try {
+      await env.DB.prepare("UPDATE scan_cache SET payload = ?, generated_at = ?, refreshing_until = NULL WHERE market = ?").bind(JSON.stringify(record), new Date().toISOString(), RANK_ROW.id).run();
+    } catch { /* the rules ranking still serves */ }
+  })();
+  if (ctx?.waitUntil) ctx.waitUntil(work); else await work;
+}
+
+// Lays the model's order, scores and reasons over the rules ranking. Setups the model did not mention keep their rules order at the end.
+function mergeAiRanking(ranking, stored) {
+  const ai = stored?.result;
+  if (!ranking?.items?.length || !ai) return ranking;
+  const byId = new Map(ranking.items.map(item => [item.id, item]));
+  const ordered = [];
+  for (const row of ai.ranked) {
+    const item = byId.get(row.id);
+    if (!item) continue;
+    ordered.push({ ...item, score: row.score, confidence: row.confidence, reason: row.reason || item.reason, sources: ["ai"] });
+    byId.delete(row.id);
+  }
+  const rejectedIds = new Map(ai.rejected.map(row => [row.id, row.reason]));
+  const extraRejected = [];
+  for (const [id, item] of byId) {
+    if (rejectedIds.has(id)) extraRejected.push({ id, symbol: item.symbol, strategy: item.strategy, tag: item.tag, reason: rejectedIds.get(id) });
+  }
+  const unranked = [...byId.values()].filter(item => !rejectedIds.has(item.id)).map(item => ({ ...item, sources: ["rules"], reason: `${item.reason} · not scored by the model` }));
+  const items = [...ordered, ...unranked].map((item, index) => ({ ...item, rank: index + 1 }));
+  const dives = new Map(ai.deep_dives.map(row => [row.id, row]));
+  return {
+    ...ranking, source: "ai", model: stored.model, ai_generated_at: stored.generated_at,
+    headline: ai.headline || ranking.headline, nothing_compelling: ai.nothing_compelling,
+    items: items.map(item => dives.has(item.id) ? { ...item, bull: dives.get(item.id).bull, bear: dives.get(item.id).bear, invalidation: dives.get(item.id).invalidation } : item),
+    rejected: [...ranking.rejected, ...extraRejected],
+    data_gaps: [...new Set([...ranking.data_gaps, ...ai.data_gaps])].slice(0, 10), ordering_notes: ai.ordering_notes || null,
+    method: `${ranking.method} An AI model (${stored.model}) then ranked the setups and wrote the reasons; every price comes from the scanners, not the model.`,
+  };
+}
+
 async function discover(market = MARKETS.US, env = {}, previous = null) {
   const records = market.universe || await loadUniverse();
   const metadata = new Map(records.map(record => [record.symbol, record]));
@@ -1420,6 +1803,7 @@ async function discover(market = MARKETS.US, env = {}, previous = null) {
   const dipScan = market.id === "US" ? buildDipScan(snapshots, indexSnapshots.get("SPY"), metadata) : null;
   const patternScan = market.id === "US" ? buildPatternScan(snapshots, metadata) : null;
   const candidates = allCandidates.filter(candidate => candidate.entry_eligible);
+  const ranking = market.id === "US" ? buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0] }) : null;
   const lateCandidates = allCandidates.filter(candidate => !candidate.entry_eligible);
   // When each fresh setup was first seen. There is no closing time: a setup leaves the list when its price runs away or the trend fails, not when time runs out.
   const nowIso = new Date().toISOString();
@@ -1451,6 +1835,7 @@ async function discover(market = MARKETS.US, env = {}, previous = null) {
     recent_setups: recent,
     dip_scan: dipScan,
     pattern_scan: patternScan,
+    ranking,
     direction_counts: { LONG: longCandidates.length, SHORT: shortCandidates.length },
     fresh_entry_count: candidates.length,
     late_or_extended_count: lateCandidates.length,
@@ -1968,12 +2353,18 @@ async function settlePendingRecommendations(db, userId, env = {}) {
   return updates.length;
 }
 
+const memorySettledAt = new Map();
 async function recommendationMemory(db, userId, env = {}) {
   if (!db) return { available: false, reason: "Persistent memory is not configured." };
   let newlySettled = 0;
   let settlementWarning = null;
-  try { newlySettled = await settlePendingRecommendations(db, userId, env); }
-  catch (error) { settlementWarning = `Existing grades are available, but new settlement was delayed: ${cleanError(error)}`; }
+  // Grading fetches market data, so it runs at most every 30 minutes per user however often the app or page asks.
+  const lastSettle = memorySettledAt.get(userId) || 0;
+  if (Date.now() - lastSettle >= MEMORY_SETTLE_MIN_GAP_SECONDS * 1000) {
+    memorySettledAt.set(userId, Date.now());
+    try { newlySettled = await settlePendingRecommendations(db, userId, env); }
+    catch (error) { settlementWarning = `Existing grades are available, but new settlement was delayed: ${cleanError(error)}`; }
+  }
   const summary = await db.prepare(`SELECT
       COUNT(*) AS total_calls,
       SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) AS pending_calls,
@@ -2023,7 +2414,7 @@ const scanMemory = new Map();
 
 function refreshInterval(market, now = new Date()) {
   if (!marketIsOpen(market, now)) return AUTO_REFRESH_CLOSED_SECONDS;
-  return market.auto ? AUTO_REFRESH_OPEN_SECONDS : US_REFRESH_OPEN_SECONDS;
+  return market.id === "US" ? US_REFRESH_OPEN_SECONDS : AUTO_REFRESH_OPEN_SECONDS;
 }
 
 function withRefreshInfo(payload, generatedAt, market) {
@@ -2057,7 +2448,7 @@ async function claimScanRefresh(env, market) {
   return true;
 }
 
-async function refreshScan(env, market) {
+async function refreshScan(env, market, ctx) {
   const previous = (await readStoredScan(env, market))?.payload || null;
   const payload = await discover(market, env, previous);
   const generatedAt = new Date().toISOString();
@@ -2069,6 +2460,7 @@ async function refreshScan(env, market) {
       await env.DB.prepare("UPDATE scan_cache SET payload = ?, generated_at = ?, refreshing_until = NULL WHERE market = ?").bind(JSON.stringify(payload), generatedAt, market.id).run();
     } catch { /* memory copy still serves this instance */ }
     try { await recordScannerPicks(env, payload); } catch { /* logging must never break a scan */ }
+    if (market.id === "US") { try { await ensureAiRanking(env, payload, ctx); } catch { /* the rules ranking still serves */ } }
   }
 }
 
@@ -2081,27 +2473,32 @@ async function backOffScan(env, market, seconds = AUTO_REFRESH_BACKOFF_SECONDS) 
   }
 }
 
-async function refreshScanIfDue(env, market, ctx, { force = false, wait = false } = {}) {
+async function refreshScanIfDue(env, market, ctx, { wait = false } = {}) {
   const stored = await readStoredScan(env, market);
   const age = stored ? (Date.now() - Date.parse(stored.generatedAt)) / 1000 : Infinity;
-  // A manual refresh can never push the data provider harder than once a minute for everyone together.
-  if (force && stored && age < MANUAL_REFRESH_MIN_SECONDS) return stored;
-  if (!force && age < refreshInterval(market)) return stored;
-  if (!force && !marketIsOpen(market) && stored && age < AUTO_REFRESH_CLOSED_SECONDS) return stored;
+  // A stored US scan from before the ranking existed is rebuilt once (and at most every 5 minutes), even while the market is closed.
+  const outdated = market.id === "US" && stored && !stored.payload?.ranking && age > 5 * 60;
+  if (!outdated && age < refreshInterval(market)) return stored;
+  if (!outdated && !marketIsOpen(market) && stored && age < AUTO_REFRESH_CLOSED_SECONDS) return stored;
   if (await claimScanRefresh(env, market)) {
-    const work = refreshScan(env, market).catch(error => { console.error(`scan refresh failed for ${market.id}: ${cleanError(error)}`); return backOffScan(env, market); });
+    const work = refreshScan(env, market, ctx).catch(error => { console.error(`scan refresh failed for ${market.id}: ${cleanError(error)}`); return backOffScan(env, market); });
     ctx.waitUntil(work);
     if (!stored || wait) await work;
   }
   return await readStoredScan(env, market);
 }
 
-async function autoScanResponse(env, market, ctx, { wait = false, force = false } = {}) {
-  const stored = await refreshScanIfDue(env, market, ctx, { wait, force });
+async function autoScanResponse(env, market, ctx, { wait = false } = {}) {
+  const stored = await refreshScanIfDue(env, market, ctx, { wait });
   if (!stored) {
     return { market: market.id, market_label: market.label, auto_refresh: market.auto, warming_up: true, candidates: [], long_candidates: [], short_candidates: [], late_candidates: [], direction_counts: { LONG: 0, SHORT: 0 }, errors: [], successful: 0, universe_size: market.universe?.length ?? 0, fresh_entry_count: 0, method: "", next_step: "", message: "The first scan for this market is being prepared automatically. It will appear shortly.", read_only: true, order_submission_supported: false };
   }
-  return withRefreshInfo(stored.payload, stored.generatedAt, market);
+  let payload = stored.payload;
+  if (market.id === "US" && payload?.ranking?.items?.length) {
+    // Reading only: the AI ranking is produced after a scheduled scan, never by a visitor's request.
+    try { payload = { ...payload, ranking: mergeAiRanking(payload.ranking, await readAiRanking(env)) }; } catch { /* the rules ranking still serves */ }
+  }
+  return withRefreshInfo(payload, stored.generatedAt, market);
 }
 
 const LEGAL_UPDATED = "November 2, 2026";
@@ -2192,15 +2589,15 @@ const HOLDING_MARKETS = ["US", "IN"];
 const MAX_OPEN_HOLDINGS = 20;
 const HOLDING_ACTIONS = { HOLD: "Hold", WATCH: "Watch closely", TAKE_PROFIT: "Consider taking profit", EXIT: "Exit signal", NO_DATA: "No data" };
 const holdingSnapshotCache = new Map();
-const HOLDING_REFRESH_OPEN_SECONDS = 5 * 60;
-const HOLDING_REFRESH_CLOSED_SECONDS = 10 * 60;
+const HOLDING_REFRESH_OPEN_SECONDS = 15 * 60;
+const HOLDING_REFRESH_CLOSED_SECONDS = 30 * 60;
 const HOLDING_SHARED_SYMBOLS = 150;
 const holdKey = market => ({ id: `HOLD:${market.id}` });
 
 // Everyone's open positions in a market are read in one shared batch and stored in the database, so prices and
 // signals are identical for every user and the number of provider requests no longer depends on the number of
 // users. A cron job keeps it fresh every five minutes while the market is open; a request only refreshes it when
-// it is overdue, and the lock lets one refresh run at a time. A manual refresh waits at least a minute.
+// it is overdue, and the lock lets one refresh run at a time. There is no manual refresh.
 async function refreshSharedHoldings(env, market, extra = []) {
   if (!env.DB || !(await claimScanRefresh(env, holdKey(market)))) return false;
   try {
@@ -2229,7 +2626,7 @@ async function refreshHoldingsIfDue(env, market) {
   await refreshSharedHoldings(env, market);
 }
 
-async function holdingSnapshotsFor(env, market, symbols, { manual = false } = {}) {
+async function holdingSnapshotsFor(env, market, symbols) {
   const wanted = [...new Set(symbols)];
   const read = async () => {
     const stored = await readStoredScan(env, holdKey(market));
@@ -2240,7 +2637,7 @@ async function holdingSnapshotsFor(env, market, symbols, { manual = false } = {}
     return { snapshots, errors, missing, age: (Date.now() - Date.parse(stored.generatedAt)) / 1000 };
   };
   let shared = await read();
-  const fresh = manual ? MANUAL_REFRESH_MIN_SECONDS : marketIsOpen(market) ? HOLDING_REFRESH_OPEN_SECONDS : HOLDING_REFRESH_CLOSED_SECONDS;
+  const fresh = marketIsOpen(market) ? HOLDING_REFRESH_OPEN_SECONDS : HOLDING_REFRESH_CLOSED_SECONDS;
   if (!shared || shared.missing.length || shared.age > fresh) {
     if (await refreshSharedHoldings(env, market, wanted)) shared = await read();
   }
@@ -2545,7 +2942,7 @@ async function addHolding(request, env) {
 
 async function listHoldings(request, env) {
   const user = await holdingsUser(request, env);
-  const manual = (await readBody(request)).refresh === true;
+  await readBody(request); // a "refresh" flag from an older app is ignored: holdings refresh on the shared schedule only
   const rows = (await env.DB.prepare("SELECT * FROM holdings WHERE user_id = ? ORDER BY created_at DESC LIMIT 100").bind(user.id).all()).results || [];
   // A closed row without a sale price is an undone entry, so it is hidden.
   const open = rows.filter(row => !row.closed_at), closed = rows.filter(row => row.closed_at && row.sell_price != null);
@@ -2560,7 +2957,7 @@ async function listHoldings(request, env) {
     symbolsByMarket.get(row.market).add(row.symbol);
   }
   const loaded = new Map();
-  for (const [marketId, symbols] of symbolsByMarket) if (MARKETS[marketId]) loaded.set(marketId, await holdingSnapshotsFor(env, MARKETS[marketId], [...symbols], { manual }));
+  for (const [marketId, symbols] of symbolsByMarket) if (MARKETS[marketId]) loaded.set(marketId, await holdingSnapshotsFor(env, MARKETS[marketId], [...symbols]));
   const now = new Date().toISOString();
   const updates = [];
   const eventsByHolding = new Map();
@@ -2605,7 +3002,7 @@ async function listHoldings(request, env) {
   const anyOpen = [...symbolsByMarket.keys()].some(marketId => MARKETS[marketId] && marketIsOpen(MARKETS[marketId]));
   return {
     updated_at: now,
-    refresh_after_seconds: anyOpen ? 300 : 600,
+    refresh_after_seconds: anyOpen ? HOLDING_REFRESH_OPEN_SECONDS : HOLDING_REFRESH_CLOSED_SECONDS,
     open: openOut,
     portfolio: await buildPortfolio(openOut),
     market_trends: Object.fromEntries(await Promise.all([...symbolsByMarket.keys()].filter(id => MARKETS[id]).map(async id => [id, (await readStoredScan(env, MARKETS[id]))?.payload?.market_trend || null]))),
@@ -2965,11 +3362,9 @@ async function handle(request, env, ctx) {
       await requireSubscription(request, env);
       const body = await readBody(request);
       const market = marketFrom(body);
-      // Every market is served from the shared stored scan, so repeated requests never multiply upstream calls.
-      // A US manual refresh always rescans and waits for new data (there is no cooldown); simultaneous
-      // refreshes share one scan through the lock, so extra clicks never multiply upstream calls.
-      const manual = !market.auto && body.refresh === true;
-      const scan = await autoScanResponse(env, market, ctx, { wait: manual, force: manual });
+      // Every market is served from the shared stored scan, so repeated requests never multiply upstream calls. There is no manual
+      // refresh: a "refresh" flag sent by an older app or page is ignored.
+      const scan = await autoScanResponse(env, market, ctx);
       return json({ ...scan, all_market_trends: await allMarketTrends(env, market, scan) });
     }
     if (url.pathname === "/api/memory") {
@@ -3014,7 +3409,7 @@ export default {
   fetch: handle,
   // One market per cron trigger, so each job has its own outgoing-request budget.
   async scheduled(event, env, ctx) {
-    const byCron = { "5 * * * *": "IN", "*/5 3-10 * * 1-5": "IN", "10 * * * *": "FX", "*/5 13-21 * * 1-5": "US" };
+    const byCron = { "5 * * * *": "IN", "*/15 3-10 * * 1-5": "IN", "10 * * * *": "FX", "*/15 13-21 * * 1-5": "US" };
     const market = MARKETS[byCron[event.cron]];
     if (market) ctx.waitUntil((async () => {
       await refreshScanIfDue(env, market, ctx).catch(() => {});
