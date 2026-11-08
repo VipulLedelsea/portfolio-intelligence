@@ -24,7 +24,7 @@ const OAUTH_STATE_COOKIE = "ip_oauth_state";
 // request only reads the stored result. A US scan takes about 15 to 45 seconds and about 25 outgoing requests (the free plan allows
 // 50 per run), so US is scanned every 15 minutes while the market is open, at most once an hour for BSE and forex, and rarely when closed.
 // The scan lock lasts 4 minutes, longer than any scan, so two scans never overlap. Holdings are re-checked on the same 15-minute beat
-// and the AI ranking at most every 30 minutes, run after the scan so it can never delay it.
+// and the AI ranking at most every 30 minutes, in its own hourly job so it can never delay a scan.
 const AUTO_REFRESH_OPEN_SECONDS = 55 * 60;
 const US_REFRESH_OPEN_SECONDS = 15 * 60;
 const AUTO_REFRESH_CLOSED_SECONDS = 6 * 60 * 60;
@@ -2460,8 +2460,15 @@ async function refreshScan(env, market, ctx) {
       await env.DB.prepare("UPDATE scan_cache SET payload = ?, generated_at = ?, refreshing_until = NULL WHERE market = ?").bind(JSON.stringify(payload), generatedAt, market.id).run();
     } catch { /* memory copy still serves this instance */ }
     try { await recordScannerPicks(env, payload); } catch { /* logging must never break a scan */ }
-    if (market.id === "US") { try { await ensureAiRanking(env, payload, ctx); } catch { /* the rules ranking still serves */ } }
   }
+}
+
+// The AI ranking runs in its own scheduled job (the hourly forex trigger), never inside a scan or a visitor's request: a model call can take
+// a minute or two, and work started by a request is cut off shortly after the response. It reads the stored US scan and does nothing when
+// the ideas have not changed since the last ranking.
+async function rankStoredScan(env) {
+  const stored = await readStoredScan(env, MARKETS.US);
+  if (stored?.payload?.ranking?.items?.length) await ensureAiRanking(env, stored.payload, null);
 }
 
 async function backOffScan(env, market, seconds = AUTO_REFRESH_BACKOFF_SECONDS) {
@@ -3415,6 +3422,7 @@ export default {
       await refreshScanIfDue(env, market, ctx).catch(() => {});
       await refreshHoldingsIfDue(env, market).catch(() => {});
       await monitorHoldings(env, market).catch(() => {});
+      if (market.id === "FX") await rankStoredScan(env).catch(error => console.error(`AI ranking job failed: ${cleanError(error)}`));
       // Once an hour, grade scanner picks that hit a level or whose window has closed.
       if (market.id === "US" && env.DB && new Date(event.scheduledTime).getUTCMinutes() < 5) {
         await settlePendingRecommendations(env.DB, SCANNER_USER_ID, env).catch(() => {});
