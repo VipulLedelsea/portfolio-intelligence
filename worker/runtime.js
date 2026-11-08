@@ -2629,9 +2629,177 @@ async function refreshScan(env, market, ctx) {
 // The AI ranking runs in its own scheduled job (the hourly forex trigger), never inside a scan or a visitor's request: a model call can take
 // a minute or two, and work started by a request is cut off shortly after the response. It reads the stored US scan and does nothing when
 // the ideas have not changed since the last ranking.
+// ---- Bull vs bear debate on the top ideas ----
+// Two agents get different evidence packs: the bull one holds the facts that support the idea, the bear one the facts that argue against it
+// (earnings, crowding, a short or experimental record, distance from the entry). Round 1 is each side's case, round 2 is each side answering
+// the other, and a judge weighs what is left. Every claim cites facts by key, and CODE checks each cited value and each number in the text
+// against the idea's real figures; a claim that does not check out is dropped and counted. The verdict is shown and logged but never changes
+// the score: there is no evidence yet that a model's lean predicts returns.
+const DEBATE_TOP_N = 5, DEBATE_MIN_GAP_SECONDS = 50 * 60, DEBATE_MAX_AGE_SECONDS = 24 * 3600;
+const DEBATE_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast";
+const FACT_DEFS = {
+  backtest_ev_pct: { label: "Backtest average return per trade", unit: "%", signed: true },
+  backtest_win_rate_pct: { label: "Backtest win rate", unit: "%" },
+  backtest_trades: { label: "Backtest trades", unit: "" },
+  strategy_experimental: { label: "Experimental scanner", bool: true },
+  trend_alignment_score: { label: "Trend and market alignment", unit: "/100" },
+  market_trend: { label: "Market trend", str: true },
+  stop_pct: { label: "Stop distance from entry", unit: "%" },
+  rr_to_target_1: { label: "Reward to risk, target 1", unit: " to 1" },
+  from_entry_atr: { label: "Price versus entry", unit: " ATR", signed: true },
+  age_days: { label: "Signal age", unit: " days" },
+  volume_ratio: { label: "Volume versus average", unit: "x" },
+  atr_pct: { label: "Typical daily range", unit: "%" },
+  sector_crowded: { label: "Same sector and direction already ranked higher", bool: true },
+  earnings_in_days: { label: "Days to earnings", unit: " days" },
+  earnings_confirmed: { label: "Earnings date confirmed", bool: true },
+  filing_cautions: { label: "Recent cautionary SEC filings", unit: "" },
+};
+const BULL_KEYS = ["backtest_ev_pct", "backtest_win_rate_pct", "backtest_trades", "trend_alignment_score", "market_trend", "stop_pct", "rr_to_target_1", "volume_ratio", "age_days", "from_entry_atr"];
+const BEAR_KEYS = ["backtest_ev_pct", "backtest_trades", "strategy_experimental", "trend_alignment_score", "market_trend", "stop_pct", "from_entry_atr", "atr_pct", "sector_crowded", "earnings_in_days", "earnings_confirmed", "filing_cautions", "age_days"];
+
+function debateFacts(item, marketState) {
+  const f = item.filing, e = item.evidence || {};
+  const facts = {
+    backtest_ev_pct: e.ev_pct, backtest_win_rate_pct: e.win_rate_pct, backtest_trades: e.n, strategy_experimental: e.experimental === true,
+    trend_alignment_score: item.alignment_score, market_trend: marketState || undefined, stop_pct: item.stop_pct, rr_to_target_1: item.rr_t1, from_entry_atr: item.from_entry_atr,
+    age_days: item.age_days, volume_ratio: item.volume_ratio, atr_pct: item.atr_pct, sector_crowded: item.crowded === true,
+    earnings_in_days: f?.earnings_in_days != null && f.earnings_in_days >= 0 ? f.earnings_in_days : undefined,
+    earnings_confirmed: f?.earnings_in_days != null && f.earnings_in_days >= 0 ? f.earnings_confirmed === true : undefined,
+    filing_cautions: f ? (f.cautions || []).length : undefined,
+  };
+  for (const key of Object.keys(facts)) if (facts[key] === undefined || facts[key] === null || (typeof facts[key] === "number" && !Number.isFinite(facts[key]))) delete facts[key];
+  return facts;
+}
+
+function debateFactDisplay(key, value) {
+  const d = FACT_DEFS[key];
+  if (!d) return String(value);
+  if (d.bool) return value ? "yes" : "no";
+  if (d.str) return String(value).toLowerCase();
+  const n = Number(value), text = Math.abs(n) >= 100 ? String(Math.round(n)) : String(round(n, 2));
+  return `${d.signed && n > 0 ? "+" : ""}${text}${d.unit || ""}`;
+}
+
+const DEBATE_FORBIDDEN = /\b(buy now|you should (buy|sell)|guarantee[sd]?|will (rise|fall|rally|crash)|can't lose|sure thing|risk[- ]free)\b/i;
+const DEBATE_FREE_NUMBERS = new Set([1, 2, 3, 5, 10, 14, 20, 50, 100, 200]); // window lengths people write without a fact (10-day hold, 200-day average)
+
+// Code-side check. A claim survives only if every cited key is allowed for that side and its value matches the real figure, at least one fact is cited,
+// the text has no banned wording, and every number written in the text equals a real figure of this idea (or a common window length).
+function verifyDebateClaims(rawClaims, allFacts, allowedKeys, max = 3) {
+  const kept = []; let dropped = 0;
+  const numbers = Object.values(allFacts).filter(v => typeof v === "number").map(Math.abs);
+  const near = (a, b) => Math.abs(a - b) <= Math.max(0.051, Math.abs(b) * 0.01);
+  for (const raw of Array.isArray(rawClaims) ? rawClaims : []) {
+    if (kept.length >= max) { dropped++; continue; }
+    const text = typeof raw?.text === "string" ? raw.text.replace(/\s+/g, " ").trim().slice(0, 220) : "";
+    const cited = (Array.isArray(raw?.facts) ? raw.facts : []).slice(0, 3);
+    let ok = text.length >= 12 && cited.length >= 1 && !DEBATE_FORBIDDEN.test(text);
+    const facts = [];
+    for (const fact of ok ? cited : []) {
+      const key = String(fact?.key ?? ""), real = allFacts[key], said = fact?.value;
+      if (!allowedKeys.includes(key) || real === undefined) { ok = false; break; }
+      const match = typeof real === "number" ? near(Number(said), real) : typeof real === "boolean" ? (said === real || String(said).toLowerCase() === String(real)) : String(said).toLowerCase() === String(real).toLowerCase();
+      if (!match) { ok = false; break; }
+      facts.push({ key, label: FACT_DEFS[key]?.label || key, display: debateFactDisplay(key, real) });
+    }
+    if (ok) for (const match of text.matchAll(/\d+(?:\.\d+)?/g)) {
+      const n = Number(match[0]);
+      if (!DEBATE_FREE_NUMBERS.has(n) && !numbers.some(real => near(n, real))) { ok = false; break; }
+    }
+    if (ok) kept.push({ text, facts }); else dropped++;
+  }
+  return { kept, dropped };
+}
+
+async function debateCall(env, model, system, user, maxTokens = 700) {
+  const run = params => Promise.race([env.AI.run(model, params), new Promise((_, reject) => setTimeout(() => reject(new Error("The AI model took too long")), 60000))]);
+  const result = await run({ messages: [{ role: "system", content: system }, { role: "user", content: user }], max_tokens: maxTokens, temperature: 0.3 });
+  const out = result?.response ?? result;
+  return typeof out === "string" ? parseModelJson(out) : out;
+}
+
+const DEBATE_RULES = `Use ONLY the facts listed. Each claim is ONE sentence of at most 160 characters and cites 1 to 3 facts by key, with the exact value from the list. Do not write any number that is not one of the cited facts. Do not say buy or sell and do not predict prices. Reply with one JSON object and nothing else.`;
+const BULL_SYSTEM = `You are the BULL analyst in a research tool. Make the strongest honest case FOR this trade idea, in at most 3 claims. ${DEBATE_RULES} Format: {"claims":[{"text":"...","facts":[{"key":"...","value":0}]}]}`;
+const BEAR_SYSTEM = `You are the BEAR analyst in a research tool. Make the strongest honest case AGAINST this trade idea, or for caution, in at most 3 claims. ${DEBATE_RULES} Format: {"claims":[{"text":"...","facts":[{"key":"...","value":0}]}]}`;
+const REBUT_SYSTEM = `You answer the opposing side of a trade-idea debate. You are given the opposing claims with ids and your own side's claims. Write at most 2 rebuttals, each aimed at one opposing claim id. ${DEBATE_RULES} Format: {"rebuttals":[{"to":"B1","text":"...","facts":[{"key":"...","value":0}]}]}`;
+const JUDGE_SYSTEM = `You are the judge of a bull versus bear debate on one trade idea in a research tool. You see only claims that were checked against the data, with ids. Weigh them. Do not say buy or sell, do not predict prices, and do not write numbers that are not in the claims. Reply with one JSON object and nothing else: {"leaning":"bull"|"bear"|"even","verdict":"one or two sentences, at most 220 characters","strongest_bull":"id","strongest_bear":"id","would_change_my_mind":"one sentence, at most 160 characters"}`;
+
+function debatePack(item, marketState, keys, allFacts) {
+  return { symbol: item.symbol, direction: item.direction, scanner: item.tag, facts: Object.fromEntries(keys.filter(k => allFacts[k] !== undefined).map(k => [k, { label: FACT_DEFS[k].label, value: allFacts[k] }])) };
+}
+
+async function runDebate(env, item, marketState) {
+  const facts = debateFacts(item, marketState), model = env.DEBATE_MODEL || DEBATE_MODEL, judgeModel = env.RANKING_MODEL || WORKERS_AI_RANKING_MODEL;
+  const bullKeys = BULL_KEYS.filter(k => facts[k] !== undefined), bearKeys = BEAR_KEYS.filter(k => facts[k] !== undefined);
+  const ask = (system, payload, tokens) => debateCall(env, model, system, JSON.stringify(payload), tokens).catch(() => debateCall(env, judgeModel, system, JSON.stringify(payload), tokens));
+  const [bullRaw, bearRaw] = await Promise.all([ask(BULL_SYSTEM, debatePack(item, marketState, bullKeys, facts)), ask(BEAR_SYSTEM, debatePack(item, marketState, bearKeys, facts))]);
+  const bull = verifyDebateClaims(bullRaw?.claims, facts, bullKeys), bear = verifyDebateClaims(bearRaw?.claims, facts, bearKeys);
+  const tag = (side, list) => list.map((claim, i) => ({ id: `${side}${i + 1}`, ...claim }));
+  const bullClaims = tag("B", bull.kept), bearClaims = tag("R", bear.kept);
+  let dropped = bull.dropped + bear.dropped;
+  const result = { bull: bullClaims, bear: bearClaims, rebuttals: { bull: [], bear: [] }, judge: null, dropped_claims: 0, model, judge_model: judgeModel };
+  if (bullClaims.length && bearClaims.length) {
+    // Round 2: each side answers the other's claims.
+    const rebut = (system, own, other, keys) => ask(system, { ...debatePack(item, marketState, keys, facts), your_claims: own.map(c => ({ id: c.id, text: c.text })), opposing_claims: other.map(c => ({ id: c.id, text: c.text, facts: c.facts.map(f => `${f.label}: ${f.display}`) })) }, 500);
+    const [bullRe, bearRe] = await Promise.all([rebut(REBUT_SYSTEM, bullClaims, bearClaims, bullKeys), rebut(REBUT_SYSTEM, bearClaims, bullClaims, bearKeys)]);
+    const clean = (raw, validTargets, keys) => {
+      const rows = (Array.isArray(raw?.rebuttals) ? raw.rebuttals : []).filter(r => validTargets.has(String(r?.to)));
+      const { kept, dropped: d } = verifyDebateClaims(rows, facts, keys, 2);
+      dropped += d + (Array.isArray(raw?.rebuttals) ? raw.rebuttals.length : 0) - rows.length;
+      return kept.map((claim, i) => ({ to: String(rows[i]?.to), ...claim }));
+    };
+    result.rebuttals.bull = clean(bullRe, new Set(bearClaims.map(c => c.id)), bullKeys);
+    result.rebuttals.bear = clean(bearRe, new Set(bullClaims.map(c => c.id)), bearKeys);
+    // Judge: sees only verified text.
+    try {
+      const view = list => list.map(c => ({ id: c.id, text: c.text, facts: c.facts.map(f => `${f.label}: ${f.display}`) }));
+      const judged = await debateCall(env, judgeModel, JUDGE_SYSTEM, JSON.stringify({ symbol: item.symbol, direction: item.direction, bull_claims: view(bullClaims), bear_claims: view(bearClaims),
+        bull_rebuttals: result.rebuttals.bull.map(r => ({ to: r.to, text: r.text })), bear_rebuttals: result.rebuttals.bear.map(r => ({ to: r.to, text: r.text })) }), 500);
+      const str = (v, max) => typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "";
+      const verdict = str(judged?.verdict, 240), change = str(judged?.would_change_my_mind, 180);
+      const numberOk = text => [...text.matchAll(/\d+(?:\.\d+)?/g)].every(m => DEBATE_FREE_NUMBERS.has(Number(m[0])) || Object.values(facts).some(v => typeof v === "number" && Math.abs(Math.abs(v) - Number(m[0])) <= Math.max(0.051, Math.abs(v) * 0.01)));
+      if (["bull", "bear", "even"].includes(judged?.leaning) && verdict && !DEBATE_FORBIDDEN.test(verdict + " " + change) && numberOk(verdict + " " + change)) {
+        result.judge = { leaning: judged.leaning, verdict, would_change_my_mind: change || null,
+          strongest_bull: bullClaims.some(c => c.id === judged.strongest_bull) ? judged.strongest_bull : null, strongest_bear: bearClaims.some(c => c.id === judged.strongest_bear) ? judged.strongest_bear : null };
+      } else dropped++;
+    } catch { /* the claims still show without a verdict */ }
+  }
+  result.dropped_claims = dropped;
+  return result;
+}
+
+const debateRowId = marketId => `DEBATE:${marketId || "US"}`;
+const debateKey = item => `${item.stop}|${item.target_1}|${item.filing?.earnings_in_days ?? ""}`;
+
+// Runs in the hourly ranking job, never in a visitor's request. Reuses a stored debate while the idea's levels have not changed.
+async function ensureDebate(env, payload) {
+  if (!env.AI || !env.DB || !payload?.ranking?.items?.length) return;
+  const marketId = payload.market || "US";
+  const stored = (await edgarCacheRead(env, debateRowId(marketId))) || { items: {}, at: 0 };
+  if (Date.now() - (stored.at || 0) < DEBATE_MIN_GAP_SECONDS * 1000) return;
+  let ranking = payload.ranking;
+  try { ranking = mergeAiRanking(ranking, await readAiRanking(env, marketId)); } catch { /* the rules order serves */ }
+  const top = ranking.items.slice(0, DEBATE_TOP_N), items = {};
+  for (const item of top) {
+    const key = debateKey(item), old = stored.items?.[item.id];
+    if (old && old.key === key && Date.now() - old.at < DEBATE_MAX_AGE_SECONDS * 1000) { items[item.id] = old; continue; }
+    try { items[item.id] = { key, at: Date.now(), result: await runDebate(env, item, ranking.market_state) }; }
+    catch (error) { console.error(`Debate failed for ${item.id}: ${cleanError(error)}`); if (old) items[item.id] = old; }
+  }
+  await edgarCacheWrite(env, debateRowId(marketId), { at: Date.now(), items });
+}
+
+// Lays stored debates over the ranking items they were made for.
+function mergeDebate(ranking, stored) {
+  if (!ranking?.items?.length || !stored?.items) return ranking;
+  return { ...ranking, items: ranking.items.map(item => { const d = stored.items[item.id]; return d && d.key === debateKey(item) ? { ...item, debate: d.result } : item; }) };
+}
+
 async function rankStoredScan(env, market) {
   const stored = await readStoredScan(env, market);
   if (stored?.payload?.ranking?.items?.length) await ensureAiRanking(env, stored.payload, null);
+  if (stored?.payload?.ranking?.items?.length) await ensureDebate(env, stored.payload).catch(error => console.error(`Debate job failed for ${market.id}: ${cleanError(error)}`));
 }
 
 async function backOffScan(env, market, seconds = AUTO_REFRESH_BACKOFF_SECONDS) {
@@ -2667,6 +2835,7 @@ async function autoScanResponse(env, market, ctx, { wait = false } = {}) {
   if (payload?.ranking?.items?.length) {
     // Reading only: the AI ranking is produced by its own scheduled job, never by a visitor's request.
     try { payload = { ...payload, ranking: mergeAiRanking(payload.ranking, await readAiRanking(env, market.id)) }; } catch { /* the rules ranking still serves */ }
+    try { payload = { ...payload, ranking: mergeDebate(payload.ranking, await edgarCacheRead(env, debateRowId(market.id))) }; } catch { /* no debate shown */ }
   }
   return withRefreshInfo(payload, stored.generatedAt, market);
 }

@@ -140,6 +140,46 @@ struct RankedEvidence: Decodable, Hashable, Sendable {
     let note: String
 }
 
+/// One fact a debate claim cites, already formatted by the server. The server checked every cited value against the idea's real figures.
+struct DebateFact: Decodable, Hashable, Sendable {
+    let label: String
+    let display: String
+}
+
+struct DebateClaim: Decodable, Identifiable, Hashable, Sendable {
+    let id: String
+    let text: String
+    let facts: [DebateFact]
+}
+
+struct DebateRebuttal: Decodable, Hashable, Sendable {
+    let to: String
+    let text: String
+    let facts: [DebateFact]
+}
+
+struct DebateRebuttals: Decodable, Hashable, Sendable {
+    let bull: [DebateRebuttal]
+    let bear: [DebateRebuttal]
+}
+
+struct DebateJudge: Decodable, Hashable, Sendable {
+    let leaning: String
+    let verdict: String
+    let wouldChangeMyMind: String?
+    let strongestBull: String?
+    let strongestBear: String?
+}
+
+/// The bull versus bear debate on one of the top ideas. Claims that did not match the data were dropped; droppedClaims counts them.
+struct Debate: Decodable, Hashable, Sendable {
+    let bull: [DebateClaim]
+    let bear: [DebateClaim]
+    let rebuttals: DebateRebuttals
+    let judge: DebateJudge?
+    let droppedClaims: Int
+}
+
 /// Earnings date (Robinhood feed, exact once confirmed; else an SEC-filing estimate) and SEC red flags for US ideas.
 struct FilingCheck: Decodable, Hashable, Sendable {
     let earningsInDays: Int?
@@ -185,6 +225,7 @@ struct RankedIdea: Decodable, Identifiable, Hashable, Sendable {
     let bear: String?
     let invalidation: String?
     let filing: FilingCheck?
+    let debate: Debate?
     let bars: [DailyBar]?
 }
 
