@@ -61,6 +61,10 @@ actor APIClient {
         try await request(path: "/api/holdings", token: token, body: HoldingsBody(refresh: refresh))
     }
 
+    func briefing(token: String) async throws -> Briefing {
+        try await request(path: "/api/briefing", token: token, body: [:] as [String: String])
+    }
+
     func markAlertsSeen(token: String) async throws {
         let _: HoldingChangeResponse = try await request(path: "/api/holdings/alerts/seen", token: token, body: [:] as [String: String], retryOnConnectionLoss: false)
     }

@@ -17,6 +17,8 @@ struct ContentView: View {
                 ConnectionView()
             case .connected:
                 TabView {
+                    TodayView()
+                        .tabItem { Label("Today", systemImage: "sun.max") }
                     ScannerView()
                         .tabItem { Label("Scanner", systemImage: "chart.xyaxis.line") }
                     HoldingsView()

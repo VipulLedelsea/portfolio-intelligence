@@ -1061,3 +1061,125 @@ private struct DipRow: View {
         .accessibilityElement(children: .combine)
     }
 }
+
+// MARK: - Today tab
+
+/// The first thing to look at: where each market stands, the best few ideas, and what changed on your holdings. Reads stored results only.
+struct TodayView: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if let briefing = model.briefing {
+                        ForEach(briefing.markets) { market in TodayMarketBlock(market: market) }
+                        if let holdings = briefing.holdings { TodayHoldingsBlock(holdings: holdings) }
+                        Text(briefing.disclaimer).font(.caption2).foregroundStyle(AppTheme.muted)
+                    } else {
+                        ProgressView("Loading today's briefing…").tint(AppTheme.amber).frame(maxWidth: .infinity)
+                    }
+                }
+                .padding(16)
+            }
+            .background(AppTheme.background)
+            .navigationTitle("Today")
+            .task { await model.refreshBriefing() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { Task { await model.refreshBriefing() } }
+            }
+        }
+    }
+}
+
+private struct TodayMarketBlock: View {
+    let market: BriefingMarket
+
+    private var trendColor: Color {
+        switch market.trend?.state {
+        case "UP": return AppTheme.mint
+        case "DOWN": return AppTheme.red
+        default: return AppTheme.amber
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Circle().fill(trendColor).frame(width: 9, height: 9)
+                Text(market.label).font(.headline)
+                if let trend = market.trend { Text(trend.headline).font(.subheadline).foregroundStyle(AppTheme.muted) }
+            }
+            if market.warmingUp == true {
+                Text("Still loading the first scan.").font(.caption).foregroundStyle(AppTheme.muted)
+            } else if market.unavailable == true {
+                Text("Not available right now.").font(.caption).foregroundStyle(AppTheme.muted)
+            } else {
+                if let headline = market.headline { Text(headline).font(.subheadline).foregroundStyle(AppTheme.muted) }
+                ForEach(market.top) { idea in TodayIdeaRow(idea: idea) }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
+    }
+}
+
+private struct TodayIdeaRow: View {
+    let idea: BriefingIdea
+
+    private func money(_ value: Double) -> String { (idea.currencySymbol ?? "") + String(format: "%.\(idea.priceDecimals ?? 2)f", value) }
+
+    private var earningsText: String? {
+        guard let e = idea.earnings else { return nil }
+        let when = e.timing == "pm" ? " after the close" : e.timing == "am" ? " before the open" : ""
+        return (e.confirmed ? "Earnings confirmed for " : "Earnings expected about ") + e.date + when
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text("#\(idea.rank) \(idea.symbol)").font(.subheadline.weight(.semibold))
+                Text("\(idea.direction) · \(idea.tag)").font(.caption).foregroundStyle(AppTheme.muted)
+                Spacer()
+                Text("\(Int(idea.score))/100 \(idea.confidence ?? "")").font(.caption.weight(.semibold))
+            }
+            if let reason = idea.reason { Text(reason).font(.caption).foregroundStyle(AppTheme.muted) }
+            Text("Entry \(money(idea.entry)) · Stop \(money(idea.stop))").font(.caption)
+            if let text = earningsText { Text("! " + text).font(.caption).foregroundStyle(AppTheme.amber) }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct TodayHoldingsBlock: View {
+    let holdings: BriefingHoldings
+
+    private func label(_ key: String) -> String {
+        ["HOLD": "hold", "WATCH": "watch", "TAKE_PROFIT": "take profit", "EXIT": "exit", "NO_DATA": "no data"][key] ?? key.lowercased()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(holdings.alerts.unseen > 0 ? "Your holdings · \(holdings.alerts.unseen) new" : "Your holdings").font(.headline)
+            if holdings.count == 0 {
+                Text("No holdings yet.").font(.caption).foregroundStyle(AppTheme.muted)
+            } else {
+                Text(holdings.counts.sorted { $0.key < $1.key }.map { "\($0.value) \(label($0.key))" }.joined(separator: " · "))
+                    .font(.subheadline).foregroundStyle(AppTheme.muted)
+            }
+            ForEach(holdings.attention) { item in
+                Text("\(item.symbol): \(item.actionLabel). \(item.headline)").font(.caption)
+            }
+            ForEach(holdings.alerts.items.prefix(4)) { alert in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text((alert.seenAt == nil ? "● " : "") + alert.title).font(.caption.weight(.semibold))
+                    Text(alert.detail).font(.caption2).foregroundStyle(AppTheme.muted)
+                }
+                .opacity(alert.seenAt == nil ? 1 : 0.7)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
+    }
+}

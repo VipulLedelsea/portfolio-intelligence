@@ -3330,6 +3330,47 @@ function computeHoldingStats(closed) {
   });
 }
 
+// One read of everything worth seeing first: each market's trend and best ideas, and (when signed in) how the holdings stand and what changed.
+// It reads the stored scans the same way the scanner does (a scan that is due is refreshed on the shared schedule, never by hand) and never marks alerts as seen.
+async function buildBriefing(request, env, ctx) {
+  await requireSubscription(request, env);
+  const markets = [];
+  for (const id of ["US", "IN", "FX"]) {
+    const market = MARKETS[id];
+    try {
+      const scan = await autoScanResponse(env, market, ctx);
+      if (scan.warming_up) { markets.push({ id, label: market.label, warming_up: true, top: [] }); continue; }
+      const ranking = scan.ranking, trend = scan.market_trend;
+      markets.push({
+        id, label: market.label, generated_at: scan.generated_at,
+        trend: trend ? { state: trend.state, headline: trend.headline, note: trend.note } : null,
+        headline: ranking?.headline || null, ranking_source: ranking?.source || null, nothing_compelling: ranking?.nothing_compelling ?? null,
+        top: (ranking?.items || []).slice(0, 3).map(item => ({
+          rank: item.rank, symbol: item.symbol, tag: item.tag, direction: item.direction, score: item.score, confidence: item.confidence, reason: item.reason,
+          entry: item.entry, stop: item.stop, target_1: item.target_1, currency_symbol: item.currency_symbol, price_decimals: item.price_decimals,
+          earnings: item.filing?.earnings_in_days != null && item.filing.earnings_in_days >= 0 && item.filing.earnings_in_days <= 14
+            ? { date: item.filing.earnings_estimate, in_days: item.filing.earnings_in_days, confirmed: item.filing.earnings_confirmed === true, timing: item.filing.earnings_timing || null } : null,
+        })),
+      });
+    } catch { markets.push({ id, label: market.label, unavailable: true, top: [] }); }
+  }
+  let holdings = null;
+  try {
+    const data = await listHoldings(request, env);
+    const counts = {};
+    for (const item of data.open) counts[item.action] = (counts[item.action] || 0) + 1;
+    holdings = {
+      count: data.open.length, counts,
+      totals: data.totals,
+      attention: data.open.filter(item => ["EXIT", "TAKE_PROFIT", "WATCH"].includes(item.action)).slice(0, 5)
+        .map(item => ({ symbol: item.symbol, market: item.market, action: item.action, action_label: item.action_label, headline: item.headline, pnl_pct: item.pnl_pct })),
+      alerts: { unseen: data.alerts?.unseen || 0, items: (data.alerts?.items || []).slice(0, 4) },
+    };
+  } catch { /* not signed in, or no holdings service: the markets part still serves */ }
+  return { as_of: new Date().toISOString(), markets, holdings,
+    disclaimer: "Automated research from public price data, not personal financial advice. Nothing is ever sent to a broker." };
+}
+
 // Marks every alert as seen (the user opened the list). Only this user's rows.
 async function markAlertsSeen(request, env) {
   const user = await holdingsUser(request, env);
@@ -3575,6 +3616,7 @@ async function handle(request, env, ctx) {
       const session = await createBillingPortal(request, env);
       return json({ url: session.url });
     }
+    if (url.pathname === "/api/briefing") return json(await buildBriefing(request, env, ctx));
     if (url.pathname === "/api/discover") {
       await requireSubscription(request, env);
       const body = await readBody(request);
