@@ -791,8 +791,12 @@ private struct RankedDetailSheet: View {
                     block("Exit", idea.exitRule)
                     if let note = idea.alignmentNote { block("Trend and market", note) }
                     block("Backtest behind the score", evidenceText)
-                    if let bull = idea.bull { block("Bull case", bull) }
-                    if let bear = idea.bear { block("Bear case", bear) }
+                    if let debate = idea.debate {
+                        DebateSection(debate: debate)
+                    } else {
+                        if let bull = idea.bull { block("Bull case", bull) }
+                        if let bear = idea.bear { block("Bear case", bear) }
+                    }
                     if let invalid = idea.invalidation { block("What invalidates it", invalid) }
                     if let filing = idea.filing, let text = filingText(filing) { block("SEC filings", text) }
                     if idea.crowded == true { block("Crowding", "Other ideas in the same sector and direction rank higher, so this is largely the same bet.") }
@@ -1178,6 +1182,57 @@ private struct TodayHoldingsBlock: View {
                 }
                 .opacity(alert.seenAt == nil ? 1 : 0.7)
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
+    }
+}
+
+
+/// Bull versus bear: each claim cites facts that the server checked against the idea's figures. The verdict is for reading only; it never changes the score.
+private struct DebateSection: View {
+    let debate: Debate
+
+    private func leaning(_ judge: DebateJudge) -> String {
+        switch judge.leaning {
+        case "bull": return "Leans for the idea"
+        case "bear": return "Leans against the idea"
+        default: return "Even"
+        }
+    }
+
+    private func claims(_ title: String, _ list: [DebateClaim], tint: Color, rebuttals: [DebateRebuttal]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.footnote.weight(.semibold)).foregroundStyle(tint)
+            if list.isEmpty {
+                Text("No claim from this side matched the data.").font(.caption).foregroundStyle(AppTheme.muted)
+            }
+            ForEach(list) { claim in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(claim.text).font(.callout)
+                    Text(claim.facts.map { "\($0.label): \($0.display)" }.joined(separator: " · ")).font(.caption2).foregroundStyle(AppTheme.muted)
+                }
+            }
+            ForEach(rebuttals, id: \.text) { item in
+                Text("Reply to \(item.to): \(item.text)").font(.caption).foregroundStyle(AppTheme.muted)
+            }
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionLabel(text: "Bull versus bear")
+            if let judge = debate.judge {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(leaning(judge)).font(.subheadline.weight(.semibold))
+                    Text(judge.verdict).font(.callout)
+                    if let change = judge.wouldChangeMyMind { Text("What would change this: " + change).font(.caption).foregroundStyle(AppTheme.muted) }
+                }
+            }
+            claims("For", debate.bull, tint: AppTheme.mint, rebuttals: debate.rebuttals.bull)
+            claims("Against", debate.bear, tint: AppTheme.red, rebuttals: debate.rebuttals.bear)
+            Text(debate.droppedClaims > 0 ? "\(debate.droppedClaims) claim\(debate.droppedClaims == 1 ? "" : "s") dropped because a figure did not match the data. The verdict does not change the score." : "Every claim was checked against the data. The verdict does not change the score.")
+                .font(.caption2).foregroundStyle(AppTheme.muted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .panel()
