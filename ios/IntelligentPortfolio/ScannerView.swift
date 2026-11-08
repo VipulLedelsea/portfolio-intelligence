@@ -743,8 +743,13 @@ private struct RankedDetailSheet: View {
     }
     private func filingText(_ f: FilingCheck) -> String? {
         var parts: [String] = []
-        if let days = f.earningsInDays, let date = f.earningsEstimate, days <= 45 {
-            parts.append("Earnings expected about \(date) (an estimate from past SEC filings, not a calendar).")
+        if let days = f.earningsInDays, let date = f.earningsEstimate, days >= 0, days <= 45 {
+            if f.earningsConfirmed == true {
+                let when = f.earningsTiming == "pm" ? " after the close" : f.earningsTiming == "am" ? " before the open" : ""
+                parts.append("Earnings confirmed for \(date)\(when).")
+            } else {
+                parts.append("Earnings expected about \(date) (not yet confirmed by the company).")
+            }
         }
         if let cautions = f.cautions, !cautions.isEmpty { parts.append("Recent filing: " + cautions.joined(separator: "; ") + ".") }
         return parts.isEmpty ? nil : parts.joined(separator: " ")

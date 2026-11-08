@@ -1,6 +1,7 @@
 const ROBINHOOD_HISTORICALS = "https://api.robinhood.com/quotes/historicals/";
 const ROBINHOOD_QUOTES = "https://api.robinhood.com/quotes/";
 const ROBINHOOD_FUNDAMENTALS = "https://api.robinhood.com/fundamentals/";
+const ROBINHOOD_EARNINGS = "https://api.robinhood.com/marketdata/earnings/";
 const SP500_SOURCE = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv";
 const STRIPE_API = "https://api.stripe.com/v1";
 const SUBSCRIPTION_PRICE_CENTS = 1499;
@@ -1483,6 +1484,14 @@ function edgarFlagsFrom(recent, todayDay) {
   };
 }
 
+// The next report date from Robinhood's earnings feed: an exact date, with a flag for whether the company has confirmed it and whether it reports
+// before the open ("am") or after the close ("pm"). Null when the feed has nothing for the symbol.
+async function robinhoodNextEarnings(symbol, todayDay) {
+  const payload = await fetchJson(`${ROBINHOOD_EARNINGS}?symbol=${encodeURIComponent(symbol)}`);
+  const rows = (payload?.results || []).filter(row => row?.report?.date).map(row => ({ day: dayNumber(row.report.date), date: String(row.report.date).slice(0, 10), confirmed: row.report.verified === true, timing: row.report.timing || null }));
+  return rows.filter(row => row.day >= todayDay).sort((a, b) => a.day - b.day)[0] || null;
+}
+
 // Returns Map(symbol -> flags) for the US symbols asked about. Cached per symbol for 20 hours; never throws.
 async function loadFilingFlags(env, symbols) {
   const out = new Map();
@@ -1499,15 +1508,24 @@ async function loadFilingFlags(env, symbols) {
       let changed = false;
       for (const symbol of due.slice(0, EDGAR_MAX_FETCH)) {
         const cik = ciks?.[symbol.toUpperCase().replace(/\./g, "-")];
-        if (!cik) { if (cache[symbol]) out.set(symbol, { ...cache[symbol].flags, source: "SEC EDGAR", checked_at: new Date(cache[symbol].at).toISOString(), stale: true }); continue; }
-        try {
-          const response = await fetch(`https://data.sec.gov/submissions/CIK${String(cik).padStart(10, "0")}.json`, { headers: edgarHeaders(env), signal: AbortSignal.timeout(15000) });
-          if (!response.ok) continue;
-          const flags = edgarFlagsFrom((await response.json())?.filings?.recent, todayDay);
-          cache[symbol] = { at: now, flags };
-          out.set(symbol, { ...flags, source: "SEC EDGAR", checked_at: new Date(now).toISOString() });
-          changed = true;
-        } catch { /* no flags for this one this time */ }
+        let flags = null;
+        if (cik) {
+          try {
+            const response = await fetch(`https://data.sec.gov/submissions/CIK${String(cik).padStart(10, "0")}.json`, { headers: edgarHeaders(env), signal: AbortSignal.timeout(15000) });
+            if (response.ok) flags = edgarFlagsFrom((await response.json())?.filings?.recent, todayDay);
+          } catch { /* fall through to the earnings feed alone */ }
+        }
+        let next = null;
+        try { next = await robinhoodNextEarnings(symbol, todayDay); } catch { /* the SEC estimate stands */ }
+        if (flags) flags.earnings_confirmed = false;
+        if (next) {
+          flags = flags || { severe: [], cautions: [], last_reported_days_ago: null };
+          Object.assign(flags, { earnings_in_days: next.day - todayDay, earnings_estimate: next.date, earnings_confirmed: next.confirmed, earnings_timing: next.timing, earnings_source: next.confirmed ? "company-confirmed date" : "projected date" });
+        } else if (flags && flags.earnings_estimate) flags.earnings_source = "estimate from past SEC filings";
+        if (!flags) { if (cache[symbol]) out.set(symbol, { ...cache[symbol].flags, source: "SEC EDGAR", checked_at: new Date(cache[symbol].at).toISOString(), stale: true }); continue; }
+        cache[symbol] = { at: now, flags };
+        out.set(symbol, { ...flags, source: "SEC EDGAR and Robinhood earnings", checked_at: new Date(now).toISOString() });
+        changed = true;
         await new Promise(resolve => setTimeout(resolve, 120)); // stay well under the SEC's 10 requests per second
       }
       if (changed) await edgarCacheWrite(env, "EDGAR:FLAGS", cache);
@@ -1565,8 +1583,8 @@ function rankHardFilter(item) {
   if (item.age_days !== null && item.age_days > RANK_STALE_DAYS && item.strategy !== "SUPERTREND") return `The signal is ${item.age_days} days old.`;
   const f = item.filing;
   if (f?.severe?.length) return `SEC filing red flag: ${f.severe[0]}.`;
-  if (f && item.strategy !== "SUPERTREND" && f.earnings_in_days !== null && f.earnings_in_days <= EDGAR_EARNINGS_SKIP_DAYS)
-    return `Earnings are expected ${f.earnings_in_days <= 0 ? "now" : `in about ${f.earnings_in_days} day${f.earnings_in_days === 1 ? "" : "s"}`} (estimated from past SEC filings), inside this idea's 10-day hold.`;
+  if (f && item.strategy !== "SUPERTREND" && f.earnings_in_days != null && f.earnings_in_days >= 0 && f.earnings_in_days <= EDGAR_EARNINGS_SKIP_DAYS)
+    return `Earnings ${f.earnings_confirmed ? "are confirmed for" : "are expected around"} ${f.earnings_estimate}${f.earnings_confirmed ? "" : " (estimate)"}, inside this idea's 10-day hold.`;
   return null;
 }
 
@@ -1586,7 +1604,7 @@ function rankRulesScore(item) {
   if (item.evidence.experimental) score -= 12;
   if (item.evidence.n < RANK_MIN_PROVEN_TRADES) score -= 10;
   if (known && ev <= 0) score = Math.min(score, 40);
-  if (item.filing?.earnings_in_days != null && item.filing.earnings_in_days <= EDGAR_EARNINGS_WINDOW_DAYS) score -= 10; // earnings inside the next two weeks
+  if (item.filing?.earnings_in_days != null && item.filing.earnings_in_days >= 0 && item.filing.earnings_in_days <= EDGAR_EARNINGS_WINDOW_DAYS) score -= 10; // earnings inside the next two weeks
   if (item.filing?.cautions?.length) score -= 3;
   return round(clamp(score, 0, 100), 1);
 }
@@ -1607,7 +1625,7 @@ function rankRulesReason(item) {
   if (item.from_entry_atr !== null) parts.push(`${item.from_entry_atr} ATR from the entry`);
   if (e.experimental) parts.push("experimental, not recommended");
   const f = item.filing;
-  if (f?.earnings_in_days != null && f.earnings_in_days <= EDGAR_EARNINGS_WINDOW_DAYS) parts.push(`earnings expected about ${f.earnings_estimate} (estimate)`);
+  if (f?.earnings_in_days != null && f.earnings_in_days >= 0 && f.earnings_in_days <= EDGAR_EARNINGS_WINDOW_DAYS) parts.push(f.earnings_confirmed ? `earnings ${f.earnings_estimate}${f.earnings_timing === "pm" ? " after close" : f.earnings_timing === "am" ? " before open" : ""}` : `earnings expected about ${f.earnings_estimate} (estimate)`);
   if (f?.cautions?.length) parts.push(`recent filing: ${f.cautions[0]}`);
   return parts.join(" · ");
 }
@@ -1699,7 +1717,7 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
     market_state: marketState,
     items: kept, rejected: rejected.slice(0, 40),
     data_gaps: [
-      marketId === "US" ? "Earnings dates are estimated from past SEC filings (there is no earnings calendar), and no news feed is connected, so news and events inside the holding window are not checked." : "No earnings calendar or news feed is connected for this market, so earnings or events inside the holding window are not checked.",
+      marketId === "US" ? "Earnings dates come from Robinhood's earnings feed (exact when the company has confirmed, otherwise projected, with an SEC-filing estimate as backup), and no news feed is connected, so news and events inside the holding window are not checked." : "No earnings calendar or news feed is connected for this market, so earnings or events inside the holding window are not checked.",
       marketId === "FX" ? "Forex has no volume data, so liquidity is not assessed." : "Dollar volume is not in the data feed; liquidity is judged from the volume ratio only.",
       marketId === "US" ? "Backtest figures are per strategy, not per stock, and most were tested on the S&P 500 in a mostly rising market." : "Supertrend has not been backtested in this market, so expected value is unknown and scores rest on reward to risk, alignment and entry quality. The dip and pattern scanners are US-only.",
     ],
@@ -1752,7 +1770,7 @@ function rankModelInput(ranking, market) {
     price: item.price, entry: item.entry, stop: item.stop, target_1: item.target_1, target_2: item.target_2, exit_rule: item.exit_rule, stop_pct: item.stop_pct, stop_atr: item.stop_atr,
     rr_to_target_1: item.rr_t1, rr_to_target_2: item.rr_t2, from_entry_atr: item.from_entry_atr, age_days: item.age_days, atr_pct: item.atr_pct, volume_ratio: item.volume_ratio,
     alignment: item.alignment_note, scanner_rank_within_its_list: item.scanner_rank_in_list, scanner_score: item.scanner_score, rules_score: item.rules_score, rules_rank: item.rank,
-    same_sector_crowded: item.crowded, sec_filings: item.filing ? { earnings_expected_in_days_estimate: item.filing.earnings_in_days, earnings_estimate_date: item.filing.earnings_estimate, caution_filings_last_30_days: item.filing.cautions } : undefined, evidence: Object.keys(RANK_EVIDENCE).find(key => RANK_EVIDENCE[key] === item.evidence) });
+    same_sector_crowded: item.crowded, sec_filings: item.filing ? { earnings_in_days: item.filing.earnings_in_days, earnings_date: item.filing.earnings_estimate, earnings_date_is_confirmed: item.filing.earnings_confirmed === true, earnings_timing: item.filing.earnings_timing, caution_filings_last_30_days: item.filing.cautions } : undefined, evidence: Object.keys(RANK_EVIDENCE).find(key => RANK_EVIDENCE[key] === item.evidence) });
   const setups = ranking.items.map(slim);
   const used = new Set(setups.map(setup => setup.evidence));
   return {
