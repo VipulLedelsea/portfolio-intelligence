@@ -9,19 +9,119 @@ enum AppTheme {
     static let mint = Color(red: 0.322, green: 0.875, blue: 0.592)
     static let red = Color(red: 1.0, green: 0.435, blue: 0.38)
     static let muted = Color(red: 0.61, green: 0.65, blue: 0.62)
+    /// A step above `panel`, for chips, selected segments and nested tiles.
+    static let raised = Color(red: 0.098, green: 0.125, blue: 0.108)
+    /// A cool secondary for neutral information and the third allocation colour.
+    static let sky = Color(red: 0.373, green: 0.659, blue: 0.827)
+    static let hairline = Color.white.opacity(0.07)
+
+    static let radius: CGFloat = 16
+    static let radiusSmall: CGFloat = 10
+
+    /// Colours handed out to allocation slices and monograms, in a stable order.
+    static let palette: [Color] = [amber, mint, sky, Color(red: 0.74, green: 0.60, blue: 0.95), Color(red: 0.95, green: 0.50, blue: 0.70), Color(red: 0.62, green: 0.70, blue: 0.40)]
+    static func colour(at index: Int) -> Color { palette[((index % palette.count) + palette.count) % palette.count] }
 }
 
 struct PanelModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(16)
-            .background(AppTheme.panel)
-            .overlay(Rectangle().stroke(AppTheme.line, lineWidth: 1))
+            .background(AppTheme.panel, in: RoundedRectangle(cornerRadius: AppTheme.radius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: AppTheme.radius, style: .continuous).stroke(AppTheme.hairline, lineWidth: 1))
+    }
+}
+
+/// A small inset tile (stats, nested values) with softer corners than a panel.
+struct TileModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(10)
+            .background(AppTheme.raised, in: RoundedRectangle(cornerRadius: AppTheme.radiusSmall, style: .continuous))
     }
 }
 
 extension View {
     func panel() -> some View { modifier(PanelModifier()) }
+    func tile() -> some View { modifier(TileModifier()) }
+}
+
+/// Gain or loss as a pill. The arrow carries the direction too, so it never relies on colour alone.
+struct PnLChip: View {
+    let text: String
+    let positive: Bool
+    var body: some View {
+        let colour = positive ? AppTheme.mint : AppTheme.red
+        Label(text, systemImage: positive ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
+            .font(.caption.weight(.semibold))
+            .labelStyle(PnLLabelStyle())
+            .foregroundStyle(colour)
+            .padding(.horizontal, 9).padding(.vertical, 4)
+            .background(colour.opacity(0.14), in: Capsule())
+            .accessibilityLabel("\(positive ? "Up" : "Down") \(text)")
+    }
+}
+
+private struct PnLLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 4) {
+            configuration.icon.font(.system(size: 8))
+            configuration.title
+        }
+    }
+}
+
+/// A coloured circle with the first letters of a ticker.
+struct Monogram: View {
+    let symbol: String
+    let colour: Color
+    var size: CGFloat = 38
+    var body: some View {
+        Text(String(symbol.filter { $0.isLetter || $0.isNumber }.prefix(2)))
+            .font(.system(size: size * 0.34, weight: .semibold, design: .rounded))
+            .foregroundStyle(colour)
+            .frame(width: size, height: size)
+            .background(colour.opacity(0.16), in: Circle())
+            .accessibilityHidden(true)
+    }
+}
+
+/// A selectable capsule, for filters and segmented choices.
+struct ChipStyle: ButtonStyle {
+    var selected: Bool
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.footnote.weight(.medium))
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .foregroundStyle(selected ? AppTheme.amber : AppTheme.muted)
+            .background(selected ? AppTheme.amber.opacity(0.16) : AppTheme.raised, in: Capsule())
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.snappy(duration: 0.15), value: configuration.isPressed)
+    }
+}
+
+/// Section label used above groups of cards.
+struct SectionLabel: View {
+    let text: String
+    var body: some View {
+        Text(text).font(.footnote.weight(.semibold)).foregroundStyle(AppTheme.muted).textCase(nil)
+    }
+}
+
+/// Open or closed state of the US market as a small pill. Static on purpose: a looping animation here kept the nav bar redrawing and made paging and taps unreliable.
+struct MarketPill: View {
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            let status = USMarketClock.status(context.date)
+            HStack(spacing: 6) {
+                Circle().fill(status.isOpen ? AppTheme.mint : AppTheme.muted).frame(width: 6, height: 6)
+                Text(status.text.replacingOccurrences(of: "US market ", with: "Market "))
+                    .font(.caption).foregroundStyle(AppTheme.muted).lineLimit(1)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(AppTheme.raised, in: Capsule())
+        }
+    }
 }
 
 struct ReadOnlyBadge: View {

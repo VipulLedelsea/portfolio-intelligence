@@ -6,6 +6,8 @@ struct ScannerView: View {
     @State private var sideInsets = SideInsets()
     @State private var screenHeight: CGFloat = 1000
     @State private var showingTrend = false
+    @State private var showingRecent = false
+    @State private var showingScanners = false
     @State private var trendStart = 0
     @ScaledMetric(relativeTo: .largeTitle) private var heroSize = 34
 
@@ -165,11 +167,46 @@ struct ScannerView: View {
                         Spacer()
                         Text("\(discovery.freshEntryCount) fresh")
                     }
-                    .font(.caption.monospaced())
+                    .font(.caption)
                     .foregroundStyle(AppTheme.muted)
 
                     if !trendInStrip, let trend = model.discovery?.marketTrend ?? trends.first { MarketTrendLine(trend: trend) { trendStart = trendStartPage; showingTrend = true } }
 
+                    if let ranking = discovery.ranking, ranking.available {
+                        RankedIdeasSection(ranking: ranking)
+                    }
+
+                    // The separate scanner lists stay available, closed by default, now that the ranked list above covers all of them.
+                    Button {
+                        withAnimation(.snappy(duration: 0.25)) { showingScanners.toggle() }
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                SectionLabel(text: "By scanner")
+                                Text("The Supertrend, dip and pattern lists, one by one.")
+                                    .font(.caption).foregroundStyle(AppTheme.muted)
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.down").font(.footnote.weight(.semibold)).foregroundStyle(AppTheme.muted)
+                                .rotationEffect(.degrees(showingScanners ? 180 : 0))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 6)
+                    .accessibilityHint(showingScanners ? "Hides the separate scanner lists" : "Shows the separate scanner lists")
+
+                    if showingScanners || discovery.ranking?.available != true {
+                    ScannerBoxHeader(title: "Supertrend setups",
+                                     chip: discovery.candidates.isEmpty ? "None fresh" : "\(discovery.candidates.count) fresh",
+                                     tint: discovery.candidates.isEmpty ? AppTheme.muted : AppTheme.mint)
+                    if discovery.candidates.isEmpty {
+                        Text("No fresh Supertrend entries right now.")
+                            .font(.footnote).foregroundStyle(AppTheme.muted)
+                            .frame(maxWidth: .infinity, alignment: .leading).panel()
+                    }
+                    if !discovery.candidates.isEmpty {
                     ListFrame {
                         ForEach(Array(discovery.candidates.enumerated()), id: \.element.id) { index, candidate in
                             if index > 0 { RowDivider() }
@@ -179,27 +216,63 @@ struct ScannerView: View {
                             .buttonStyle(.plain)
                         }
                     }
+                    }
 
                     if let recent = discovery.recentSetups, !recent.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("RECENT SETUPS · LAST 24 HOURS")
-                                .font(.caption.monospaced().bold())
-                                .foregroundStyle(AppTheme.amber)
-                            Text("Fresh entries that dropped out, with why and how the price has moved since the signal.")
-                                .font(.caption)
-                                .foregroundStyle(AppTheme.muted)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, 14)
-                        ListFrame {
-                            ForEach(Array(recent.enumerated()), id: \.element.id) { index, setup in
-                                if index > 0 { RowDivider() }
-                                Button { selected = setup.candidate } label: {
-                                    RecentSetupRow(setup: setup, isSelected: selectable && selected == setup.candidate)
+                        // A drop-down: closed by default so the list of fresh setups stays the first thing on screen.
+                        Button {
+                            withAnimation(.snappy(duration: 0.25)) { showingRecent.toggle() }
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    SectionLabel(text: "Recent setups · last 24 hours · \(recent.count)")
+                                    Text("Fresh entries that dropped out, with why and how the price has moved since the signal.")
+                                        .font(.caption)
+                                        .foregroundStyle(AppTheme.muted)
+                                        .multilineTextAlignment(.leading)
                                 }
-                                .buttonStyle(.plain)
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.down")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(AppTheme.muted)
+                                    .rotationEffect(.degrees(showingRecent ? 180 : 0))
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 14)
+                        .accessibilityHint(showingRecent ? "Hides the recent setups" : "Shows the recent setups")
+                        if showingRecent {
+                            ListFrame {
+                                ForEach(Array(recent.enumerated()), id: \.element.id) { index, setup in
+                                    if index > 0 { RowDivider() }
+                                    Button { selected = setup.candidate } label: {
+                                        RecentSetupRow(setup: setup, isSelected: selectable && selected == setup.candidate)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
                         }
+                    }
+
+                    if let dip = discovery.dipScan, dip.available {
+                        let ideas = dip.candidates?.count ?? 0
+                        ScannerBoxHeader(title: "Dip scan",
+                                         chip: dip.gate?.open == true ? "\(ideas) \(ideas == 1 ? "idea" : "ideas")" : "Market calm",
+                                         tint: dip.gate?.open == true ? AppTheme.mint : AppTheme.muted)
+                            .padding(.top, 18)
+                        DipScanSection(dip: dip)
+                    }
+
+                    if let pattern = discovery.patternScan, pattern.available {
+                        let count = (pattern.breakoutCount ?? 0) + (pattern.breakdownCount ?? 0)
+                        ScannerBoxHeader(title: "Pattern scan",
+                                         chip: count > 0 ? "Experimental · \(count)" : "Experimental",
+                                         tint: AppTheme.amber)
+                            .padding(.top, 18)
+                        PatternScanSection(pattern: pattern)
+                    }
                     }
                 } else if model.isScanning {
                     ProgressView("Loading the \(model.market.scanTitle) scan…")
@@ -210,7 +283,6 @@ struct ScannerView: View {
             .padding(16)
         }
         .background(AppTheme.background)
-        .refreshableIf(!model.market.isAutomatic) { await Task { await model.refreshScanner(manual: true) }.value }
     }
 
     private var marketMenu: some View {
@@ -251,24 +323,13 @@ struct ScannerView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Daily direction.\nFour-hour timing.")
-                .font(.system(size: heroSize, weight: .medium, design: .serif))
+                .font(.system(size: heroSize, weight: .medium, design: .rounded))
             marketMenu
             Text("Confirmed daily and 4-hour Supertrend, strengthening ADX, and entry-extension controls rank the \(model.market.scanTitle).")
                 .foregroundStyle(AppTheme.muted)
-            if model.market.isAutomatic {
-                Label(autoRefreshText, systemImage: "clock.arrow.circlepath")
-                    .font(.footnote)
-                    .foregroundStyle(AppTheme.muted)
-            } else {
-                Button {
-                    Task { await model.refreshScanner(manual: true) }
-                } label: {
-                    Label(model.isScanning ? "Scanning…" : "Refresh scan", systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AppTheme.amber)
-                .disabled(model.isScanning)
-            }
+            Label(autoRefreshText, systemImage: "clock.arrow.circlepath")
+                .font(.footnote)
+                .foregroundStyle(AppTheme.muted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 12)
@@ -282,16 +343,18 @@ private struct ListFrame<Content: View>: View {
         VStack(spacing: 0) { content }
             .frame(maxWidth: .infinity)
             .background(AppTheme.panel)
-            .overlay(Rectangle().stroke(AppTheme.line, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.radius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: AppTheme.radius, style: .continuous).stroke(AppTheme.hairline, lineWidth: 1))
     }
 }
 
 private struct RowDivider: View {
-    var body: some View { Rectangle().fill(AppTheme.line).frame(height: 1) }
+    var body: some View { Rectangle().fill(AppTheme.hairline).frame(height: 1).padding(.leading, 66) }
 }
 
 /// A quiet one-glance row: symbol, how it sits against its buy zone, price and time left. Everything else is one tap away.
 private struct CandidateRow: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     let candidate: Candidate
     var isSelected = false
     private var directionColor: Color { candidate.direction == "SHORT" ? AppTheme.red : AppTheme.mint }
@@ -301,8 +364,9 @@ private struct CandidateRow: View {
     private var leading: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(candidate.symbol).font(.headline.monospaced().bold())
-                Text(candidate.direction).font(.caption2.monospaced().bold()).foregroundStyle(directionColor)
+                Text(candidate.symbol).font(.headline)
+                Text(candidate.direction.capitalized).font(.caption2.weight(.semibold)).foregroundStyle(directionColor)
+                    .padding(.horizontal, 7).padding(.vertical, 2).background(directionColor.opacity(0.15), in: Capsule())
             }
             Text("\(candidate.company) · \(Int(candidate.score))/100")
                 .font(.caption)
@@ -319,9 +383,11 @@ private struct CandidateRow: View {
     private var trailing: some View {
         VStack(alignment: .trailing, spacing: 3) {
             Text(PriceFormat.string(candidate.price, prefix: candidate.currencySymbol, decimals: candidate.priceDecimals)).font(.headline)
-            Text(statusLabel)
-                .font(.caption2.monospaced().bold())
+            Text(statusLabel.capitalized)
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(statusColor)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(statusColor.opacity(0.15), in: Capsule())
                 .multilineTextAlignment(.trailing)
                 .fixedSize(horizontal: false, vertical: true)
             if let closing = candidate.windowClosesAt.flatMap(PairingExpiryParser.date(from:)) {
@@ -331,15 +397,19 @@ private struct CandidateRow: View {
     }
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 12) { leading; Spacer(minLength: 8); trailing }
-            VStack(alignment: .leading, spacing: 8) { leading; trailing }
+        HStack(alignment: .top, spacing: 12) {
+            Monogram(symbol: candidate.symbol, colour: directionColor)
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) { leading; trailing }
+            } else {
+                HStack(alignment: .top, spacing: 12) { leading; Spacer(minLength: 8); trailing }
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .background(isSelected ? AppTheme.amber.opacity(0.1) : Color.clear)
-        .overlay(Rectangle().stroke(AppTheme.amber, lineWidth: isSelected ? 2 : 0))
+        .overlay(alignment: .leading) { Rectangle().fill(AppTheme.amber).frame(width: isSelected ? 3 : 0) }
         .accessibilityElement(children: .combine)
     }
 }
@@ -378,8 +448,8 @@ private struct RecentSetupRow: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(candidate.symbol).font(.headline.monospaced().bold())
-                    Text(candidate.direction).font(.caption2.monospaced().bold()).foregroundStyle(candidate.direction == "SHORT" ? AppTheme.red : AppTheme.mint)
+                    Text(candidate.symbol).font(.headline)
+                    Text(candidate.direction.capitalized).font(.caption2.weight(.semibold)).foregroundStyle(candidate.direction == "SHORT" ? AppTheme.red : AppTheme.mint)
                 }
                 Text("\(candidate.company) · \(setup.dropReason)")
                     .font(.caption)
@@ -391,7 +461,7 @@ private struct RecentSetupRow: View {
             VStack(alignment: .trailing, spacing: 3) {
                 Text(PriceFormat.string(candidate.price, prefix: candidate.currencySymbol, decimals: candidate.priceDecimals)).font(.headline)
                 if let since = setup.sinceSignalPct {
-                    Text(String(format: "%+.2f%%", since)).font(.caption.monospaced()).foregroundStyle(sinceColor)
+                    PnLChip(text: String(format: "%.2f%%", abs(since)), positive: since >= 0)
                     Text("since signal").font(.caption2).foregroundStyle(AppTheme.muted)
                 }
             }
@@ -400,7 +470,7 @@ private struct RecentSetupRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .background(isSelected ? AppTheme.amber.opacity(0.1) : Color.clear)
-        .overlay(Rectangle().stroke(AppTheme.amber, lineWidth: isSelected ? 2 : 0))
+        .overlay(alignment: .leading) { Rectangle().fill(AppTheme.amber).frame(width: isSelected ? 3 : 0) }
         .accessibilityElement(children: .combine)
     }
 
@@ -441,7 +511,7 @@ struct BuyRangeBar: View {
                 ZStack(alignment: .leading) {
                     ForEach(range.zones, id: \.key) { zone in
                         let start = x(zone.lo ?? range.scaleMin), end = x(zone.hi ?? range.scaleMax)
-                        Rectangle()
+                        Capsule()
                             .fill(colour(zone.key).opacity(zone.key == "IN_BUY_RANGE" ? 1 : 0.5))
                             .frame(width: max(0, end - start), height: compact ? 6 : 8)
                             .offset(x: start)
@@ -453,11 +523,11 @@ struct BuyRangeBar: View {
             }
             .frame(height: compact ? 14 : 18)
             if !compact { HStack(spacing: 8) {
-                Text(range.label.uppercased())
-                    .font(.caption2.bold())
+                Text(range.label)
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(colour(range.state))
                     .padding(.horizontal, 7).padding(.vertical, 2)
-                    .overlay(Rectangle().stroke(colour(range.state).opacity(0.7)))
+                    .background(colour(range.state).opacity(0.15), in: Capsule())
                 if let buy, let lo = buy.lo, let hi = buy.hi {
                     Text("Buy zone \(money(lo)) – \(money(hi))")
                         .font(.caption)
@@ -469,5 +539,510 @@ struct BuyRangeBar: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Buy range: \(range.label).\(buy.flatMap { zone in zone.lo.flatMap { lo in zone.hi.map { hi in " Buy zone \(money(lo)) to \(money(hi))." } } } ?? "")")
+    }
+}
+
+
+/// A scanner's name with a small status pill, so each box says at a glance whether it has ideas.
+private struct ScannerBoxHeader: View {
+    let title: String
+    let chip: String
+    let tint: Color
+    var body: some View {
+        HStack {
+            Text(title).font(.title3.weight(.semibold))
+            Spacer()
+            Text(chip).font(.caption.weight(.semibold)).foregroundStyle(tint)
+                .padding(.horizontal, 10).padding(.vertical, 4).background(tint.opacity(0.15), in: Capsule())
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// The dip scan: a banner for the market gate, then the dips (only while the gate is open) with their stop and targets.
+private struct DipScanSection: View {
+    let dip: DipScan
+    @State private var selected: DipPick?
+
+    var body: some View {
+        VStack(spacing: 12) {
+            if let gate = dip.gate {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: gate.open ? "bolt.fill" : "moon.zzz.fill")
+                        .foregroundStyle(gate.open ? AppTheme.mint : AppTheme.muted)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(gate.headline).font(.headline)
+                        Text(gate.note).font(.footnote).foregroundStyle(AppTheme.muted)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .panel()
+            }
+            if let picks = dip.candidates, !picks.isEmpty {
+                ListFrame {
+                    ForEach(Array(picks.enumerated()), id: \.element.id) { index, pick in
+                        if index > 0 { RowDivider() }
+                        Button { selected = pick } label: { DipRow(pick: pick, active: true) }.buttonStyle(.plain)
+                    }
+                }
+            } else if let waiting = dip.waiting, !waiting.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    SectionLabel(text: "Dips waiting for market stress · not ideas")
+                    Text("These stocks are in a dip, but dips only paid off in backtests while the market was under stress.")
+                        .font(.caption).foregroundStyle(AppTheme.muted)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                ListFrame {
+                    ForEach(Array(waiting.prefix(8).enumerated()), id: \.element.id) { index, pick in
+                        if index > 0 { RowDivider() }
+                        Button { selected = pick } label: { DipRow(pick: pick, active: false) }.buttonStyle(.plain)
+                    }
+                }
+            }
+            Text("Long ideas only, from a backtest on past data. Results are hypothetical, and each pick is logged to the track record so live results can confirm or reject the rule. Research, not advice.")
+                .font(.caption2).foregroundStyle(AppTheme.muted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .sheet(item: $selected) { pick in DipDetailSheet(pick: pick) }
+    }
+}
+
+/// Top ideas: every scanner's setups in one ranked list. Each row says which scanner found it, and the numbers come from the scanner.
+private struct RankedIdeasSection: View {
+    let ranking: RankedIdeas
+    @State private var selected: RankedIdea?
+    @State private var showingSkipped = false
+
+    private var sourceChip: (String, Color) {
+        ranking.source == "ai" ? ("Ranked by AI", AppTheme.mint) : ("Ranked by rules", AppTheme.muted)
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ScannerBoxHeader(title: "Top ideas", chip: sourceChip.0, tint: sourceChip.1)
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: ranking.nothingCompelling ? "moon.zzz.fill" : "list.number")
+                    .foregroundStyle(ranking.nothingCompelling ? AppTheme.muted : AppTheme.mint)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(ranking.headline).font(.headline)
+                    if ranking.source != "ai" {
+                        Text("Ordered by fixed rules (backtest edge, reward to risk, alignment, entry, liquidity, freshness). The AI explanation is not switched on.")
+                            .font(.footnote).foregroundStyle(AppTheme.muted)
+                    }
+                    if let notes = ranking.orderingNotes, !notes.isEmpty {
+                        Text(notes).font(.footnote).foregroundStyle(AppTheme.muted)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .panel()
+            if ranking.items.isEmpty {
+                Text("No ideas passed the filters right now.").font(.footnote).foregroundStyle(AppTheme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ListFrame {
+                    ForEach(Array(ranking.items.enumerated()), id: \.element.id) { index, idea in
+                        if index > 0 { RowDivider() }
+                        Button { selected = idea } label: { RankedRow(idea: idea) }.buttonStyle(.plain)
+                    }
+                }
+            }
+            if !ranking.rejected.isEmpty {
+                Button {
+                    withAnimation(.snappy(duration: 0.25)) { showingSkipped.toggle() }
+                } label: {
+                    HStack {
+                        SectionLabel(text: "Skipped · \(ranking.rejected.count)")
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.down").font(.footnote.weight(.semibold)).foregroundStyle(AppTheme.muted)
+                            .rotationEffect(.degrees(showingSkipped ? 180 : 0))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if showingSkipped {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(ranking.rejected) { item in
+                            Text("\(item.symbol) · \(item.tag): \(item.reason)").font(.caption).foregroundStyle(AppTheme.muted)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            if !ranking.dataGaps.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    SectionLabel(text: "What this ranking can't see")
+                    ForEach(ranking.dataGaps, id: \.self) { gap in
+                        Text("• \(gap)").font(.caption2).foregroundStyle(AppTheme.muted)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Text("Research, not advice. Prices come from the scanners; scores use each scanner's backtest, which is hypothetical. Live results are in the track record.")
+                .font(.caption2).foregroundStyle(AppTheme.muted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .sheet(item: $selected) { idea in RankedDetailSheet(idea: idea, method: ranking.method) }
+    }
+}
+
+private func scannerTint(_ strategy: String) -> Color {
+    switch strategy {
+    case "SUPERTREND": AppTheme.mint
+    case "DIP": AppTheme.amber
+    default: AppTheme.muted
+    }
+}
+
+private struct RankedRow: View {
+    let idea: RankedIdea
+    private func money(_ value: Double) -> String { PriceFormat.string(value, prefix: idea.currencySymbol, decimals: idea.priceDecimals) }
+    private var long: Bool { idea.direction == "LONG" }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text("\(idea.rank)").font(.subheadline.weight(.bold).monospaced()).foregroundStyle(AppTheme.muted).frame(width: 24, alignment: .trailing).padding(.top, 2)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 8) {
+                    Text(idea.symbol).font(.headline)
+                    Text(idea.tag).font(.caption2.weight(.semibold)).foregroundStyle(scannerTint(idea.strategy))
+                        .padding(.horizontal, 7).padding(.vertical, 2).background(scannerTint(idea.strategy).opacity(0.15), in: Capsule())
+                    Text(long ? "Long" : "Short").font(.caption2.weight(.semibold)).foregroundStyle(long ? AppTheme.mint : AppTheme.red)
+                }
+                Text(idea.reason).font(.caption).foregroundStyle(AppTheme.muted).fixedSize(horizontal: false, vertical: true)
+                Text("Score \(Int(idea.score)) · \(idea.confidence) confidence").font(.caption2.weight(.semibold)).foregroundStyle(idea.confidence == "High" ? AppTheme.mint : AppTheme.muted)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(money(idea.price)).font(.headline)
+                Text("Stop \(money(idea.stop))").font(.caption).foregroundStyle(AppTheme.red)
+                if let target = idea.target1 { Text("Target \(money(target))").font(.caption).foregroundStyle(AppTheme.mint) }
+                else { Text("Trend line exit").font(.caption).foregroundStyle(AppTheme.muted) }
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A ranked idea in full: chart, entry, stop, targets, exit rule, the evidence behind its score, and the bull and bear case when the model wrote them.
+private struct RankedDetailSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let idea: RankedIdea
+    let method: String?
+    private var long: Bool { idea.direction == "LONG" }
+    private func money(_ value: Double) -> String { PriceFormat.string(value, prefix: idea.currencySymbol, decimals: idea.priceDecimals) }
+    private var candles: [Candle] {
+        (idea.bars ?? []).map { Candle(date: $0.d, open: $0.o, high: $0.h, low: $0.l, close: $0.c, supertrend: nil, supertrendDirection: nil, barStatus: nil) }
+    }
+    private var evidenceText: String {
+        let e = idea.evidence
+        guard let ev = e.evPct, let wins = e.winRatePct, let n = e.n else { return "No backtest in this market. " + e.note }
+        return String(format: "%+.2f%% per trade, %.0f%% wins, %@ trades. ", ev, wins, n.formatted()) + e.note + (e.experimental ? " Experimental: not recommended." : "")
+    }
+    /// Supertrend ideas have no target, so the chart shows 1 and 2 ATR zones from the entry for reference only.
+    private var chartTarget1: Double { idea.target1 ?? (idea.entry + (long ? 1 : -1) * (idea.atr ?? 0)) }
+    private var chartTarget2: Double { idea.target2 ?? (idea.entry + (long ? 2 : -2) * (idea.atr ?? 0)) }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("\(idea.company) · \(idea.tag) · \(long ? "Long" : "Short")").font(.subheadline).foregroundStyle(AppTheme.muted)
+                    Text(idea.reason).font(.callout)
+                    if candles.count > 1 {
+                        CandlestickChart(series: candles,
+                                         levels: ScenarioLevels(reference: idea.entry, current: idea.price, risk: idea.stop, target1: chartTarget1, target2: chartTarget2),
+                                         referenceLines: [])
+                            .aspectRatio(1.5, contentMode: .fit)
+                            .frame(minHeight: 240, maxHeight: 440)
+                            .panel()
+                    }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
+                        tile("Score", "\(Int(idea.score)) · \(idea.confidence)")
+                        tile("Entry (signal)", money(idea.entry))
+                        tile("Now", money(idea.price))
+                        tile("Stop", money(idea.stop))
+                        if let t1 = idea.target1 { tile("Target 1", money(t1)) }
+                        if let t2 = idea.target2 { tile("Target 2", money(t2)) }
+                        if let rr = idea.rrT1 { tile("Reward to risk", String(format: "%.1f to target 1", rr)) }
+                        if let ext = idea.fromEntryAtr { tile("From entry", String(format: "%+.1f ATR", ext)) }
+                    }
+                    block("Exit", idea.exitRule)
+                    if let note = idea.alignmentNote { block("Trend and market", note) }
+                    block("Backtest behind the score", evidenceText)
+                    if let bull = idea.bull { block("Bull case", bull) }
+                    if let bear = idea.bear { block("Bear case", bear) }
+                    if let invalid = idea.invalidation { block("What invalidates it", invalid) }
+                    if idea.crowded == true { block("Crowding", "Other ideas in the same sector and direction rank higher, so this is largely the same bet.") }
+                    Text("Research, not advice. Levels are research scenarios, not orders.").font(.caption2).foregroundStyle(AppTheme.muted)
+                }
+                .padding(16)
+            }
+            .background(AppTheme.background)
+            .navigationTitle(idea.symbol)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+        }
+    }
+
+    private func block(_ title: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            SectionLabel(text: title)
+            Text(text).font(.footnote).foregroundStyle(AppTheme.muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
+    }
+
+    private func tile(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading) {
+            Text(title.uppercased()).font(.caption2).foregroundStyle(AppTheme.muted)
+            Text(value).font(.headline.monospaced()).minimumScaleFactor(0.7).lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
+    }
+}
+
+/// The pattern scan: candlestick patterns on a breakout (long) or breakdown (short) day, with entry, stop, targets and every exit rule.
+private struct PatternScanSection: View {
+    let pattern: PatternScan
+    @State private var selected: PatternPick?
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "flask.fill").foregroundStyle(AppTheme.amber)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Experimental, not a recommendation").font(.headline)
+                    Text(pattern.notice ?? "Backtests found no reliable edge for these patterns. Picks are logged so live results can confirm or reject them.")
+                        .font(.footnote).foregroundStyle(AppTheme.muted)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .panel()
+            list(title: "Breakouts · long", picks: pattern.breakouts ?? [], tint: AppTheme.mint)
+            list(title: "Breakdowns · short", picks: pattern.breakdowns ?? [], tint: AppTheme.red)
+            if (pattern.breakouts ?? []).isEmpty && (pattern.breakdowns ?? []).isEmpty {
+                Text("No candlestick pattern broke out on volume today.")
+                    .font(.footnote).foregroundStyle(AppTheme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .sheet(item: $selected) { pick in PatternDetailSheet(pick: pick) }
+    }
+
+    @ViewBuilder
+    private func list(title: String, picks: [PatternPick], tint: Color) -> some View {
+        if !picks.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionLabel(text: "\(title) · \(picks.count)")
+                ListFrame {
+                    ForEach(Array(picks.enumerated()), id: \.element.id) { index, pick in
+                        if index > 0 { RowDivider() }
+                        Button { selected = pick } label: { PatternRow(pick: pick, tint: tint) }.buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct PatternRow: View {
+    let pick: PatternPick
+    let tint: Color
+    private func money(_ value: Double) -> String { PriceFormat.string(value, prefix: pick.currencySymbol, decimals: pick.priceDecimals) }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Monogram(symbol: pick.symbol, colour: tint)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(pick.symbol).font(.headline)
+                Text("\(pick.company) · \(Int(pick.score))/100").font(.caption).foregroundStyle(AppTheme.muted).lineLimit(1)
+                Text(pick.patterns.joined(separator: " + ")).font(.caption2.weight(.semibold)).foregroundStyle(tint)
+                Text(String(format: "Volume %.1f× average · %.1f%% from 200-day", pick.volumeRatio, abs(pick.aboveSma200Pct)))
+                    .font(.caption2).foregroundStyle(AppTheme.muted)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(money(pick.price)).font(.headline)
+                Text("Stop \(money(pick.stopPrice))").font(.caption).foregroundStyle(AppTheme.red)
+                Text("Target \(money(pick.target1))").font(.caption).foregroundStyle(AppTheme.mint)
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A pattern pick's daily chart and every exit: stop, two targets, the failed-breakout close, and the day-10 limit.
+private struct PatternDetailSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let pick: PatternPick
+    private var long: Bool { pick.direction == "LONG" }
+    private func money(_ value: Double) -> String { PriceFormat.string(value, prefix: pick.currencySymbol, decimals: pick.priceDecimals) }
+    private var candles: [Candle] {
+        (pick.bars ?? []).map { Candle(date: $0.d, open: $0.o, high: $0.h, low: $0.l, close: $0.c, supertrend: nil, supertrendDirection: nil, barStatus: nil) }
+    }
+    private var lines: [ReferenceLine] {
+        [ReferenceLine(key: "breakout", label: long ? "Breakout level (20-day high)" : "Breakdown level (20-day low)", value: pick.breakoutLevel)] + (pick.referenceLines ?? [])
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("\(pick.company) · \(pick.label)").font(.subheadline).foregroundStyle(AppTheme.muted)
+                    if candles.count > 1 {
+                        CandlestickChart(series: candles,
+                                         levels: ScenarioLevels(reference: pick.signalClose, current: pick.price, risk: pick.stopPrice, target1: pick.target1, target2: pick.target2),
+                                         referenceLines: lines)
+                            .aspectRatio(1.5, contentMode: .fit)
+                            .frame(minHeight: 240, maxHeight: 440)
+                            .panel()
+                        Text("Daily candles, last 60 sessions. Amber is the signal close, red the stop, green the targets, blue dotted lines the breakout level and chart reference.")
+                            .font(.caption).foregroundStyle(AppTheme.muted)
+                    }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
+                        tile(long ? "Buy at" : "Short at", "Next open · signal \(money(pick.signalClose))")
+                        tile("Now", money(pick.price))
+                        tile("Stop (\(String(format: "%.1f", pick.riskAtr)) ATR)", money(pick.stopPrice))
+                        tile("Target 1 (1R)", money(pick.target1))
+                        tile("Target 2 (2R)", money(pick.target2))
+                        tile("Fails if a day closes \(long ? "under" : "over")", money(pick.failureLevel))
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        SectionLabel(text: "Every exit")
+                        exit("Stop", "Leave if price touches \(money(pick.stopPrice)), just \(long ? "under" : "over") the pattern's \(long ? "low" : "high") of \(money(pick.patternExtreme)).")
+                        exit("Target 1", "Take profit at \(money(pick.target1)), the same distance as the stop (1R). This is where the track record grades a win.")
+                        exit("Target 2", "Optional second zone at \(money(pick.target2)) (2R).")
+                        exit("Failed \(long ? "breakout" : "breakdown")", "If a day closes back \(long ? "under" : "over") \(money(pick.failureLevel)), the idea has failed. Leave at the next open.")
+                        exit("Time limit", "Close anything still open at the close of day \(pick.horizonTradingDays).")
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .panel()
+                    Text("Experimental. Backtests did not show a reliable edge for these patterns, and the stop and targets are research levels, not orders.")
+                        .font(.caption2).foregroundStyle(AppTheme.muted)
+                    ReferenceLinesList(lines: pick.referenceLines ?? [], currency: pick.currencySymbol, decimals: pick.priceDecimals)
+                }
+                .padding(16)
+            }
+            .background(AppTheme.background)
+            .navigationTitle(pick.symbol)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+        }
+    }
+
+    private func exit(_ title: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.subheadline.weight(.semibold))
+            Text(text).font(.footnote).foregroundStyle(AppTheme.muted)
+        }
+    }
+
+    private func tile(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading) {
+            Text(title.uppercased()).font(.caption2).foregroundStyle(AppTheme.muted)
+            Text(value).font(.headline.monospaced()).minimumScaleFactor(0.7).lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
+    }
+}
+
+/// A dip pick's daily chart with its entry, stop and targets, and the chart reference lines beside them.
+private struct DipDetailSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let pick: DipPick
+    private func money(_ value: Double) -> String { PriceFormat.string(value, prefix: pick.currencySymbol, decimals: pick.priceDecimals) }
+    private var candles: [Candle] {
+        (pick.bars ?? []).map { Candle(date: $0.d, open: $0.o, high: $0.h, low: $0.l, close: $0.c, supertrend: nil, supertrendDirection: nil, barStatus: nil) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("\(pick.company) · \(pick.label)").font(.subheadline).foregroundStyle(AppTheme.muted)
+                    if candles.count > 1 {
+                        CandlestickChart(series: candles,
+                                         levels: ScenarioLevels(reference: pick.signalClose, current: pick.price, risk: pick.stopPrice, target1: pick.target1, target2: pick.target2),
+                                         referenceLines: pick.referenceLines ?? [])
+                            .aspectRatio(1.5, contentMode: .fit)
+                            .frame(minHeight: 240, maxHeight: 440)
+                            .panel()
+                        Text("Daily candles, last 60 sessions. Amber is the signal close, red the stop, green the targets, blue dotted lines the chart reference.")
+                            .font(.caption).foregroundStyle(AppTheme.muted)
+                    }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
+                        tile("Signal close", money(pick.signalClose))
+                        tile("Now", money(pick.price))
+                        tile("Stop (2 ATR)", money(pick.stopPrice))
+                        tile("Target 1 (1 ATR)", money(pick.target1))
+                        tile("Target 2 (2 ATR)", money(pick.target2))
+                        tile("RSI(2)", String(format: "%.0f", pick.rsi2))
+                    }
+                    ReferenceLinesList(lines: pick.referenceLines ?? [], currency: pick.currencySymbol, decimals: pick.priceDecimals)
+                }
+                .padding(16)
+            }
+            .background(AppTheme.background)
+            .navigationTitle(pick.symbol)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+        }
+    }
+
+    private func tile(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading) {
+            Text(title.uppercased()).font(.caption2).foregroundStyle(AppTheme.muted)
+            Text(value).font(.headline.monospaced())
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
+    }
+}
+
+private struct DipRow: View {
+    let pick: DipPick
+    let active: Bool
+    private func money(_ value: Double) -> String { PriceFormat.string(value, prefix: pick.currencySymbol, decimals: pick.priceDecimals) }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Monogram(symbol: pick.symbol, colour: active ? AppTheme.mint : AppTheme.muted)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(pick.symbol).font(.headline)
+                    if pick.sharp {
+                        Text("Sharp").font(.caption2.weight(.semibold)).foregroundStyle(AppTheme.amber)
+                            .padding(.horizontal, 7).padding(.vertical, 2).background(AppTheme.amber.opacity(0.15), in: Capsule())
+                    }
+                }
+                Text("\(pick.company) · \(Int(pick.score))/100").font(.caption).foregroundStyle(AppTheme.muted).lineLimit(1)
+                Text(String(format: "RSI(2) %.0f · 3-day %+.1f%% · %.1f%% above 200-day", pick.rsi2, pick.return3DPct, pick.aboveSma200Pct))
+                    .font(.caption2).foregroundStyle(AppTheme.muted)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(money(pick.price)).font(.headline)
+                Text("Stop \(money(pick.stopPrice))").font(.caption).foregroundStyle(AppTheme.red)
+                Text("Target \(money(pick.target1))").font(.caption).foregroundStyle(AppTheme.mint)
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .opacity(active ? 1 : 0.7)
+        .accessibilityElement(children: .combine)
     }
 }

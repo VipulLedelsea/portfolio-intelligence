@@ -1,0 +1,1 @@
+ALTER TABLE `recommendations` ADD `strategy` text DEFAULT 'SUPERTREND' NOT NULL;

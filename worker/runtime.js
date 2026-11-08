@@ -6,7 +6,13 @@ const STRIPE_API = "https://api.stripe.com/v1";
 const SUBSCRIPTION_PRICE_CENTS = 1499;
 const SCAN_CACHE_SECONDS = 300;
 const ANALYSIS_CACHE_SECONDS = 90;
-const MAX_ENTRY_AGE_BARS = 1;
+// A setup stays on the main list while the price is still close to its buy point, however many days old it is. It moves to Recent setups when the
+// price runs away (EXTENDED), falls back through the buy point (WEAKENING), or the daily trend or its strength fails. Age alone no longer removes it:
+// before this a setup was dropped after about a day. Tests on Supertrend entries (research/pattern-backtest/README.md, ml_st_age.py) found setups up
+// to 30 days old that were still within half an ATR of the original buy point earned about +0.9% to +1.5% per trade, close to fresh flips, while
+// setups that had already run past it earned about +0.6% to +0.7%. This limit (4-hour bars, about 2 per day, so about 20 trading days) only stops
+// ancient signals from being listed.
+const MAX_ENTRY_AGE_BARS = 40;
 const MAX_ENTRY_EXTENSION_ATR = 0.5;
 const MAX_ADVERSE_EXTENSION_ATR = 0.75;
 const MOBILE_PAIRING_MINUTES = 10;
@@ -14,12 +20,18 @@ const MOBILE_SESSION_DAYS = 90;
 const WEB_SESSION_DAYS = 30;
 const SESSION_COOKIE = "ip_session";
 const OAUTH_STATE_COOKIE = "ip_oauth_state";
+// Refresh schedule for the whole system. Nothing is refreshed by hand: every scan is produced by the cron jobs (wrangler.toml), and a
+// request only reads the stored result. A US scan takes about 15 to 45 seconds and about 25 outgoing requests (the free plan allows
+// 50 per run), so US is scanned every 15 minutes while the market is open, at most once an hour for BSE and forex, and rarely when closed.
+// The scan lock lasts 4 minutes, longer than any scan, so two scans never overlap. Holdings are re-checked on the same 15-minute beat
+// and the AI ranking at most every 30 minutes, in its own hourly job so it can never delay a scan.
 const AUTO_REFRESH_OPEN_SECONDS = 55 * 60;
-const US_REFRESH_OPEN_SECONDS = 5 * 60;
+const US_REFRESH_OPEN_SECONDS = 15 * 60;
 const AUTO_REFRESH_CLOSED_SECONDS = 6 * 60 * 60;
 const AUTO_REFRESH_LOCK_SECONDS = 4 * 60;
 const AUTO_REFRESH_BACKOFF_SECONDS = 15 * 60;
-const MANUAL_REFRESH_MIN_SECONDS = 60;
+const AI_RANKING_MIN_GAP_SECONDS = 30 * 60;
+const MEMORY_SETTLE_MIN_GAP_SECONDS = 30 * 60;
 const EXTERNAL_ANALYSIS_CACHE_SECONDS = 15 * 60;
 const YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/";
 const TWELVE_DATA = "https://api.twelvedata.com/time_series";
@@ -48,7 +60,7 @@ const FOREX_PAIRS = [
 ];
 
 const MARKETS = {
-  US: { id: "US", name: "S&P 500", label: "US stocks", provider: "robinhood", auto: false, tz: "America/New_York", dailyCloseMinutes: 16 * 60, currency: "USD", symbolPrefix: "$", decimals: () => 2 },
+  US: { id: "US", name: "S&P 500", label: "US stocks", provider: "robinhood", auto: true, tz: "America/New_York", dailyCloseMinutes: 16 * 60, currency: "USD", symbolPrefix: "$", decimals: () => 2 },
   IN: { id: "IN", name: "Sensex 30", label: "India (BSE)", provider: "external", auto: true, tz: "Asia/Kolkata", dailyCloseMinutes: 15 * 60 + 35, currency: "INR", symbolPrefix: "₹", decimals: () => 2, universe: SENSEX_30, yahoo: symbol => symbol.startsWith("^") ? symbol : `${symbol}.BO`, twelve: symbol => symbol, twelveExchange: "BSE", tradingView: symbol => `BSE:${symbol.replace(/[^A-Z0-9_-]/g, "_")}` },
   FX: { id: "FX", name: "Major forex pairs", label: "Forex", provider: "external", auto: true, tz: "UTC", dailyCloseMinutes: Infinity, currency: "", symbolPrefix: "", decimals: value => value >= 20 ? 3 : 5, universe: FOREX_PAIRS, yahoo: symbol => symbol.includes("-") ? symbol : `${symbol}=X`, twelve: symbol => `${symbol.slice(0, 3)}/${symbol.slice(3)}`, tradingView: symbol => `FX:${symbol}` },
 };
@@ -708,6 +720,83 @@ function aggregateEntryBars(hourly, size, market) {
   return out;
 }
 
+// Inputs for the dip scan, from completed daily bars only: the latest close, its 5- and 200-day averages, RSI(2) and the
+// 3-day change. Needs 201 bars, so it is null where fewer daily bars exist.
+function rsiWilder(closes, period) {
+  const alpha = 1 / period;
+  let gain = null, loss = null;
+  for (let i = 1; i < closes.length; i++) {
+    const change = closes[i] - closes[i - 1], up = Math.max(change, 0), down = Math.max(-change, 0);
+    gain = gain === null ? up : alpha * up + (1 - alpha) * gain;
+    loss = loss === null ? down : alpha * down + (1 - alpha) * loss;
+  }
+  if (gain === null) return null;
+  return loss === 0 ? 100 : 100 - 100 / (1 + gain / loss);
+}
+function dipInputs(closes, daily) {
+  if (closes.length < 201) return null;
+  const close = closes.at(-1);
+  return {
+    close: round(close, 4), sma_5: round(mean(closes.slice(-5)), 4), sma_200: round(mean(closes.slice(-200)), 4),
+    rsi2: round(rsiWilder(closes.slice(-60), 2), 2), return_3d_pct: round((close / closes.at(-4) - 1) * 100, 3), as_of: daily.at(-1).date,
+  };
+}
+
+// Candlestick patterns at a breakout or breakdown, from completed daily bars. A pattern only counts when it forms on the day the close
+// breaks the prior 20-day high (or low) on volume at least 1.4x the 50-day average, on the right side of the 200-day average. This is the
+// "BRK" setting of research/pattern-backtest/backtest9.mjs. Backtests found no edge for the long side and only a weak, unstable one for
+// the short side, so the scan is experimental and every pick is logged under its own strategy to be judged on live results.
+const PATTERN_VOLUME_RATIO = 1.4, PATTERN_STOP_PAD_ATR = 0.25, PATTERN_STOP_MIN_ATR = 1, PATTERN_STOP_MAX_ATR = 3;
+const PATTERN_SPANS = { "Bullish engulfing": 2, "Hammer": 1, "Morning star": 3, "Three white soldiers": 3, "Bearish engulfing": 2, "Shooting star": 1, "Evening star": 3, "Three black crows": 3 };
+function candlePatternInputs(daily) {
+  if (daily.length < 201) return null;
+  const o = daily.map(bar => bar.open), h = daily.map(bar => bar.high), l = daily.map(bar => bar.low), c = daily.map(bar => bar.close), v = daily.map(bar => bar.volume);
+  const t = daily.length - 1, close = c[t];
+  const ranges = h.map((high, i) => i === 0 ? high - l[i] : Math.max(high - l[i], Math.abs(high - c[i - 1]), Math.abs(l[i] - c[i - 1])));
+  const atr = mean(ranges.slice(-14));
+  const volumeAverage = mean(v.slice(-51, -1));
+  if (!(atr > 0) || !(volumeAverage > 0)) return null;
+  const volumeRatio = v[t] / volumeAverage;
+  const high20 = Math.max(...h.slice(-21, -1)), low20 = Math.min(...l.slice(-21, -1)), sma200 = mean(c.slice(-200));
+  const side = close > high20 && close > sma200 ? "LONG" : close < low20 && close < sma200 ? "SHORT" : null;
+  if (!side || volumeRatio < PATTERN_VOLUME_RATIO) return null;
+  const body = i => Math.abs(c[i] - o[i]), green = i => c[i] > o[i], red = i => c[i] < o[i];
+  const upper = i => h[i] - Math.max(o[i], c[i]), lower = i => Math.min(o[i], c[i]) - l[i];
+  const found = [];
+  if (side === "LONG") {
+    if (red(t - 1) && green(t) && o[t] <= c[t - 1] && c[t] >= o[t - 1] && body(t) > body(t - 1) && body(t) >= 0.5 * atr) found.push("Bullish engulfing");
+    if (h[t] - l[t] >= 0.8 * atr && body(t) > 0 && lower(t) >= 2 * body(t) && upper(t) <= 0.3 * body(t) + 0.05 * (h[t] - l[t])) found.push("Hammer");
+    if (red(t - 2) && body(t - 2) >= 0.6 * atr && body(t - 1) <= 0.3 * body(t - 2) && Math.max(o[t - 1], c[t - 1]) < c[t - 2] && green(t) && c[t] > (o[t - 2] + c[t - 2]) / 2) found.push("Morning star");
+    if ([t - 2, t - 1, t].every(i => green(i) && body(i) >= 0.5 * atr && upper(i) <= 0.3 * body(i)) && c[t - 1] > c[t - 2] && c[t] > c[t - 1] && o[t - 1] > o[t - 2] && o[t - 1] < c[t - 2] && o[t] > o[t - 1] && o[t] < c[t - 1]) found.push("Three white soldiers");
+  } else {
+    if (green(t - 1) && red(t) && o[t] >= c[t - 1] && c[t] <= o[t - 1] && body(t) > body(t - 1) && body(t) >= 0.5 * atr) found.push("Bearish engulfing");
+    if (h[t] - l[t] >= 0.8 * atr && body(t) > 0 && upper(t) >= 2 * body(t) && lower(t) <= 0.3 * body(t) + 0.05 * (h[t] - l[t])) found.push("Shooting star");
+    if (green(t - 2) && body(t - 2) >= 0.6 * atr && body(t - 1) <= 0.3 * body(t - 2) && Math.min(o[t - 1], c[t - 1]) > c[t - 2] && red(t) && c[t] < (o[t - 2] + c[t - 2]) / 2) found.push("Evening star");
+    if ([t - 2, t - 1, t].every(i => red(i) && body(i) >= 0.5 * atr && lower(i) <= 0.3 * body(i)) && c[t - 1] < c[t - 2] && c[t] < c[t - 1] && o[t - 1] < o[t - 2] && o[t - 1] > c[t - 2] && o[t] < o[t - 1] && o[t] > c[t - 1]) found.push("Three black crows");
+  }
+  if (!found.length) return null;
+  const span = Math.max(...found.map(name => PATTERN_SPANS[name]));
+  return {
+    direction: side, patterns: found, close: round(close, 4), as_of: daily.at(-1).date, atr: round(atr, 4), volume_ratio: round(volumeRatio, 2),
+    breakout_level: round(side === "LONG" ? high20 : low20, 4), above_sma200_pct: round((close / sma200 - 1) * 100, 2),
+    pattern_extreme: round(side === "LONG" ? Math.min(...l.slice(-span)) : Math.max(...h.slice(-span)), 4),
+  };
+}
+
+// Chart reference lines, shown beside the stop and targets so a position can be read against the chart. They do not set any
+// level: backtests (research/pattern-backtest, ml_chart.py) found swing-low stops and prior-high targets did worse than ATR levels.
+function chartRefs(closes, daily) {
+  const lows = daily.map(bar => bar.low), highs = daily.map(bar => bar.high);
+  const lowest = n => daily.length >= n ? Math.min(...lows.slice(-n)) : null;
+  const highest = n => daily.length >= n ? Math.max(...highs.slice(-n)) : null;
+  const average = n => closes.length >= n ? mean(closes.slice(-n)) : null;
+  return { low_20: round(lowest(20), 4), high_10: round(highest(10), 4), high_20: round(highest(20), 4), sma_20: round(average(20), 4), sma_50: round(average(50), 4), sma_200: round(average(200), 4) };
+}
+const REFERENCE_LABELS = { low_20: "20-day low", high_10: "10-day high", high_20: "20-day high", sma_20: "20-day average", sma_50: "50-day average", sma_200: "200-day average" };
+function referenceLines(refs) {
+  return Object.entries(REFERENCE_LABELS).map(([key, label]) => ({ key, label, value: refs?.[key] })).filter(line => Number.isFinite(line.value) && line.value > 0);
+}
+
 function snapshotFromPayload(symbol, dailyItem, signalItem, quote, market = MARKETS.US) {
   const daily = normalizeBars(dailyItem, "day", market);
   const signal = aggregateEntryBars(normalizeBars(signalItem, "hour", market), 4, market);
@@ -747,6 +836,11 @@ function snapshotFromPayload(symbol, dailyItem, signalItem, quote, market = MARK
     annualized_volatility_pct: round(standardDeviation(logReturns.slice(-60)) * Math.sqrt(252) * 100, 3),
     atr_14: round(atr14, 4),
     atr_14_pct: round(atr14 / price * 100, 3),
+    dip: dipInputs(closes, daily),
+    pattern: candlePatternInputs(daily),
+    recent_daily: daily.slice(-12).map(bar => ({ d: String(bar.date).slice(0, 10), h: bar.high, l: bar.low, c: bar.close })),
+    chart_refs: chartRefs(closes, daily),
+    chart_daily: daily.slice(-60).map(bar => ({ d: String(bar.date).slice(0, 10), o: bar.open, h: bar.high, l: bar.low, c: bar.close })),
     signal_atr_14: round(signalAtr14, 4),
     signal_atr_14_pct: round(signalAtr14 / price * 100, 3),
     volume_ratio_5d_to_20d: hasVolume ? round(recentVolume / baseVolume, 3) : 1,
@@ -773,7 +867,7 @@ async function fetchRobinhoodSnapshots(symbols) {
     ...chunk(symbols, 75).flatMap(batch => {
       const encoded = encodeURIComponent(batch.join(",")).replaceAll("%2C", ",");
       return [
-        { batch, run: async () => bySymbol(await fetchJson(`${ROBINHOOD_HISTORICALS}?symbols=${encoded}&bounds=regular&interval=day&span=6month`)).forEach((value, key) => daily.set(key, value)) },
+        { batch, run: async () => bySymbol(await fetchJson(`${ROBINHOOD_HISTORICALS}?symbols=${encoded}&bounds=regular&interval=day&span=year`)).forEach((value, key) => daily.set(key, value)) },
         { batch, run: async () => bySymbol(await fetchJson(`${ROBINHOOD_HISTORICALS}?symbols=${encoded}&bounds=regular&interval=hour&span=month`)).forEach((value, key) => signal.set(key, value)) },
       ];
     }),
@@ -951,8 +1045,8 @@ function scoreCandidate(snapshot, metadata = {}) {
   const isFresh = age <= MAX_ENTRY_AGE_BARS;
   const isExtended = extensionAtr > MAX_ENTRY_EXTENSION_ATR;
   const isFailing = extensionAtr < -MAX_ADVERSE_EXTENSION_ATR;
-  const riskDistance = Math.max(2 * signalAtr, entryReference * riskFloorFraction(snapshot.market));
-  const target1 = direction === "SHORT" ? Math.max(0.01, entryReference - 2 * riskDistance) : entryReference + 2 * riskDistance;
+  const dailyAtr = numeric(snapshot.atr_14);
+  const { target1 } = scenarioLevels(direction, entryReference, signalAtr, snapshot.market, dailyAtr);
   const signalStartedAt = Date.parse(supertrend.signal_bar_started_at);
   const postSignalBars = snapshot.history.filter(row => !Number.isFinite(signalStartedAt) || Date.parse(row.date) > signalStartedAt);
   const target1Reached = direction === "SHORT"
@@ -1024,6 +1118,7 @@ function scoreCandidate(snapshot, metadata = {}) {
     expected_strategy_fill_at: supertrend.expected_strategy_fill_at,
     signal_entry_price: round(entryReference, 4),
     signal_atr: round(signalAtr, 4),
+    daily_atr: round(dailyAtr, 4),
     extension_atr: round(extensionAtr, 3),
     extension_pct: round(extensionPct, 3),
     buy_range: buyRange(direction, entryReference, signalAtr, price),
@@ -1098,7 +1193,7 @@ function marketTrend(info, index, snapshots, withBreadth = true, marketId = null
 // ---- Entry window timing: when does each setup stop being a fresh entry, and what happened to the ones that did ----
 const RECENT_SETUP_HOURS = 24;
 const DROP_REASONS = {
-  LATE_TREND: () => "Entry window closed",
+  LATE_TREND: () => "Signal is too old to list",
   EXTENDED_DO_NOT_CHASE: c => `Price ran ${Math.abs(c.extension_atr).toFixed(1)} ATR past the signal`,
   SIGNAL_WEAKENING: c => `Price fell ${Math.abs(c.extension_atr).toFixed(1)} ATR below the signal`,
   DAILY_CONFLICT: () => "Daily trend turned against it",
@@ -1213,6 +1308,509 @@ function buyRange(direction, entry, atr, price) {
   };
 }
 
+// ---- Dip scan: a second scanner mode ----
+// Buys short, sharp drops in stocks that are still in a long-term uptrend, and only while the market itself is under
+// stress. Rules and evidence: research/pattern-backtest/README.md (backtest6 to 8, ml_adaptive.py). Backtested on the
+// point-in-time S&P 500 from late 2023: dips taken while SPY had fallen 1.5% or more over 5 days averaged +0.66%
+// per 5-day trade (+1.14% for the sharper dips), against +0.09% and +0.46% without the gate. Calm-market dips lost money.
+// Long side only; shorts were not tested. The gate was chosen after seeing that dips cluster in selloffs, so every pick
+// is logged under its own strategy to confirm it on live results.
+const DIP_RSI_MAX = 10, DIP_SHARP_RSI = 5, DIP_SHARP_DROP_PCT = -5;
+const DIP_STOP_ATR = 2, DIP_TARGET_1_ATR = 1, DIP_TARGET_2_ATR = 2; // the same stock levels as STOP_ATR, TARGET_1_ATR and TARGET_2_ATR
+const DIP_GATE_SPY_5D_PCT = -1.5, DIP_GATE_BREADTH = 0.06;
+
+function scoreDip(snapshot, metadata = {}) {
+  const dip = snapshot.dip;
+  if (!dip || !(dip.close > dip.sma_200) || !(dip.rsi2 < DIP_RSI_MAX)) return null;
+  const sharp = dip.rsi2 < DIP_SHARP_RSI && dip.close < dip.sma_5 && dip.return_3d_pct <= DIP_SHARP_DROP_PCT;
+  const atr = numeric(snapshot.atr_14) || dip.close * 0.03;
+  const stopDistance = Math.max(DIP_STOP_ATR * atr, dip.close * 0.01);
+  const score = round(clamp(55 + (DIP_RSI_MAX - dip.rsi2) * 2.5 + clamp(-dip.return_3d_pct, 0, 10) * 1.5 + (sharp ? 10 : 0), 0, 100), 1);
+  return {
+    symbol: snapshot.symbol, company: metadata.company || snapshot.symbol, sector: metadata.sector || "Unknown",
+    currency_symbol: snapshot.currency_symbol, price_decimals: snapshot.price_decimals ?? 2,
+    price: snapshot.price, signal_close: dip.close, signal_as_of: dip.as_of, rsi2: dip.rsi2, return_3d_pct: dip.return_3d_pct,
+    above_sma200_pct: round((dip.close / dip.sma_200 - 1) * 100, 2), sharp, score,
+    label: sharp ? "Sharp dip in an uptrend" : "Dip in an uptrend",
+    atr_14: round(atr, 4), atr_14_pct: round(atr / dip.close * 100, 2),
+    stop_price: round(Math.max(0.01, dip.close - stopDistance), 4),
+    target_1: round(dip.close + DIP_TARGET_1_ATR * atr, 4), target_2: round(dip.close + DIP_TARGET_2_ATR * atr, 4),
+    horizon_trading_days: 10,
+    reference_lines: referenceLines(snapshot.chart_refs),
+    bars: snapshot.chart_daily || [],
+  };
+}
+
+function buildDipScan(snapshots, spy, metadata) {
+  const ready = [...snapshots.values()].filter(snapshot => snapshot.dip);
+  if (ready.length < 50) return { available: false, reason: "Not enough daily history was returned to check the 200-day average." };
+  const dips = ready.map(snapshot => scoreDip(snapshot, metadata.get(snapshot.symbol))).filter(Boolean)
+    .sort((a, b) => b.score - a.score || a.symbol.localeCompare(b.symbol));
+  const breadth = dips.length / ready.length;
+  const spy5d = Number.isFinite(Number(spy?.return_5d_pct)) ? Number(spy.return_5d_pct) : null;
+  const marketDrop = spy5d !== null && spy5d <= DIP_GATE_SPY_5D_PCT, washout = breadth >= DIP_GATE_BREADTH;
+  const open = marketDrop || washout;
+  const reasons = [];
+  if (marketDrop) reasons.push(`The S&P 500 (SPY) is down ${Math.abs(spy5d).toFixed(1)}% over 5 days.`);
+  if (washout) reasons.push(`${(breadth * 100).toFixed(1)}% of stocks are in a dip inside an uptrend (the gate opens at ${(DIP_GATE_BREADTH * 100).toFixed(0)}%).`);
+  return {
+    available: true,
+    gate: {
+      open, spy_5d_pct: spy5d, breadth_pct: round(breadth * 100, 1), breadth_threshold_pct: DIP_GATE_BREADTH * 100, spy_threshold_pct: DIP_GATE_SPY_5D_PCT,
+      headline: open ? "Market stress: dip ideas are active" : "Calm market: no dip ideas",
+      note: open ? reasons.join(" ") : `Dips only paid off in backtests while the market was under stress. It opens when SPY falls ${Math.abs(DIP_GATE_SPY_5D_PCT)}% or more in 5 days, or when ${(DIP_GATE_BREADTH * 100).toFixed(0)}% or more of stocks are in a dip. Today SPY is ${spy5d === null ? "unavailable" : `${spy5d >= 0 ? "+" : ""}${spy5d.toFixed(1)}%`} over 5 days and ${(breadth * 100).toFixed(1)}% of stocks are in a dip.`,
+    },
+    scanned: ready.length, dip_count: dips.length,
+    candidates: open ? dips.slice(0, 20) : [],
+    waiting: open ? [] : dips.slice(0, 20),
+    method: "Dip scan: the close is above the 200-day average and RSI(2) is under 10; sharper dips (RSI(2) under 5, below the 5-day average, down 5% or more in 3 days) rank higher. Ideas appear only while the market is under stress. Entry is the next open, stop 2 daily ATRs below, targets 1 and 2 ATRs above, exit when the stop or a target is hit, or by the close of day 10 (most trades finish in 2 to 5 days).",
+  };
+}
+
+// ---- Pattern scan: a third scanner mode (experimental) ----
+// Candlestick patterns on a breakout (long) or breakdown (short) day. Levels: the stop sits just past the pattern's own extreme, kept between
+// 1 and 3 daily ATRs from the signal close; targets 1 and 2 are 1R and 2R; the idea is also dead when a day closes back through the breakout
+// level; and the time limit is the close of day 10. Backtests (research/pattern-backtest/README.md, backtest9.mjs) found no edge on the long
+// side (-0.2% to -0.5% against breakouts without a pattern) and a weak short-side edge that was concentrated in the first half and still lost
+// money on absolute terms, so these are not recommendations. Each is logged under the PATTERN strategy to be judged on live results.
+function scorePattern(snapshot, metadata = {}) {
+  const p = snapshot.pattern;
+  if (!p) return null;
+  const long = p.direction === "LONG", atr = p.atr;
+  const raw = long ? p.close - p.pattern_extreme + PATTERN_STOP_PAD_ATR * atr : p.pattern_extreme + PATTERN_STOP_PAD_ATR * atr - p.close;
+  const risk = clamp(raw, PATTERN_STOP_MIN_ATR * atr, PATTERN_STOP_MAX_ATR * atr);
+  const step = long ? 1 : -1;
+  const score = round(clamp(45 + clamp((p.volume_ratio - PATTERN_VOLUME_RATIO) * 12, 0, 25) + (p.patterns.length - 1) * 10 + clamp(p.above_sma200_pct * (long ? 1 : -1), 0, 20) * 0.5, 0, 100), 1);
+  return {
+    symbol: snapshot.symbol, company: metadata.company || snapshot.symbol, sector: metadata.sector || "Unknown",
+    currency_symbol: snapshot.currency_symbol, price_decimals: snapshot.price_decimals ?? 2,
+    direction: p.direction, patterns: p.patterns, label: `${p.patterns.join(" + ")} on a ${long ? "breakout" : "breakdown"}`,
+    price: snapshot.price, signal_close: p.close, signal_as_of: p.as_of, volume_ratio: p.volume_ratio, above_sma200_pct: p.above_sma200_pct,
+    breakout_level: p.breakout_level, pattern_extreme: p.pattern_extreme, score,
+    atr_14: p.atr, atr_14_pct: round(p.atr / p.close * 100, 2), risk_atr: round(risk / atr, 2),
+    stop_price: round(Math.max(0.01, p.close - step * risk), 4),
+    target_1: round(Math.max(0.01, p.close + step * risk), 4), target_2: round(Math.max(0.01, p.close + step * 2 * risk), 4),
+    failure_level: p.breakout_level, horizon_trading_days: 10,
+    reference_lines: referenceLines(snapshot.chart_refs),
+    bars: snapshot.chart_daily || [],
+  };
+}
+
+function buildPatternScan(snapshots, metadata) {
+  const ready = [...snapshots.values()].filter(snapshot => snapshot.dip);
+  if (ready.length < 50) return { available: false, reason: "Not enough daily history was returned to check the 200-day average." };
+  const picks = ready.map(snapshot => scorePattern(snapshot, metadata.get(snapshot.symbol))).filter(Boolean)
+    .sort((a, b) => b.score - a.score || a.symbol.localeCompare(b.symbol));
+  const breakouts = picks.filter(pick => pick.direction === "LONG"), breakdowns = picks.filter(pick => pick.direction === "SHORT");
+  return {
+    available: true, experimental: true, scanned: ready.length, breakout_count: breakouts.length, breakdown_count: breakdowns.length,
+    breakouts: breakouts.slice(0, 15), breakdowns: breakdowns.slice(0, 15),
+    notice: "Experimental. In backtests on the S&P 500 these patterns did not beat a breakout without a pattern on the long side, and only weakly and unreliably on the short side. They are logged to the track record so live results can confirm or reject them. Research, not advice.",
+    method: "Pattern scan: the day's candles form a bullish pattern (engulfing, hammer, morning star, three white soldiers) while the close breaks the prior 20-day high on volume at least 1.4x the 50-day average and above the 200-day average, or the bearish mirror (engulfing, shooting star, evening star, three black crows) on a close under the prior 20-day low below the 200-day average. Entry is the next open. The stop sits just past the pattern's extreme (between 1 and 3 daily ATRs away), targets are 1R and 2R, the idea fails if a day closes back through the breakout level, and any trade still open is closed at the close of day 10.",
+  };
+}
+
+// ---- Unified ranking: one list for every idea from every scanner ----
+// The scanners (Supertrend, dip, pattern) feed one ranked "Top ideas" list, each row tagged with the scanner that found it. Code does the
+// arithmetic (levels, risk, distance, hard filters, a rules score); when an Anthropic key is configured, a Claude model then ranks the
+// survivors and writes the reasoning, and the app takes every price from the scanner's own numbers, never from the model.
+// Backtest evidence per scanner comes from research/pattern-backtest/README.md. n is the number of backtested trades.
+const RANK_EVIDENCE = {
+  SUPERTREND: { label: "Supertrend", n: 503, win_rate_pct: 45, avg_win_pct: 11.3, avg_loss_pct: -6.2, ev_pct: 1.61, experimental: false,
+    note: "Daily Supertrend flip with the ADX gate, held until a daily close under the Supertrend line (about 34 days on average); no target. About 500 trades over four years in a mostly rising market; the edge was larger in the first half." },
+  DIP: { label: "Dip", n: 4754, win_rate_pct: 69, avg_win_pct: null, avg_loss_pct: null, ev_pct: 0.66, experimental: false,
+    note: "Dip above the 200-day average while SPY was down 1.5% or more over 5 days, 5-day hold. The gate was chosen after seeing the data, and the trades cluster in a few selloff weeks; calm-market dips lost money." },
+  DIP_SHARP: { label: "Dip", n: 1010, win_rate_pct: 72, avg_win_pct: null, avg_loss_pct: null, ev_pct: 1.14, experimental: false,
+    note: "Sharper dip (RSI(2) under 5, down 5% or more in 3 days) while SPY was down 1.5% or more over 5 days. Fewer trades, more clustered in a few selloff weeks." },
+  PATTERN_LONG: { label: "Pattern", n: 347, win_rate_pct: 55, avg_win_pct: null, avg_loss_pct: null, ev_pct: -0.37, experimental: true,
+    note: "Bullish candlestick pattern on a 20-day-high breakout with volume 1.4x average, 5-day hold with 2 ATR stop and 1 ATR target. It did worse than breakouts without a pattern (-0.2% to -0.5% per trade) and lost money in absolute terms." },
+  PATTERN_SHORT: { label: "Pattern", n: 379, win_rate_pct: 57, avg_win_pct: null, avg_loss_pct: null, ev_pct: -0.61, experimental: true,
+    note: "Bearish candlestick pattern on a 20-day-low breakdown with volume 1.4x average, 5-day hold. Beat breakdowns without a pattern by about +0.6% but still lost money in absolute terms, and the edge sat mostly in the first half." },
+};
+// Supertrend on the Sensex 30 and on forex pairs has not been backtested, so there is no figure to score: the evidence is marked unknown,
+// confidence stays Low, and the scores lean on reward to risk, alignment and entry quality only.
+RANK_EVIDENCE.SUPERTREND_IN = { label: "Supertrend", n: 0, win_rate_pct: null, avg_win_pct: null, avg_loss_pct: null, ev_pct: null, experimental: false,
+  note: "Not backtested on the Sensex 30. The US result does not carry over automatically: this market, its hours and its costs differ. Ideas exit at the first of the stop, target 1 or the tenth daily close." };
+RANK_EVIDENCE.SUPERTREND_FX = { label: "Supertrend", n: 0, win_rate_pct: null, avg_win_pct: null, avg_loss_pct: null, ev_pct: null, experimental: false,
+  note: "Not backtested on forex pairs. The only forex test (chart patterns) found nothing that beat random entries. Ideas exit at the first of the stop, target 1 or the tenth daily close." };
+const RANK_MAX_STOP_PCT = 12, RANK_MAX_CHASE_ATR = 1.5, RANK_STALE_DAYS = 6, RANK_MIN_PROVEN_TRADES = 100, RANK_MAX_ITEMS = 30;
+
+const rankDaysOld = date => { const t = Date.parse(String(date).slice(0, 10)); return Number.isFinite(t) ? Math.max(0, Math.round((Date.now() - t) / 86400000)) : null; };
+
+function rankItem(base) {
+  const { direction, entry, stop, target_1: t1, target_2: t2, price } = base;
+  const long = direction === "LONG", risk = Math.abs(entry - stop);
+  const reward = t => Number.isFinite(t) ? Math.abs(t - entry) : null;
+  return {
+    ...base,
+    stop_pct: entry > 0 ? round(risk / entry * 100, 2) : null,
+    stop_atr: base.atr > 0 ? round(risk / base.atr, 2) : null,
+    rr_t1: risk > 0 && reward(t1) !== null ? round(reward(t1) / risk, 2) : null,
+    rr_t2: risk > 0 && reward(t2) !== null ? round(reward(t2) / risk, 2) : null,
+    from_entry_atr: base.atr > 0 ? round((long ? price - entry : entry - price) / base.atr, 2) : null,
+    stop_hit: long ? price <= stop : price >= stop,
+  };
+}
+
+function rankHardFilter(item) {
+  if (item.stop_hit) return "The stop is already hit.";
+  if (item.stop_pct !== null && item.stop_pct > RANK_MAX_STOP_PCT) return `The stop is ${item.stop_pct}% from entry, wider than the ${RANK_MAX_STOP_PCT}% limit.`;
+  if (item.strategy !== "SUPERTREND" && item.from_entry_atr !== null && item.from_entry_atr > RANK_MAX_CHASE_ATR) return `Price has already run ${item.from_entry_atr} ATR past the signal close (limit ${RANK_MAX_CHASE_ATR}).`;
+  if (item.age_days !== null && item.age_days > RANK_STALE_DAYS && item.strategy !== "SUPERTREND") return `The signal is ${item.age_days} days old.`;
+  return null;
+}
+
+// Rules score, 0-100, with the weights of the ranking brief: expected value 35, reward to risk 20, trend and market alignment 15,
+// entry quality 15, liquidity 10, freshness 5. Used to order the list when no AI key is set, and handed to the model as a reference.
+function rankRulesScore(item) {
+  const ev = item.evidence.ev_pct, known = ev !== null;
+  const evPart = known ? clamp((ev + 1) / 3 * 100, 0, 100) : 40; // no backtest in this market: a below-average, not a negative, score
+  const rrRef = item.strategy === "SUPERTREND" && item.rr_t2 === null ? 1.8 : (item.rr_t2 ?? item.rr_t1 ?? 1);
+  const rrPart = clamp(rrRef / 3 * 100, 0, 100);
+  const alignPart = item.alignment_score;
+  const entryPart = clamp(100 - 40 * clamp(Math.max(0, item.from_entry_atr ?? 0) / RANK_MAX_CHASE_ATR, 0, 1) - (item.stop_atr > 3 ? 25 : 0) - (item.stop_atr < 1 ? 15 : 0), 0, 100);
+  const liquidityPart = item.volume_ratio >= 1.4 ? 75 : 55; // dollar volume is not in the feed, so liquidity is judged from the volume ratio only
+  const age = item.age_days ?? 0;
+  const freshPart = age <= 1 ? 100 : age <= 3 ? 65 : age <= 5 ? 35 : 10;
+  let score = 0.35 * evPart + 0.2 * rrPart + 0.15 * alignPart + 0.15 * entryPart + 0.1 * liquidityPart + 0.05 * freshPart;
+  if (item.evidence.experimental) score -= 12;
+  if (item.evidence.n < RANK_MIN_PROVEN_TRADES) score -= 10;
+  if (known && ev <= 0) score = Math.min(score, 40);
+  return round(clamp(score, 0, 100), 1);
+}
+
+function rankConfidence(item) {
+  const e = item.evidence;
+  if (e.ev_pct === null) return "Low";
+  if (e.ev_pct > 0.5 && e.n >= 500 && item.alignment_score >= 70) return "High";
+  if (e.ev_pct > 0) return "Med";
+  return "Low";
+}
+
+function rankRulesReason(item) {
+  const e = item.evidence, signed = value => `${value >= 0 ? "+" : ""}${value}`;
+  const parts = [e.ev_pct === null ? `${e.label}: not backtested in this market` : `${e.label}: backtest ${signed(e.ev_pct)}% per trade, ${e.win_rate_pct}% wins (${e.n.toLocaleString("en-US")} trades)`];
+  if (item.rr_t1 !== null) parts.push(`R:R ${item.rr_t1} to target 1`);
+  else parts.push("exits on the daily trend line");
+  if (item.from_entry_atr !== null) parts.push(`${item.from_entry_atr} ATR from the entry`);
+  if (e.experimental) parts.push("experimental, not recommended");
+  return parts.join(" · ");
+}
+
+function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, marketId = "US" }) {
+  const marketState = trend?.state || "UNKNOWN";
+  const agrees = direction => marketState === "UP" ? (direction === "LONG" ? 100 : 25) : marketState === "DOWN" ? (direction === "SHORT" ? 100 : 25) : 55;
+  const raw = [];
+  for (const c of candidates || []) {
+    const entry = numeric(c.signal_entry_price), atr = numeric(c.daily_atr) || numeric(c.signal_atr);
+    if (!(entry > 0) || !["LONG", "SHORT"].includes(c.direction)) continue;
+    // US stocks exit on the daily Supertrend line with no target (backtested). India and forex have no such test and keep the scanner's own
+    // ATR stop, two targets and ten-day limit.
+    const us = marketId === "US";
+    const levels = pickLevels(c.direction, entry, numeric(c.signal_atr), marketId, numeric(c.daily_atr), c.daily_supertrend_value);
+    raw.push({
+      strategy: "SUPERTREND", evidence_key: us ? "SUPERTREND" : marketId === "FX" ? "SUPERTREND_FX" : "SUPERTREND_IN", symbol: c.symbol, company: c.company, sector: c.sector, direction: c.direction, price: c.price,
+      entry: round(entry, 4), stop: round(levels.stop, 4), target_1: us ? null : round(levels.target1, 6), target_2: us ? null : round(levels.target2, 6), atr, atr_pct: atr > 0 ? round(atr / entry * 100, 2) : null,
+      volume_ratio: null, age_days: rankDaysOld(c.signal_confirmed_at), scanner_score: c.score, tag: "Supertrend", detail: c.label,
+      exit_rule: us ? "Leave when a day closes " + (c.direction === "SHORT" ? "over" : "under") + " the daily Supertrend line, at the next open. No fixed target and no time limit."
+        : "Leave at the stop, at target 1 or 2, or at the close of day 10, whichever comes first.",
+      alignment_score: Math.round((agrees(c.direction) + (c.daily_aligned && c.daily_adx >= 20 ? 100 : 40)) / 2),
+      alignment_note: `Daily Supertrend ${c.daily_supertrend_direction}, daily ADX ${c.daily_adx}${c.daily_adx_rising ? " and rising" : ""}; market ${marketState.toLowerCase()}.`,
+      currency_symbol: c.currency_symbol, price_decimals: c.price_decimals,
+    });
+  }
+  if (dipScan?.available && dipScan.gate?.open) {
+    for (const d of dipScan.candidates || []) {
+      raw.push({
+        strategy: "DIP", evidence_key: d.sharp ? "DIP_SHARP" : "DIP", symbol: d.symbol, company: d.company, sector: d.sector, direction: "LONG", price: d.price,
+        entry: d.signal_close, stop: d.stop_price, target_1: d.target_1, target_2: d.target_2, atr: d.atr_14, atr_pct: d.atr_14_pct,
+        volume_ratio: null, age_days: rankDaysOld(d.signal_as_of), scanner_score: d.score, tag: d.sharp ? "Sharp dip" : "Dip", detail: d.label,
+        exit_rule: "Leave at the stop, at target 1, or at the close of day 10, whichever comes first.",
+        alignment_score: 70, alignment_note: `Stock above its 200-day average; the market-stress gate is open (SPY ${dipScan.gate.spy_5d_pct ?? "n/a"}% over 5 days).`,
+        currency_symbol: d.currency_symbol, price_decimals: d.price_decimals,
+      });
+    }
+  }
+  if (patternScan?.available) {
+    for (const p of [...(patternScan.breakouts || []), ...(patternScan.breakdowns || [])]) {
+      raw.push({
+        strategy: "PATTERN", evidence_key: p.direction === "LONG" ? "PATTERN_LONG" : "PATTERN_SHORT", symbol: p.symbol, company: p.company, sector: p.sector, direction: p.direction, price: p.price,
+        entry: p.signal_close, stop: p.stop_price, target_1: p.target_1, target_2: p.target_2, atr: p.atr_14, atr_pct: p.atr_14_pct,
+        volume_ratio: p.volume_ratio, age_days: rankDaysOld(p.signal_as_of), scanner_score: p.score, tag: "Pattern", detail: p.label,
+        exit_rule: `Leave at the stop, at target 1 or 2, when a day closes back ${p.direction === "LONG" ? "under" : "over"} ${p.failure_level}, or at the close of day 10.`,
+        alignment_score: agrees(p.direction), alignment_note: `Close beyond the 20-day ${p.direction === "LONG" ? "high" : "low"} on ${p.volume_ratio}x volume; market ${marketState.toLowerCase()}.`,
+        currency_symbol: p.currency_symbol, price_decimals: p.price_decimals,
+      });
+    }
+  }
+  const byListPosition = new Map();
+  for (const strategy of ["SUPERTREND", "DIP", "PATTERN"]) raw.filter(r => r.strategy === strategy).sort((a, b) => b.scanner_score - a.scanner_score).forEach((r, i) => byListPosition.set(r, i + 1));
+  const items = [], rejected = [];
+  for (const r of raw) {
+    const item = rankItem({ ...r, id: `${r.strategy}:${r.symbol}:${r.direction}`, evidence: RANK_EVIDENCE[r.evidence_key], scanner_rank_in_list: byListPosition.get(r) });
+    const reason = rankHardFilter(item);
+    if (reason) rejected.push({ id: item.id, symbol: item.symbol, strategy: item.strategy, tag: item.tag, reason });
+    else items.push(item);
+  }
+  for (const item of items) item.rules_score = rankRulesScore(item);
+  items.sort((a, b) => b.rules_score - a.rules_score || a.symbol.localeCompare(b.symbol));
+  // Same sector and direction: the third and later setups are the same bet, so they lose ground.
+  const seen = new Map();
+  for (const item of items) {
+    const key = `${item.sector}|${item.direction}`, count = seen.get(key) || 0;
+    seen.set(key, count + 1);
+    if (count >= 2) item.rules_score = round(Math.max(0, item.rules_score - 8 * (count - 1)), 1);
+    item.crowded = count >= 2;
+  }
+  items.sort((a, b) => b.rules_score - a.rules_score || a.symbol.localeCompare(b.symbol));
+  const kept = items.slice(0, RANK_MAX_ITEMS);
+  kept.forEach((item, index) => {
+    item.rank = index + 1;
+    item.score = item.rules_score;
+    item.confidence = rankConfidence(item);
+    item.reason = rankRulesReason(item);
+    item.sources = ["rules"];
+    if (index < 12) item.bars = snapshots.get(item.symbol)?.chart_daily || [];
+    delete item.evidence_key;
+  });
+  const positive = kept.filter(item => item.evidence.ev_pct > 0), unknown = kept.filter(item => item.evidence.ev_pct === null);
+  const headline = positive.length ? `${positive.length} idea${positive.length === 1 ? "" : "s"} with a positive backtest edge today`
+    : unknown.length ? `${unknown.length} Supertrend idea${unknown.length === 1 ? "" : "s"}; this market has no backtest, so none can be called proven`
+    : (kept.length ? "Nothing here has a positive backtest edge today" : "No scanner ideas today");
+  return {
+    available: true, source: "rules", model: null,
+    headline,
+    nothing_compelling: !positive.length && !unknown.length,
+    market_state: marketState,
+    items: kept, rejected: rejected.slice(0, 40),
+    data_gaps: [
+      "No earnings calendar or news feed is connected, so earnings or events inside the holding window are not checked.",
+      marketId === "FX" ? "Forex has no volume data, so liquidity is not assessed." : "Dollar volume is not in the data feed; liquidity is judged from the volume ratio only.",
+      marketId === "US" ? "Backtest figures are per strategy, not per stock, and most were tested on the S&P 500 in a mostly rising market." : "Supertrend has not been backtested in this market, so expected value is unknown and scores rest on reward to risk, alignment and entry quality. The dip and pattern scanners are US-only.",
+    ],
+    ordering_notes: null, deep_dives: [],
+    method: "Rules: expected value from each scanner's backtest 35%, reward to risk 20%, trend and market alignment 15%, entry quality 15%, liquidity 10%, freshness 5%. Experimental and unproven scanners are penalised, negative-edge scanners are capped, and a third setup in the same sector and direction loses ground. Hard filters drop setups with a stop already hit, a stop wider than 12%, a chase of more than 1.5 ATR, or a stale signal.",
+  };
+}
+
+const RANKING_SYSTEM_PROMPT = `ROLE
+You are a disciplined swing-trading analyst reviewing every setup currently produced by our scanner. Rank them from best to worst by risk-adjusted expected value, and say clearly which to skip. You are not giving personalized financial advice; you are scoring rule-based setups for a research tool.
+
+INPUT
+You receive one JSON object: market context, the strategy evidence (backtest win rate, average win and loss where known, expected value per trade, sample size), the setups that passed the code's hard filters (each with entry, stop, targets, risk, reward to risk, distance from entry in ATR, age, alignment, a rules_score and rules rank), and the setups the code already rejected. Use ONLY this data. If a field is missing, say so and lower confidence. Never invent prices, statistics or news. Do not output any price: the app takes all prices from the input.
+
+HOW TO SCORE (0-100)
+- 35% expected value: use the strategy's own backtest figures (ev_pct per trade, win rate, sample size). Dips and Pattern ideas are graded on their own stop and first target within 10 days; Supertrend ideas have no target and exit on a daily close under the trend line, so judge them by their average win versus average loss, not by reward to the first target. Do not apply a single reward-to-risk cutoff across strategies: dips use a 2 ATR stop with a 1 ATR first target by design.
+- 20% reward to risk of this specific trade.
+- 15% trend and market alignment.
+- 15% entry quality: closeness to the entry and stop size relative to ATR.
+- 10% liquidity and slippage risk (dollar volume is not available: say so).
+- 5% freshness.
+Penalize experimental strategies, small backtest samples, strategies whose backtest expected value is zero or negative (they cannot be High confidence and should not sit in the top tier), crowding in one sector, and setups that are really the same bet. Make sure the top 10 is not all one strategy or one direction unless the evidence strongly justifies it. You may reject additional setups with a one-line reason.
+
+RULES
+- Prefer fewer, higher-conviction picks over a long list. Be explicit when the honest answer is "nothing here is compelling today".
+- Do not recommend position sizes or say "buy"; present ranked research.
+- Show numbers from the input in your reasons (for example "backtest +1.6% per trade, 45% wins, 503 trades").
+- Write plain, short sentences. No markdown.
+
+OUTPUT
+Reply with ONE JSON object and nothing else, with exactly these keys:
+{
+ "headline": string, at most 140 characters, the one-line takeaway for today,
+ "nothing_compelling": boolean,
+ "ranked": [ { "id": string copied from the input, "score": integer 0-100, "confidence": "High" | "Med" | "Low", "reason": one sentence, at most 170 characters } ] best to worst, including only setups worth listing,
+ "deep_dives": [ { "id": string, "bull": one or two sentences, "bear": one or two sentences, "invalidation": one sentence } ] for the top 5 ranked setups,
+ "rejected": [ { "id": string, "reason": one short sentence } ] for setups you drop beyond the code's own rejections,
+ "data_gaps": [ strings ] anything missing or uncertain,
+ "ordering_notes": string, where your order disagrees with the scanners' own ordering or the rules_score, and why (empty string if none)
+}`;
+
+function rankInputHash(items) {
+  let h = 2166136261;
+  for (const text of items.map(item => `${item.id}|${item.stop}|${item.target_1}`).sort().join(";")) { h ^= text.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
+  return h.toString(36);
+}
+
+function rankModelInput(ranking, market) {
+  const slim = item => ({ id: item.id, symbol: item.symbol, company: item.company, sector: item.sector, strategy: item.strategy, tag: item.tag, detail: item.detail, direction: item.direction,
+    price: item.price, entry: item.entry, stop: item.stop, target_1: item.target_1, target_2: item.target_2, exit_rule: item.exit_rule, stop_pct: item.stop_pct, stop_atr: item.stop_atr,
+    rr_to_target_1: item.rr_t1, rr_to_target_2: item.rr_t2, from_entry_atr: item.from_entry_atr, age_days: item.age_days, atr_pct: item.atr_pct, volume_ratio: item.volume_ratio,
+    alignment: item.alignment_note, scanner_rank_within_its_list: item.scanner_rank_in_list, scanner_score: item.scanner_score, rules_score: item.rules_score, rules_rank: item.rank,
+    same_sector_crowded: item.crowded, evidence: Object.keys(RANK_EVIDENCE).find(key => RANK_EVIDENCE[key] === item.evidence) });
+  const setups = ranking.items.map(slim);
+  const used = new Set(setups.map(setup => setup.evidence));
+  return {
+    as_of: new Date().toISOString().slice(0, 10), market: market || "US", market_trend: ranking.market_state,
+    market_note: market === "FX" ? "Forex pairs: no volume data, no backtest for Supertrend here, ideas exit at the stop, a target or day 10. Where evidence is unknown, say so and keep confidence Low; do not borrow the US figures."
+      : market === "IN" ? "Sensex 30 (BSE) stocks in rupees: no backtest for Supertrend here, ideas exit at the stop, a target or day 10. Where evidence is unknown, say so and keep confidence Low; do not borrow the US figures." : undefined,
+    strategy_evidence: Object.fromEntries(Object.entries(RANK_EVIDENCE).filter(([key]) => used.has(key))),
+    hard_filters_applied_by_code: { stop_wider_than_pct: RANK_MAX_STOP_PCT, chase_beyond_atr: RANK_MAX_CHASE_ATR, stale_after_days: RANK_STALE_DAYS, stop_already_hit: true },
+    setups,
+    rejected_by_code: ranking.rejected.map(({ id, reason }) => ({ id, reason })),
+  };
+}
+
+const RANKING_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    headline: { type: "string" }, nothing_compelling: { type: "boolean" },
+    ranked: { type: "array", items: { type: "object", properties: { id: { type: "string" }, score: { type: "integer" }, confidence: { type: "string", enum: ["High", "Med", "Low"] }, reason: { type: "string" } }, required: ["id", "score", "confidence", "reason"] } },
+    deep_dives: { type: "array", items: { type: "object", properties: { id: { type: "string" }, bull: { type: "string" }, bear: { type: "string" }, invalidation: { type: "string" } }, required: ["id", "bull", "bear", "invalidation"] } },
+    rejected: { type: "array", items: { type: "object", properties: { id: { type: "string" }, reason: { type: "string" } }, required: ["id", "reason"] } },
+    data_gaps: { type: "array", items: { type: "string" } }, ordering_notes: { type: "string" },
+  },
+  required: ["headline", "nothing_compelling", "ranked", "deep_dives", "rejected", "data_gaps", "ordering_notes"],
+};
+const WORKERS_AI_RANKING_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+
+function parseModelJson(text) {
+  const start = text.indexOf("{"), end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) throw new Error("The model did not return JSON");
+  return JSON.parse(text.slice(start, end + 1));
+}
+
+// Workers AI: an open model that runs on Cloudflare itself, through the AI binding. No API key and no outside account.
+async function callWorkersAiRanking(env, input) {
+  const model = env.RANKING_MODEL || WORKERS_AI_RANKING_MODEL;
+  const body = { messages: [{ role: "system", content: RANKING_SYSTEM_PROMPT }, { role: "user", content: JSON.stringify(input) }], max_tokens: 5000, temperature: 0.2 };
+  // A model call that hangs is abandoned after 100 seconds, so it can never hold the run open.
+  const run = params => Promise.race([env.AI.run(model, params), new Promise((_, reject) => setTimeout(() => reject(new Error("The AI model took too long")), 100000))]);
+  let result;
+  try { result = await run({ ...body, response_format: { type: "json_schema", json_schema: RANKING_JSON_SCHEMA } }); }
+  catch (error) {
+    if (/too long/.test(cleanError(error))) throw error;
+    console.error(`Workers AI json mode failed, retrying plain: ${cleanError(error)}`);
+    result = await run(body);
+  }
+  const out = result?.response ?? result;
+  return { parsed: typeof out === "string" ? parseModelJson(out) : out, model };
+}
+
+async function callRankingModel(env, input) {
+  if (env.AI && env.RANKING_PROVIDER !== "anthropic") return callWorkersAiRanking(env, input);
+  const request = withFallback => ({
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2026-10-21", ...(withFallback ? { "anthropic-beta": "server-side-fallback-2026-07-01" } : {}) },
+    body: JSON.stringify({
+      model: env.RANKING_MODEL || "claude-opus-5-5", max_tokens: 12000, output_config: { effort: "high" }, ...(withFallback ? { fallbacks: "default" } : {}),
+      system: RANKING_SYSTEM_PROMPT, messages: [{ role: "user", content: JSON.stringify(input) }],
+    }),
+    signal: AbortSignal.timeout(240000),
+  });
+  let response = await fetch("https://api.anthropic.com/v1/messages", request(true));
+  if (response.status === 400) response = await fetch("https://api.anthropic.com/v1/messages", request(false));
+  if (!response.ok) throw new Error(`Anthropic API returned HTTP ${response.status}`);
+  const data = await response.json();
+  if (data.stop_reason === "refusal") throw new Error("The model declined the request");
+  if (data.stop_reason === "max_tokens") throw new Error("The model's answer was cut off");
+  const text = (data.content || []).filter(block => block.type === "text").map(block => block.text).join("");
+  return { parsed: parseModelJson(text), model: data.model || env.RANKING_MODEL || "claude-opus-5-5" };
+}
+
+// Keeps only what can be trusted: known ids, bounded scores, short text. Anything else is dropped rather than shown.
+function validateAiRanking(parsed, validIds) {
+  const str = (value, max) => typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, max) : "";
+  const seen = new Set(), ranked = [];
+  for (const row of Array.isArray(parsed?.ranked) ? parsed.ranked : []) {
+    const id = str(row?.id, 80), score = Number(row?.score);
+    if (!validIds.has(id) || seen.has(id) || !Number.isFinite(score)) continue;
+    seen.add(id);
+    ranked.push({ id, score: Math.round(clamp(score, 0, 100)), confidence: ["High", "Med", "Low"].includes(row.confidence) ? row.confidence : "Low", reason: str(row.reason, 200) });
+  }
+  const deep = [], deepSeen = new Set();
+  for (const row of Array.isArray(parsed?.deep_dives) ? parsed.deep_dives : []) {
+    const id = str(row?.id, 80);
+    if (!validIds.has(id) || deepSeen.has(id)) continue;
+    deepSeen.add(id);
+    deep.push({ id, bull: str(row.bull, 420), bear: str(row.bear, 420), invalidation: str(row.invalidation, 260) });
+  }
+  const rejected = [];
+  for (const row of Array.isArray(parsed?.rejected) ? parsed.rejected : []) {
+    const id = str(row?.id, 80);
+    if (validIds.has(id) && !seen.has(id)) rejected.push({ id, reason: str(row.reason, 200) });
+  }
+  if (!ranked.length && !rejected.length) return null;
+  return {
+    headline: str(parsed.headline, 160), nothing_compelling: Boolean(parsed.nothing_compelling), ranked, deep_dives: deep.slice(0, 5), rejected,
+    data_gaps: (Array.isArray(parsed.data_gaps) ? parsed.data_gaps : []).map(g => str(g, 220)).filter(Boolean).slice(0, 8), ordering_notes: str(parsed.ordering_notes, 600),
+  };
+}
+
+// One stored AI ranking per market, in the same table as the scans (RANK:US, RANK:IN, RANK:FX).
+const rankRowId = marketId => `RANK:${marketId || "US"}`;
+async function readAiRanking(env, marketId = "US") {
+  if (!env.DB) return scanMemory.get(rankRowId(marketId)) || null;
+  try {
+    const row = await env.DB.prepare("SELECT payload, generated_at, refreshing_until FROM scan_cache WHERE market = ? LIMIT 1").bind(rankRowId(marketId)).first();
+    if (row?.payload) return { ...JSON.parse(row.payload), generated_at: row.generated_at, refreshing_until: row.refreshing_until };
+  } catch { /* table or row missing */ }
+  return null;
+}
+
+// Starts a model ranking when the set of ideas changed (or the last one is over three hours old), at most once every 20 minutes. Never blocks a scan.
+async function ensureAiRanking(env, payload, ctx) {
+  const ranking = payload?.ranking;
+  if (!(env.AI || env.ANTHROPIC_API_KEY) || !env.DB || !ranking?.items?.length) return;
+  const hash = rankInputHash(ranking.items);
+  const rowId = rankRowId(payload.market);
+  const stored = await readAiRanking(env, payload.market);
+  const age = stored ? (Date.now() - Date.parse(stored.generated_at)) / 1000 : Infinity;
+  if (stored && stored.input_hash === hash && age < 3 * 3600) return;
+  if (age < AI_RANKING_MIN_GAP_SECONDS) return;
+  try {
+    await env.DB.prepare("INSERT OR IGNORE INTO scan_cache (market, payload, generated_at, refreshing_until) VALUES (?, NULL, ?, NULL)").bind(rowId, new Date(0).toISOString()).run();
+    const now = new Date();
+    const claimed = await env.DB.prepare("UPDATE scan_cache SET refreshing_until = ? WHERE market = ? AND (refreshing_until IS NULL OR refreshing_until <= ?)")
+      .bind(new Date(now.getTime() + 6 * 60 * 1000).toISOString(), rowId, now.toISOString()).run();
+    if (!(Number(claimed?.meta?.changes ?? 0) > 0)) return;
+  } catch { return; }
+  const work = (async () => {
+    const validIds = new Set(ranking.items.map(item => item.id));
+    let record = { input_hash: hash, error: null, result: null, model: null };
+    try {
+      const { parsed, model } = await callRankingModel(env, rankModelInput(ranking, payload.market));
+      record.result = validateAiRanking(parsed, validIds);
+      record.model = model;
+      if (!record.result) record.error = "The model's answer had no usable ranking";
+    } catch (error) { record.error = cleanError(error); console.error(`AI ranking failed: ${record.error}`); }
+    try {
+      await env.DB.prepare("UPDATE scan_cache SET payload = ?, generated_at = ?, refreshing_until = NULL WHERE market = ?").bind(JSON.stringify(record), new Date().toISOString(), rowId).run();
+    } catch { /* the rules ranking still serves */ }
+  })();
+  if (ctx?.waitUntil) ctx.waitUntil(work); else await work;
+}
+
+// Lays the model's order, scores and reasons over the rules ranking. Setups the model did not mention keep their rules order at the end.
+function mergeAiRanking(ranking, stored) {
+  const ai = stored?.result;
+  if (!ranking?.items?.length || !ai) return ranking;
+  const byId = new Map(ranking.items.map(item => [item.id, item]));
+  const ordered = [];
+  for (const row of ai.ranked) {
+    const item = byId.get(row.id);
+    if (!item) continue;
+    ordered.push({ ...item, score: row.score, confidence: row.confidence, reason: row.reason || item.reason, sources: ["ai"] });
+    byId.delete(row.id);
+  }
+  const rejectedIds = new Map(ai.rejected.map(row => [row.id, row.reason]));
+  const extraRejected = [];
+  for (const [id, item] of byId) {
+    if (rejectedIds.has(id)) extraRejected.push({ id, symbol: item.symbol, strategy: item.strategy, tag: item.tag, reason: rejectedIds.get(id) });
+  }
+  const unranked = [...byId.values()].filter(item => !rejectedIds.has(item.id)).map(item => ({ ...item, sources: ["rules"], reason: `${item.reason} · not scored by the model` }));
+  const items = [...ordered, ...unranked].map((item, index) => ({ ...item, rank: index + 1 }));
+  const dives = new Map(ai.deep_dives.map(row => [row.id, row]));
+  return {
+    ...ranking, source: "ai", model: stored.model, ai_generated_at: stored.generated_at,
+    headline: ai.headline || ranking.headline, nothing_compelling: ai.nothing_compelling,
+    items: items.map(item => dives.has(item.id) ? { ...item, bull: dives.get(item.id).bull, bear: dives.get(item.id).bear, invalidation: dives.get(item.id).invalidation } : item),
+    rejected: [...ranking.rejected, ...extraRejected],
+    data_gaps: [...new Set([...ranking.data_gaps, ...ai.data_gaps])].slice(0, 10), ordering_notes: ai.ordering_notes || null,
+    method: `${ranking.method} An AI model (${stored.model}) then ranked the setups and wrote the reasons; every price comes from the scanners, not the model.`,
+  };
+}
+
 async function discover(market = MARKETS.US, env = {}, previous = null) {
   const records = market.universe || await loadUniverse();
   const metadata = new Map(records.map(record => [record.symbol, record]));
@@ -1226,17 +1824,16 @@ async function discover(market = MARKETS.US, env = {}, previous = null) {
   for (const symbol of indexSymbols) snapshots.delete(symbol);
   const trends = indexes.map((info, position) => marketTrend(info, indexSnapshots.get(info.symbol), snapshots, position === 0, market.id)).filter(Boolean);
   const allCandidates = [...snapshots.entries()].map(([symbol, snapshot]) => scoreCandidate(snapshot, metadata.get(symbol))).sort((a, b) => b.score - a.score || a.symbol.localeCompare(b.symbol));
+  const dipScan = market.id === "US" ? buildDipScan(snapshots, indexSnapshots.get("SPY"), metadata) : null;
+  const patternScan = market.id === "US" ? buildPatternScan(snapshots, metadata) : null;
   const candidates = allCandidates.filter(candidate => candidate.entry_eligible);
+  const ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id });
   const lateCandidates = allCandidates.filter(candidate => !candidate.entry_eligible);
-  // When each fresh setup stops counting as an entry (after MAX_ENTRY_AGE_BARS + 1 completed bars), and when it was first seen.
+  // When each fresh setup was first seen. There is no closing time: a setup leaves the list when its price runs away or the trend fails, not when time runs out.
   const nowIso = new Date().toISOString();
-  const sample = snapshots.values().next().value;
-  const barEnds = sample ? nextBarEnds(sessionBarEnds(sample.history, market), market) : [];
   const previousFirstSeen = new Map((previous?.candidates || []).map(item => [item.symbol, item.first_seen_at || previous.generated_at]));
   for (const candidate of candidates) {
     candidate.first_seen_at = previousFirstSeen.get(candidate.symbol) || nowIso;
-    const closing = barEnds[MAX_ENTRY_AGE_BARS - Number(candidate.signal_age_bars || 0)];
-    if (closing) candidate.window_closes_at = closing.toISOString();
   }
   const recent = recentSetups(previous, allCandidates, new Set(candidates.map(candidate => candidate.symbol)), nowIso);
   const longCandidates = candidates.filter(candidate => candidate.direction === "LONG").sort((a, b) => b.long_score - a.long_score || a.symbol.localeCompare(b.symbol));
@@ -1260,6 +1857,9 @@ async function discover(market = MARKETS.US, env = {}, previous = null) {
     short_candidates: shortCandidates.slice(0, 20),
     late_candidates: lateCandidates.slice(0, 20),
     recent_setups: recent,
+    dip_scan: dipScan,
+    pattern_scan: patternScan,
+    ranking,
     direction_counts: { LONG: longCandidates.length, SHORT: shortCandidates.length },
     fresh_entry_count: candidates.length,
     late_or_extended_count: lateCandidates.length,
@@ -1312,7 +1912,7 @@ async function analyze(symbol, market = MARKETS.US, env = {}) {
   const bear = makeReport("bear", symbol, direction === "SHORT" ? technicalScore : 100 - technicalScore, 0.7, direction === "SHORT" ? "Trend, momentum, and Supertrend are aligned for the bearish case." : "Headline risk, volatility, and a close below Supertrend are the main reasons the long setup could fail.", candidate.cautions.length ? candidate.cautions : ["No setup is certain."], ["Risk is defined by the invalidation level."], true);
   const price = snapshot.price;
   const entryReference = candidate.signal_entry_price || price;
-  const { stop, target1, target2 } = scenarioLevels(direction, entryReference, candidate.signal_atr, market.id);
+  const { stop, target1, target2, stop_kind } = pickLevels(direction, entryReference, candidate.signal_atr, market.id, candidate.daily_atr, candidate.daily_supertrend_value);
   const signalStartedAt = Date.parse(snapshot.supertrend.signal_bar_started_at);
   const postSignalBars = snapshot.history.filter(row => !Number.isFinite(signalStartedAt) || Date.parse(row.date) > signalStartedAt);
   const target1Reached = direction === "SHORT"
@@ -1324,12 +1924,15 @@ async function analyze(symbol, market = MARKETS.US, env = {}) {
   if (target1Reached) vetoReasons.push("Scenario target 1 was already reached after the signal; this entry is no longer actionable");
   const approved = vetoReasons.length === 0 && technicalScore >= 65 && candidate.entry_eligible && !target1Reached;
   const action = approved ? "IDEA" : candidate.entry_eligible && !target1Reached && technicalScore >= 55 ? "WATCH" : "PASS";
-  const levels = { reference: round(entryReference, 4), current: round(price, 4), risk: round(stop, 4), target_1: round(target1, 4), target_2: round(target2, 4) };
+  const levels = { reference: round(entryReference, 4), current: round(price, 4), risk: round(stop, 4), target_1: round(target1, 4), target_2: round(target2, 4), exit_kind: stop_kind };
   const chartExplanation = [
     `Confirmed daily Supertrend is ${candidate.daily_supertrend_direction}; ${candidate.daily_aligned ? "it agrees with" : "it conflicts with"} the ${direction} 4-hour trigger.`,
     `Daily ADX (14) is ${candidate.daily_adx.toFixed(1)} versus ${candidate.daily_adx_prior.toFixed(1)} five sessions ago; regime gate: ${candidate.regime_eligible ? "PASS" : "VETO"}.`,
     `4H Supertrend (10, 3) flipped ${direction} at ${snapshot.supertrend.signal_confirmed_at}; the anchored signal entry is ${fmtPrice(entryReference, market)}.`,
     `Current price is ${candidate.extension_atr >= 0 ? "+" : ""}${candidate.extension_atr.toFixed(2)} ATR from that entry; status: ${candidate.entry_status.replaceAll("_", " ")}.`,
+    stop_kind === "SUPERTREND_LINE"
+      ? `Exit rule: leave when a day closes ${direction === "SHORT" ? "over" : "under"} the daily Supertrend line (${fmtPrice(stop, market)}), at the next open. There is no time limit and no fixed target; the profit zones are for reference only. Exits on early warnings (a moving average, fading ADX, a weak market) lowered returns in tests.`
+      : `Protective level ${fmtPrice(stop, market)}.`,
     ...candidate.reasons.slice(1, 3),
     ...vetoReasons,
     ...contextWarnings,
@@ -1381,11 +1984,12 @@ async function analyze(symbol, market = MARKETS.US, env = {}) {
       daily_supertrend: snapshot.daily_supertrend,
       daily_adx: snapshot.daily_adx,
       levels,
+      reference_lines: referenceLines(snapshot.chart_refs),
       target_return_pct: { target_1: round((target1 / entryReference - 1) * 100, 2), target_2: round((target2 / entryReference - 1) * 100, 2) },
       direction,
       stance: action,
       explanation: chartExplanation,
-      method: `${direction} scenario: confirmed daily Supertrend must agree and daily ADX (14) must be at least 20 and rising before the 4H trigger can qualify. Entry, risk, and 2R/3R targets stay anchored to the original 4-hour signal price. Late, extended, or already-targeted signals are rejected. Levels are research scenarios, not orders.`,
+      method: `${direction} scenario: confirmed daily Supertrend must agree and daily ADX (14) must be at least 20 and rising before the 4H trigger can qualify. Entry, risk, and targets (1 and 2 daily ATRs for stocks, 2R and 3R for forex) stay anchored to the original 4-hour signal price. Late, extended, or already-targeted signals are rejected. Levels are research scenarios, not orders.`,
     },
     read_only: true,
     order_submission_supported: false,
@@ -1430,15 +2034,44 @@ async function fromCache(request, cacheName, maxAge, producer, ctx) {
 }
 
 const SCANNER_USER_ID = "system:scanner";
+// Supertrend picks are graded on a trend break; a pick whose window is at least this many days is graded that way, and this is also its safety limit.
+const TREND_EXIT_DAYS = 120;
 
 // Smallest protective distance as a share of price. 1.25% suits stocks; a forex pair's typical 2 ATR is only
 // about 0.3% to 0.6%, so the stock floor made forex stops far too wide and first targets almost unreachable.
 function riskFloorFraction(marketId) { return marketId === "FX" ? 0.0025 : 0.0125; }
 
+// Levels for a Supertrend pick. For US stocks the exit is the daily Supertrend line itself: the pick is closed when a day CLOSES under it
+// (for a short, over it), filled at the next open, with no time limit. Backtests (research/pattern-backtest, ml_st_support.py and
+// ml_st_exits.py) found short targets and short hold limits have no edge on Supertrend entries, that this exit earned +1.6% per trade
+// against -0.07% for the 2 ATR stop and 1 ATR target, and that every early-warning exit added on top (close under a moving average, ADX
+// fading, the market under its 50-day average, a tighter trail) lowered the average. The targets stay as optional profit zones only.
+function pickLevels(direction, entry, atr, marketId = "US", dailyAtr = 0, dailyLine = 0) {
+  const levels = scenarioLevels(direction, entry, atr, marketId, dailyAtr);
+  const short = direction === "SHORT", line = numeric(dailyLine);
+  if (marketId === "US" && line > 0 && (short ? line > entry : line < entry)) return { ...levels, stop: line, stop_kind: "SUPERTREND_LINE" };
+  return { ...levels, stop_kind: "ATR" };
+}
+
 // Protective level and the two scenario targets, shared by full reports and logged scanner picks.
-function scenarioLevels(direction, entry, atr, marketId = "US") {
-  const riskDistance = Math.max(2 * atr, entry * riskFloorFraction(marketId));
+// Stocks use daily-ATR levels from the backtests in research/pattern-backtest (backtest8.mjs, ml_monitor.py): a 2 ATR protective
+// level, a first target 1 ATR away that is reached about half the time, and a second target 2 ATR away reached about one time
+// in five, so reward equals risk at target 2. A wider 4 ATR stop averaged about 0.06% to 0.07% more per trade and was hit by only
+// 2% of trades (against 12% to 17% at 2 ATR), but it put the stop four times farther than target 1, which is too much risk per
+// share to show as a recommendation; 2 ATR also cuts the average of the worst 5% of trades from about -9.2% to -8.0%. Targets
+// farther out were rarely reached in 5 days. Forex was not tested and keeps the earlier 2 x 4H-ATR "R" levels at 2R and 3R.
+const STOP_ATR = 2, TARGET_1_ATR = 1, TARGET_2_ATR = 2;
+function scenarioLevels(direction, entry, atr, marketId = "US", dailyAtr = 0) {
   const short = direction === "SHORT";
+  if (marketId !== "FX" && dailyAtr > 0) {
+    const stopDistance = Math.max(STOP_ATR * dailyAtr, entry * 0.01);
+    return {
+      stop: short ? entry + stopDistance : Math.max(0.01, entry - stopDistance),
+      target1: short ? Math.max(0.01, entry - TARGET_1_ATR * dailyAtr) : entry + TARGET_1_ATR * dailyAtr,
+      target2: short ? Math.max(0.01, entry - TARGET_2_ATR * dailyAtr) : entry + TARGET_2_ATR * dailyAtr,
+    };
+  }
+  const riskDistance = Math.max(2 * atr, entry * riskFloorFraction(marketId));
   return {
     stop: short ? entry + riskDistance : Math.max(0.01, entry - riskDistance),
     target1: short ? Math.max(0.01, entry - 2 * riskDistance) : entry + 2 * riskDistance,
@@ -1455,14 +2088,45 @@ async function recordScannerPicks(env, payload) {
     const entry = numeric(candidate.signal_entry_price);
     const atr = numeric(candidate.signal_atr);
     if (!candidate.symbol || !(entry > 0) || !(atr > 0) || !candidate.signal_confirmed_at || !["LONG", "SHORT"].includes(candidate.direction)) continue;
-    const { stop, target1, target2 } = scenarioLevels(candidate.direction, entry, atr);
+    const { stop, target1, target2 } = pickLevels(candidate.direction, entry, atr, "US", numeric(candidate.daily_atr), candidate.daily_supertrend_value);
     statements.push(env.DB.prepare(`INSERT OR IGNORE INTO recommendations (id, user_id, symbol, action, direction, generated_at,
       signal_confirmed_at, entry_price, current_price, stop_price, target_1, target_2, confidence, entry_status, daily_adx,
-      horizon_trading_days, status) VALUES (?, ?, ?, 'IDEA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 5, 'PENDING')`).bind(
+      horizon_trading_days, status) VALUES (?, ?, ?, 'IDEA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${TREND_EXIT_DAYS}, 'PENDING')`).bind(
       crypto.randomUUID(), SCANNER_USER_ID, candidate.symbol, candidate.direction, payload.generated_at,
       candidate.signal_confirmed_at, round(entry, 4), round(numeric(candidate.price), 4), round(stop, 4), round(target1, 4), round(target2, 4),
       round(clamp(numeric(candidate.score) / 100, 0, 1), 3), candidate.entry_status, numeric(candidate.daily_adx),
     ));
+  }
+  // Dip scan picks, each under its own strategy so the two scanners can be compared on live results. Dips seen while the
+  // market gate was closed are logged as DIP_WAIT (action WATCH) to test the gate; they are never shown as ideas.
+  const dip = payload.dip_scan;
+  if (dip?.available) {
+    for (const [list, strategy, action] of [[dip.candidates, "DIP", "IDEA"], [dip.waiting, "DIP_WAIT", "WATCH"]]) {
+      for (const pick of list || []) {
+        if (!pick.symbol || !(pick.signal_close > 0) || !pick.signal_as_of) continue;
+        statements.push(env.DB.prepare(`INSERT OR IGNORE INTO recommendations (id, user_id, symbol, action, direction, generated_at,
+          signal_confirmed_at, entry_price, current_price, stop_price, target_1, target_2, confidence, entry_status, daily_adx,
+          horizon_trading_days, status, strategy) VALUES (?, ?, ?, ?, 'LONG', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 10, 'PENDING', ?)`).bind(
+          crypto.randomUUID(), SCANNER_USER_ID, pick.symbol, action, payload.generated_at, pick.signal_as_of,
+          round(pick.signal_close, 4), round(numeric(pick.price), 4), pick.stop_price, pick.target_1, pick.target_2,
+          round(clamp(numeric(pick.score) / 100, 0, 1), 3), strategy === "DIP" ? "DIP_GATE_OPEN" : "DIP_GATE_CLOSED", strategy,
+        ));
+      }
+    }
+  }
+  // Pattern scan picks (long breakouts and short breakdowns), logged under their own PATTERN strategy and graded on their own stop, first target or day 10.
+  const pattern = payload.pattern_scan;
+  if (pattern?.available) {
+    for (const pick of [...(pattern.breakouts || []), ...(pattern.breakdowns || [])]) {
+      if (!pick.symbol || !(pick.signal_close > 0) || !pick.signal_as_of || !["LONG", "SHORT"].includes(pick.direction)) continue;
+      statements.push(env.DB.prepare(`INSERT OR IGNORE INTO recommendations (id, user_id, symbol, action, direction, generated_at,
+        signal_confirmed_at, entry_price, current_price, stop_price, target_1, target_2, confidence, entry_status, daily_adx,
+        horizon_trading_days, status, strategy) VALUES (?, ?, ?, 'IDEA', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PATTERN_BREAKOUT', 0, 10, 'PENDING', 'PATTERN')`).bind(
+        crypto.randomUUID(), SCANNER_USER_ID, pick.symbol, pick.direction, payload.generated_at, pick.signal_as_of,
+        round(pick.signal_close, 4), round(numeric(pick.price), 4), pick.stop_price, pick.target_1, pick.target_2,
+        round(clamp(numeric(pick.score) / 100, 0, 1), 3),
+      ));
+    }
   }
   if (statements.length) await env.DB.batch(statements);
   return statements.length;
@@ -1499,18 +2163,32 @@ function summarizeTrackRecord(rows, pendingCount) {
   };
 }
 
+const TRACK_STRATEGIES = {
+  SUPERTREND: "Supertrend scanner",
+  DIP: "Dip scan (market gate open)",
+  DIP_WAIT: "Dips while the market gate was closed (not recommended; logged to test the gate)",
+  PATTERN: "Pattern scan: candlestick breakouts and breakdowns (experimental; logged to test it)",
+};
 async function publicTrackRecord(db) {
   if (!db) return { available: false, reason: "Track record storage is not configured." };
-  const settledResult = await db.prepare(`SELECT direction, status, strategy_return_pct, stop_hit, target_hit, generated_at
+  const settledResult = await db.prepare(`SELECT direction, status, strategy_return_pct, stop_hit, target_hit, generated_at, strategy
     FROM recommendations WHERE user_id = ? AND status = 'SETTLED' AND action != 'PASS' ORDER BY generated_at ASC LIMIT 5000`).bind(SCANNER_USER_ID).all();
-  const pending = await db.prepare("SELECT COUNT(*) AS n FROM recommendations WHERE user_id = ? AND status = 'PENDING'").bind(SCANNER_USER_ID).first();
-  const rows = settledResult?.results || [];
+  const rows = (settledResult?.results || []).map(row => ({ ...row, strategy: row.strategy || "SUPERTREND" }));
+  const pendingFor = async strategy => Number((await db.prepare("SELECT COUNT(*) AS n FROM recommendations WHERE user_id = ? AND status = 'PENDING' AND strategy = ?").bind(SCANNER_USER_ID, strategy).first())?.n || 0);
+  // An array (not an object keyed by strategy) so clients that rewrite snake_case keys cannot mangle the ids.
+  const strategies = [];
+  for (const [id, label] of Object.entries(TRACK_STRATEGIES)) {
+    const own = rows.filter(row => row.strategy === id);
+    strategies.push({ id, label, since: own[0]?.generated_at || null, summary: summarizeTrackRecord(own, await pendingFor(id)) });
+  }
+  const supertrend = rows.filter(row => row.strategy === "SUPERTREND");
   return {
     available: true,
-    since: rows[0]?.generated_at || null,
-    horizon_trading_days: 5,
-    summary: summarizeTrackRecord(rows, Number(pending?.n || 0)),
-    methodology: "Every fresh US entry the scanner surfaces is recorded once per ticker, signal close and direction, at the price available when it first appeared. Each pick exits at the first of its own stop, 90% of the way to its first target, or the fifth completed daily close, using daily bars; a bar that touches both is counted as a stop. Wins, losses, stop-outs and still-open picks are all included, and none are removed. Percentages with few picks are not meaningful. This is research history, not a prediction or advice.",
+    since: supertrend[0]?.generated_at || null,
+    horizon_trading_days: 10,
+    summary: strategies[0].summary,
+    strategies,
+    methodology: "Every fresh US entry a scanner surfaces is recorded once per ticker and signal close, at the price available when it first appeared, under the scanner that produced it. Supertrend picks are followed until a daily bar closes under the daily Supertrend line (over it for a short), and are graded at the next open; there is no target and no time limit beyond a 120-day safety limit. Dip picks exit at the first of their own stop, first target, or the close of the tenth trading day, and are graded as soon as a level is hit. Pattern picks (candlestick breakouts and breakdowns) use the same rule as dips: their own stop, first target (1R), or the close of day 10. Open picks, stopped picks and losers are all counted. Backtests are hypothetical; only these live results are a record."
   };
 }
 
@@ -1527,14 +2205,16 @@ async function rememberRecommendation(db, userId, report) {
   const columns = `id, user_id, symbol, action, direction, generated_at, signal_confirmed_at,
     entry_price, current_price, stop_price, target_1, target_2, confidence,
     entry_status, daily_adx, horizon_trading_days, status`;
+  // US Supertrend ideas and watches are followed until the trend breaks (TREND_EXIT_DAYS is only a safety limit); PASS calls and other markets keep a 10-day window.
+  const horizon = (report.market || "US") === "US" && report.action !== "PASS" ? TREND_EXIT_DAYS : 10;
   let result;
   try {
     result = await db.prepare(`INSERT OR IGNORE INTO recommendations (${columns}, market)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 5, 'PENDING', ?)`).bind(...values, report.market || "US").run();
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)`).bind(...values, horizon, report.market || "US").run();
   } catch (error) {
     if ((report.market || "US") !== "US") throw error;
     result = await db.prepare(`INSERT OR IGNORE INTO recommendations (${columns})
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 5, 'PENDING')`).bind(...values).run();
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`).bind(...values, horizon).run();
   }
   return Boolean(result?.success);
 }
@@ -1560,9 +2240,48 @@ async function fetchDailySettlementBars(symbols) {
   return bars;
 }
 
-// A graded pick leaves at the first of: its protective level, "near target" (this share of the way to target 1),
+// A graded pick leaves at the first of: its protective level, "near target" (this share of the way to target 1; 1.0 now
+// that target 1 is a short 1 ATR move),
 // or the close of the last bar in the window. When a bar touches both levels the stop is assumed to come first.
-const NEAR_TARGET_FRACTION = 0.9;
+const NEAR_TARGET_FRACTION = 1.0;
+
+// Grades a Supertrend pick by the rule tested best: hold until a daily bar CLOSES under the Supertrend line (over it for a short), then fill at the
+// next open. There is no target. A pick still open after its safety limit is graded at that day's close. Returns null while the pick is still running.
+function gradeTrendExit(recommendation, bars) {
+  const rows = bars.map(bar => ({ ...bar }));
+  try { calculateSupertrend(rows, 10, 3, "1d"); } catch { return null; }
+  const short = recommendation.direction === "SHORT", sign = short ? -1 : 1;
+  const entry = numeric(recommendation.current_price);
+  const generatedDate = String(recommendation.generated_at).slice(0, 10);
+  const horizon = Math.max(1, Number(recommendation.horizon_trading_days) || TREND_EXIT_DAYS);
+  const path = rows.filter(row => row.date.slice(0, 10) > generatedDate);
+  if (!path.length || !entry) return null;
+  const against = short ? "LONG" : "SHORT";
+  const breakIndex = path.findIndex(row => row.supertrend_direction === against);
+  let exitBar, exitPrice, grade, used;
+  if (breakIndex >= 0 && breakIndex + 1 < path.length && breakIndex + 1 < horizon) {
+    exitBar = path[breakIndex + 1]; exitPrice = numeric(exitBar.open) || numeric(exitBar.close); grade = "TREND_BREAK"; used = path.slice(0, breakIndex + 2);
+  } else if (path.length >= horizon) {
+    exitBar = path[horizon - 1]; exitPrice = numeric(exitBar.close); grade = "TIME_LIMIT"; used = path.slice(0, horizon);
+  } else return null;   // still running, or the break happened on the latest bar and the next open is not known yet
+  const highs = used.map(bar => numeric(bar.high)), lows = used.map(bar => numeric(bar.low));
+  const strategyReturnPct = sign * (exitPrice / entry - 1) * 100;
+  return {
+    settledAt: exitBar.date, exitPrice: round(exitPrice, 4), rawReturnPct: round(strategyReturnPct, 3), strategyReturnPct: round(strategyReturnPct, 3),
+    maxFavorablePct: round((short ? (entry - Math.min(...lows)) / entry : (Math.max(...highs) - entry) / entry) * 100, 3),
+    maxAdversePct: round((short ? (Math.max(...highs) - entry) / entry : (entry - Math.min(...lows)) / entry) * 100, 3),
+    grade, targetHit: false, stopHit: grade === "TREND_BREAK",
+  };
+}
+
+// True when any bar in the path reaches the stop or target 1, so the exit is already decided.
+function touchesLevel(recommendation, path) {
+  const short = recommendation.direction === "SHORT";
+  const entry = numeric(recommendation.current_price), stop = numeric(recommendation.stop_price), target = entry + NEAR_TARGET_FRACTION * (numeric(recommendation.target_1) - entry);
+  return path.some(bar => short
+    ? numeric(bar.high) >= stop || numeric(bar.low) <= target || numeric(bar.open) >= stop || numeric(bar.open) <= target
+    : numeric(bar.low) <= stop || numeric(bar.high) >= target || numeric(bar.open) <= stop || numeric(bar.open) >= target);
+}
 
 function gradeRecommendation(recommendation, path) {
   const entry = numeric(recommendation.current_price);
@@ -1633,8 +2352,18 @@ async function settlePendingRecommendations(db, userId, env = {}) {
   for (const recommendation of pending) {
     const generatedDate = String(recommendation.generated_at).slice(0, 10);
     const horizon = Math.max(1, Number(recommendation.horizon_trading_days) || 5);
+    if (horizon >= 60 && recommendation.action !== "PASS") {
+      const full = histories.get(`${recommendation.market || "US"}:${recommendation.symbol}`) || [];
+      const trend = gradeTrendExit(recommendation, full);
+      if (trend) updates.push(db.prepare(`UPDATE recommendations SET status = 'SETTLED', settled_at = ?, exit_price = ?, raw_return_pct = ?,
+        strategy_return_pct = ?, max_favorable_pct = ?, max_adverse_pct = ?, grade = ?, target_hit = ?, stop_hit = ?
+        WHERE id = ? AND user_id = ? AND status = 'PENDING'`).bind(trend.settledAt, trend.exitPrice, trend.rawReturnPct, trend.strategyReturnPct,
+        trend.maxFavorablePct, trend.maxAdversePct, trend.grade, 0, trend.stopHit ? 1 : 0, recommendation.id, userId));
+      continue;
+    }
     const path = (histories.get(`${recommendation.market || "US"}:${recommendation.symbol}`) || []).filter(bar => bar.date.slice(0, 10) > generatedDate).slice(0, horizon);
-    if (path.length < horizon) continue;
+    // A pick is graded as soon as a level is hit instead of waiting out the whole window; otherwise it waits for the window to close.
+    if (!path.length || (path.length < horizon && !touchesLevel(recommendation, path))) continue;
     const grade = gradeRecommendation(recommendation, path);
     updates.push(db.prepare(`UPDATE recommendations SET status = 'SETTLED', settled_at = ?, exit_price = ?, raw_return_pct = ?,
       strategy_return_pct = ?, max_favorable_pct = ?, max_adverse_pct = ?, grade = ?, target_hit = ?, stop_hit = ?
@@ -1648,12 +2377,18 @@ async function settlePendingRecommendations(db, userId, env = {}) {
   return updates.length;
 }
 
+const memorySettledAt = new Map();
 async function recommendationMemory(db, userId, env = {}) {
   if (!db) return { available: false, reason: "Persistent memory is not configured." };
   let newlySettled = 0;
   let settlementWarning = null;
-  try { newlySettled = await settlePendingRecommendations(db, userId, env); }
-  catch (error) { settlementWarning = `Existing grades are available, but new settlement was delayed: ${cleanError(error)}`; }
+  // Grading fetches market data, so it runs at most every 30 minutes per user however often the app or page asks.
+  const lastSettle = memorySettledAt.get(userId) || 0;
+  if (Date.now() - lastSettle >= MEMORY_SETTLE_MIN_GAP_SECONDS * 1000) {
+    memorySettledAt.set(userId, Date.now());
+    try { newlySettled = await settlePendingRecommendations(db, userId, env); }
+    catch (error) { settlementWarning = `Existing grades are available, but new settlement was delayed: ${cleanError(error)}`; }
+  }
   const summary = await db.prepare(`SELECT
       COUNT(*) AS total_calls,
       SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) AS pending_calls,
@@ -1683,7 +2418,7 @@ async function recommendationMemory(db, userId, env = {}) {
     available: true,
     newly_settled: newlySettled,
     settlement_warning: settlementWarning,
-    horizon_trading_days: 5,
+    horizon_trading_days: 10,
     summary: {
       total_calls: Number(summary?.total_calls || 0),
       pending_calls: Number(summary?.pending_calls || 0),
@@ -1695,7 +2430,7 @@ async function recommendationMemory(db, userId, env = {}) {
     },
     learning_note: learningNote,
     recent: recentResult?.results || [],
-    methodology: "Each call is stored once per user, ticker, signal close, and action. IDEA and WATCH results are graded from the actual price available when the report was generated, and the call exits at the first of its protective level, 90% of the way to target 1, or the fifth subsequent completed daily close; a bar that touches both is counted as a stop. PASS calls are measured to the fifth close and retained to measure missed moves. No orders or portfolio holdings are stored.",
+    methodology: "Each call is stored once per user, ticker, signal close, and action. IDEA and WATCH results are graded from the actual price available when the report was generated, and a US idea or watch is followed until a daily bar closes under the daily Supertrend line (over it for a short) and graded at the next open, with a 120-day safety limit. Ideas in other markets exit at the first of the protective level, target 1, or the tenth subsequent completed daily close. PASS calls are measured to the tenth close and retained to measure missed moves. No orders or portfolio holdings are stored.",
   };
 }
 
@@ -1703,7 +2438,7 @@ const scanMemory = new Map();
 
 function refreshInterval(market, now = new Date()) {
   if (!marketIsOpen(market, now)) return AUTO_REFRESH_CLOSED_SECONDS;
-  return market.auto ? AUTO_REFRESH_OPEN_SECONDS : US_REFRESH_OPEN_SECONDS;
+  return market.id === "US" ? US_REFRESH_OPEN_SECONDS : AUTO_REFRESH_OPEN_SECONDS;
 }
 
 function withRefreshInfo(payload, generatedAt, market) {
@@ -1737,7 +2472,7 @@ async function claimScanRefresh(env, market) {
   return true;
 }
 
-async function refreshScan(env, market) {
+async function refreshScan(env, market, ctx) {
   const previous = (await readStoredScan(env, market))?.payload || null;
   const payload = await discover(market, env, previous);
   const generatedAt = new Date().toISOString();
@@ -1752,6 +2487,14 @@ async function refreshScan(env, market) {
   }
 }
 
+// The AI ranking runs in its own scheduled job (the hourly forex trigger), never inside a scan or a visitor's request: a model call can take
+// a minute or two, and work started by a request is cut off shortly after the response. It reads the stored US scan and does nothing when
+// the ideas have not changed since the last ranking.
+async function rankStoredScan(env, market) {
+  const stored = await readStoredScan(env, market);
+  if (stored?.payload?.ranking?.items?.length) await ensureAiRanking(env, stored.payload, null);
+}
+
 async function backOffScan(env, market, seconds = AUTO_REFRESH_BACKOFF_SECONDS) {
   // A failed refresh (for example a provider rate limit) pauses further attempts instead of retrying on the next request.
   const until = Date.now() + seconds * 1000;
@@ -1761,27 +2504,32 @@ async function backOffScan(env, market, seconds = AUTO_REFRESH_BACKOFF_SECONDS) 
   }
 }
 
-async function refreshScanIfDue(env, market, ctx, { force = false, wait = false } = {}) {
+async function refreshScanIfDue(env, market, ctx, { wait = false } = {}) {
   const stored = await readStoredScan(env, market);
   const age = stored ? (Date.now() - Date.parse(stored.generatedAt)) / 1000 : Infinity;
-  // A manual refresh can never push the data provider harder than once a minute for everyone together.
-  if (force && stored && age < MANUAL_REFRESH_MIN_SECONDS) return stored;
-  if (!force && age < refreshInterval(market)) return stored;
-  if (!force && !marketIsOpen(market) && stored && age < AUTO_REFRESH_CLOSED_SECONDS) return stored;
+  // A stored US scan from before the ranking existed is rebuilt once (and at most every 5 minutes), even while the market is closed.
+  const outdated = stored && !stored.payload?.ranking && age > 5 * 60;
+  if (!outdated && age < refreshInterval(market)) return stored;
+  if (!outdated && !marketIsOpen(market) && stored && age < AUTO_REFRESH_CLOSED_SECONDS) return stored;
   if (await claimScanRefresh(env, market)) {
-    const work = refreshScan(env, market).catch(error => { console.error(`scan refresh failed for ${market.id}: ${cleanError(error)}`); return backOffScan(env, market); });
+    const work = refreshScan(env, market, ctx).catch(error => { console.error(`scan refresh failed for ${market.id}: ${cleanError(error)}`); return backOffScan(env, market); });
     ctx.waitUntil(work);
     if (!stored || wait) await work;
   }
   return await readStoredScan(env, market);
 }
 
-async function autoScanResponse(env, market, ctx, { wait = false, force = false } = {}) {
-  const stored = await refreshScanIfDue(env, market, ctx, { wait, force });
+async function autoScanResponse(env, market, ctx, { wait = false } = {}) {
+  const stored = await refreshScanIfDue(env, market, ctx, { wait });
   if (!stored) {
     return { market: market.id, market_label: market.label, auto_refresh: market.auto, warming_up: true, candidates: [], long_candidates: [], short_candidates: [], late_candidates: [], direction_counts: { LONG: 0, SHORT: 0 }, errors: [], successful: 0, universe_size: market.universe?.length ?? 0, fresh_entry_count: 0, method: "", next_step: "", message: "The first scan for this market is being prepared automatically. It will appear shortly.", read_only: true, order_submission_supported: false };
   }
-  return withRefreshInfo(stored.payload, stored.generatedAt, market);
+  let payload = stored.payload;
+  if (payload?.ranking?.items?.length) {
+    // Reading only: the AI ranking is produced by its own scheduled job, never by a visitor's request.
+    try { payload = { ...payload, ranking: mergeAiRanking(payload.ranking, await readAiRanking(env, market.id)) }; } catch { /* the rules ranking still serves */ }
+  }
+  return withRefreshInfo(payload, stored.generatedAt, market);
 }
 
 const LEGAL_UPDATED = "November 2, 2026";
@@ -1872,15 +2620,15 @@ const HOLDING_MARKETS = ["US", "IN"];
 const MAX_OPEN_HOLDINGS = 20;
 const HOLDING_ACTIONS = { HOLD: "Hold", WATCH: "Watch closely", TAKE_PROFIT: "Consider taking profit", EXIT: "Exit signal", NO_DATA: "No data" };
 const holdingSnapshotCache = new Map();
-const HOLDING_REFRESH_OPEN_SECONDS = 5 * 60;
-const HOLDING_REFRESH_CLOSED_SECONDS = 10 * 60;
+const HOLDING_REFRESH_OPEN_SECONDS = 15 * 60;
+const HOLDING_REFRESH_CLOSED_SECONDS = 30 * 60;
 const HOLDING_SHARED_SYMBOLS = 150;
 const holdKey = market => ({ id: `HOLD:${market.id}` });
 
 // Everyone's open positions in a market are read in one shared batch and stored in the database, so prices and
 // signals are identical for every user and the number of provider requests no longer depends on the number of
 // users. A cron job keeps it fresh every five minutes while the market is open; a request only refreshes it when
-// it is overdue, and the lock lets one refresh run at a time. A manual refresh waits at least a minute.
+// it is overdue, and the lock lets one refresh run at a time. There is no manual refresh.
 async function refreshSharedHoldings(env, market, extra = []) {
   if (!env.DB || !(await claimScanRefresh(env, holdKey(market)))) return false;
   try {
@@ -1890,7 +2638,7 @@ async function refreshSharedHoldings(env, market, extra = []) {
     const fetched = await fetchSnapshots(symbols, market, env);
     if (!fetched.snapshots.size) throw new Error(fetched.errors?.[0]?.error || "No market data was returned");
     const snapshots = {};
-    for (const [symbol, { history, ...slim }] of fetched.snapshots) snapshots[symbol] = slim;
+    for (const [symbol, { history, chart_daily, ...slim }] of fetched.snapshots) snapshots[symbol] = slim;
     const payload = { snapshots, errors: (fetched.errors || []).slice(0, 50) };
     const generatedAt = new Date().toISOString();
     scanMemory.set(holdKey(market).id, { payload, generatedAt });
@@ -1909,7 +2657,7 @@ async function refreshHoldingsIfDue(env, market) {
   await refreshSharedHoldings(env, market);
 }
 
-async function holdingSnapshotsFor(env, market, symbols, { manual = false } = {}) {
+async function holdingSnapshotsFor(env, market, symbols) {
   const wanted = [...new Set(symbols)];
   const read = async () => {
     const stored = await readStoredScan(env, holdKey(market));
@@ -1920,7 +2668,7 @@ async function holdingSnapshotsFor(env, market, symbols, { manual = false } = {}
     return { snapshots, errors, missing, age: (Date.now() - Date.parse(stored.generatedAt)) / 1000 };
   };
   let shared = await read();
-  const fresh = manual ? MANUAL_REFRESH_MIN_SECONDS : marketIsOpen(market) ? HOLDING_REFRESH_OPEN_SECONDS : HOLDING_REFRESH_CLOSED_SECONDS;
+  const fresh = marketIsOpen(market) ? HOLDING_REFRESH_OPEN_SECONDS : HOLDING_REFRESH_CLOSED_SECONDS;
   if (!shared || shared.missing.length || shared.age > fresh) {
     if (await refreshSharedHoldings(env, market, wanted)) shared = await read();
   }
@@ -1938,11 +2686,80 @@ async function holdingSnapshotsFor(env, market, symbols, { manual = false } = {}
   return { snapshots: new Map([...(shared?.snapshots || []), ...direct.snapshots]), errors: [...(shared?.errors || []), ...(direct.errors || [])] };
 }
 
+// ---- Position monitor (US positions): the protective level follows the daily Supertrend line ----
+// Each pass recomputes a position's levels from its buy price, the ATR when monitoring began, the highest price seen since entry and the daily
+// Supertrend line. Levels only move in the safe direction (the protective level up, never down), so a pass can be repeated at any time.
+//   Protective level: the daily Supertrend line while the daily trend is up, and it rises as the trend continues. Before the line exists (or if it
+//                     is unavailable) it is 2 ATR under the buy price.
+//   Exit:             when a daily bar CLOSES under the line (the daily trend turns down). The exit is not a price touch, and no time limit applies.
+//   Profit zones:     +1 and +2 ATR over the buy price, for reference only; reaching them does not mean sell.
+// Tested on Supertrend entries (ml_st_exits.py): exiting on the line earned +1.8% per trade; adding an early-warning exit (close under a moving
+// average, ADX fading, the market under its 50-day average, a tighter trail) lowered the average each time, so those are shown as warnings only.
+const MONITOR_LINE_STEP_ATR = 0.5;   // a rise in the protective level smaller than this is applied silently, not logged as an event
+
+function monitorLevels(row, snapshot) {
+  const market = MARKETS[row.market] || MARKETS.US;
+  const fmt = value => fmtPrice(value, market);
+  const buy = Number(row.buy_price);
+  const atr = numeric(row.monitor_atr) || numeric(snapshot.atr_14) || buy * 0.02;
+  const boughtDate = String(row.bought_at || "").slice(0, 10);
+  const bars = (snapshot.recent_daily || []).filter(bar => bar.d > boughtDate);
+  const price = numeric(snapshot.price);
+  const peak = Math.max(numeric(row.peak_high), buy, price, ...bars.map(bar => numeric(bar.h)));
+  const trendUp = snapshot.daily_supertrend?.direction === "LONG";
+  const line = trendUp ? numeric(snapshot.daily_supertrend?.value) : 0;
+  const fallbackStop = Math.max(0.01, buy - Math.max(2 * atr, buy * 0.01));
+  const persisted = numeric(row.stop_level);
+  const firstRun = row.stop_level == null;
+  let stop = Math.max(persisted, line > 0 && line < price ? line : 0, firstRun ? fallbackStop : 0);
+  stop = Math.max(stop, persisted);
+  const target1 = Math.max(numeric(row.target_1), buy + TARGET_1_ATR * atr), target2 = Math.max(numeric(row.target_2), buy + TARGET_2_ATR * atr);
+  const events = [];
+  if (firstRun) events.push({ kind: "INITIAL", reason: `Protective level set at ${fmt(stop)} (${line > 0 && stop === line ? "the daily Supertrend line" : "two daily ranges under your buy price, because the daily Supertrend line is not available"}). It rises with the trend and you exit if a day closes under it.` });
+  else if (stop - persisted >= MONITOR_LINE_STEP_ATR * atr) events.push({ kind: "LINE_RAISED", reason: `The daily Supertrend line moved up to ${fmt(stop)}, so your protective level moved up with it.` });
+  const basis = line > 0 && stop >= line - 1e-9 ? "LINE" : stop > buy + 1e-9 ? "RAISED" : "INITIAL";
+  const stopText = basis === "LINE" ? "the daily Supertrend line, which rises as the trend continues; exit if a day closes under it" : basis === "RAISED" ? "raised with the daily Supertrend line" : "two daily ranges under your buy price until the daily Supertrend line is available";
+  return { stop, target1, target2, atr, peak, basis, stopText, events, line };
+}
+
+// Writes only what changed. MAX() in SQL keeps a stale read from ever lowering a level that another pass has already raised.
+function monitorStatements(env, row, levels, price, now) {
+  const statements = [];
+  const changed = levels.events.length > 0 || row.monitor_atr == null || levels.peak > numeric(row.peak_high) * 1.0005 || levels.stop > numeric(row.stop_level) + 1e-9;
+  if (!changed) return statements;
+  statements.push(env.DB.prepare(`UPDATE holdings SET monitor_atr = COALESCE(monitor_atr, ?), stop_level = MAX(COALESCE(stop_level, 0), ?),
+    target_1 = MAX(COALESCE(target_1, 0), ?), target_2 = MAX(COALESCE(target_2, 0), ?), peak_high = MAX(COALESCE(peak_high, 0), ?), monitor_at = ?
+    WHERE id = ? AND closed_at IS NULL`).bind(round(levels.atr, 6), round(levels.stop, 6), round(levels.target1, 6), round(levels.target2, 6), round(levels.peak, 6), now, row.id));
+  for (const event of levels.events) {
+    statements.push(env.DB.prepare(`INSERT INTO holding_level_events (id, holding_id, user_id, symbol, at, kind, reason, price, stop_level, target_1, target_2)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(crypto.randomUUID(), row.id, row.user_id, row.symbol, now, event.kind, event.reason, round(price, 4),
+      round(levels.stop, 4), round(levels.target1, 4), round(levels.target2, 4)));
+  }
+  return statements;
+}
+
+// Cron pass: watches every open US position against the shared, freshly refreshed snapshots and ratchets levels without anyone opening the app.
+async function monitorHoldings(env, market) {
+  if (!env.DB || market.id !== "US") return 0;
+  const stored = await readStoredScan(env, holdKey(market));
+  const snapshots = stored?.payload?.snapshots;
+  if (!snapshots) return 0;
+  const rows = (await env.DB.prepare("SELECT * FROM holdings WHERE market = ? AND closed_at IS NULL LIMIT 1000").bind(market.id).all()).results || [];
+  const now = new Date().toISOString(), statements = [];
+  for (const row of rows) {
+    const snapshot = snapshots[row.symbol];
+    if (!snapshot) continue;
+    try { statements.push(...monitorStatements(env, row, monitorLevels(row, snapshot), numeric(snapshot.price), now)); } catch { /* one bad row must not stop the rest */ }
+  }
+  for (let index = 0; index < statements.length; index += 50) await env.DB.batch(statements.slice(index, index + 50));
+  return statements.length;
+}
+
 // A hold / watch / take-profit / exit read on a long position, from the same engine that ranks the scanner.
-// The protective level sits 1.5 daily ATRs (at least 1%) below the buy price; targets are measured in R, where
-// 1R is two daily ATRs (at least 1.25%) of the buy price, at 2R and 3R. Backtests showed tighter than 1.5 ATR
-// stopped out most winning trades, while 1.5 kept most of the profit with smaller average losses.
-function evaluateHolding(holding, snapshot) {
+// The protective level sits 2 daily ATRs (at least 1%) below the buy price; target 1 is 1 daily ATR above it and
+// target 2 is 2 daily ATRs above (see STOP_ATR). US positions pass `levels` from the position monitor, which ratchets the stop up
+// and the targets out as the trade and the market develop; other markets use the fixed levels.
+function evaluateHolding(holding, snapshot, levels = null) {
   const market = MARKETS[holding.market] || MARKETS.US;
   const fmt = value => fmtPrice(value, market);
   const price = numeric(snapshot.price);
@@ -1951,17 +2768,42 @@ function evaluateHolding(holding, snapshot) {
   const dailyTrend = snapshot.daily_supertrend?.direction || "SHORT";
   const adx = numeric(snapshot.daily_adx?.value);
   const atr = numeric(snapshot.atr_14) || buy * 0.02;
-  const risk = Math.max(2 * atr, buy * 0.0125);
-  const stopLevel = Math.max(0.01, buy - Math.max(1.5 * atr, buy * 0.01));
+  const stopLevel = levels ? levels.stop : Math.max(0.01, buy - Math.max(STOP_ATR * atr, buy * 0.01));
   const trailing = trend4h === "LONG" ? Math.max(stopLevel, numeric(snapshot.supertrend?.value)) : stopLevel;
-  const target1 = buy + 2 * risk, target2 = buy + 3 * risk;
+  const target1 = levels ? levels.target1 : buy + TARGET_1_ATR * atr, target2 = levels ? levels.target2 : buy + TARGET_2_ATR * atr;
+  const stopText = levels ? levels.stopText : "two daily ranges below your buy price";
   const pnlPct = (price / buy - 1) * 100;
   const reasons = [];
   let action, headline;
-  if (price <= stopLevel) {
+  const sma20 = numeric(snapshot.sma_20);
+  if (levels) {
+    // US positions: exit only when the daily Supertrend turns down (a completed daily close under the line). Anything else that suggests the
+    // trend may fade is a warning, because exits on those signals lowered returns in tests (ml_st_exits.py).
+    const warnings = [];
+    if (trend4h === "SHORT") warnings.push("The 4-hour Supertrend has turned down. This is an early warning, not the exit.");
+    if (adx < 20) warnings.push(`Daily ADX is ${adx.toFixed(1)}, below 20, so the trend is losing strength.`);
+    if (sma20 && price < sma20) warnings.push(`Price is under its 20-day average (${fmt(sma20)}).`);
+    if (price <= stopLevel && dailyTrend !== "SHORT") warnings.push(`Price is at or under the protective level ${fmt(stopLevel)}. The exit is a day CLOSING under it, so a close under it today means exit at the next open.`);
+    if (dailyTrend === "SHORT") {
+      action = "EXIT";
+      headline = "The daily trend has turned down";
+      reasons.push("A completed daily close is under the daily Supertrend line, which is the exit that tested best for Supertrend trades. Exit at the next open.");
+      reasons.push(...warnings.filter(text => !text.startsWith("Price is at or under")));
+    } else if (warnings.length) {
+      action = "WATCH";
+      headline = price <= stopLevel ? "Under the exit line: it only counts if the day closes there" : "The trend may be weakening";
+      reasons.push(...warnings);
+      reasons.push("These are warnings only. Exiting on them lowered returns in tests; the exit is the daily Supertrend line.");
+    } else {
+      action = "HOLD";
+      headline = price >= target1 ? "Trend is intact (profit zone reached, stay with the trend)" : "Trend is intact";
+      reasons.push(`The daily trend is up and the exit line is ${fmt(stopLevel)}. There is no time limit: stay in while the daily Supertrend holds.`);
+      if (price >= target1) reasons.push(`The first profit zone ${fmt(target1)} has been reached. Reaching it does not mean sell; selling early lowered returns in tests.`);
+    }
+  } else if (price <= stopLevel) {
     action = "EXIT";
     headline = "Price is below the protective level for this position";
-    reasons.push(`Price ${fmt(price)} is under the protective level ${fmt(stopLevel)} (one and a half daily ranges below your buy price).`);
+    reasons.push(`Price ${fmt(price)} is under the protective level ${fmt(stopLevel)} (${stopText}).`);
   } else if (trend4h === "SHORT") {
     action = "EXIT";
     headline = "The 4-hour trend has turned down";
@@ -1969,7 +2811,7 @@ function evaluateHolding(holding, snapshot) {
     if (dailyTrend === "SHORT") reasons.push("The daily trend is down as well, so both timeframes agree.");
   } else if (price >= target1) {
     action = "TAKE_PROFIT";
-    headline = price >= target2 ? "Target 2 (3R) has been reached" : "Target 1 (2R) has been reached";
+    headline = price >= target2 ? "Target 2 has been reached" : "Target 1 has been reached";
     reasons.push(`Price ${fmt(price)} is above ${price >= target2 ? `target 2 at ${fmt(target2)}` : `target 1 at ${fmt(target1)}`}.`);
     reasons.push(`The 4H trend is still up. Securing part of the gain and trailing the rest under ${fmt(trailing)} follows the trend.`);
   } else if (dailyTrend === "SHORT" || adx < 20 || (price - trailing) < 0.5 * atr) {
@@ -1995,6 +2837,9 @@ function evaluateHolding(holding, snapshot) {
     pnl_value: round((price - buy) * shares, 2),
     pnl_pct: round(pnlPct, 2),
     stop_level: round(stopLevel, 4),
+    reference_lines: referenceLines(snapshot.chart_refs),
+    stop_basis: levels ? levels.basis : "INITIAL",
+    stop_note: levels ? levels.stopText : stopText,
     trailing_level: round(trailing, 4),
     target_1: round(target1, 4),
     target_2: round(target2, 4),
@@ -2084,6 +2929,20 @@ async function holdingsUser(request, env) {
   return user;
 }
 
+// Numbers from request bodies must be real numbers or numeric strings; Number([5]) or Number(true) must not slip through.
+function toAmount(value) {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.trim() !== "") return Number(value);
+  return NaN;
+}
+// A strict YYYY-MM-DD calendar day that exists and is not in the future.
+function validPastDay(text, today) {
+  if (typeof text !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(text) || text > today) return false;
+  const parsed = new Date(`${text}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === text;
+}
+const MIN_AMOUNT = 1e-4;
+
 async function addHolding(request, env) {
   const user = await holdingsUser(request, env);
   const body = await readBody(request);
@@ -2093,12 +2952,12 @@ async function addHolding(request, env) {
   const market = MARKETS[marketId];
   if (!/^[A-Z0-9.\-^&]{1,15}$/.test(symbol)) throw Object.assign(new Error("Enter a valid ticker symbol"), { status: 400 });
   if (market.universe && !market.universe.some(entry => entry.symbol === symbol)) throw Object.assign(new Error(`Choose one of the ${market.name} symbols`), { status: 400 });
-  const shares = Number(body.shares), price = Number(body.price);
-  if (!Number.isFinite(shares) || shares <= 0 || shares > 1e9) throw Object.assign(new Error("Enter how many shares you bought"), { status: 400 });
-  if (!Number.isFinite(price) || price <= 0 || price > 1e8) throw Object.assign(new Error("Enter the price you paid per share"), { status: 400 });
+  const shares = toAmount(body.shares), price = toAmount(body.price);
+  if (!Number.isFinite(shares) || shares < MIN_AMOUNT || shares > 1e9) throw Object.assign(new Error("Enter how many shares you bought"), { status: 400 });
+  if (!Number.isFinite(price) || price < MIN_AMOUNT || price > 1e8) throw Object.assign(new Error("Enter the price you paid per share"), { status: 400 });
   const today = new Date().toISOString().slice(0, 10);
-  const boughtAt = String(body.bought_at || today).slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(boughtAt) || boughtAt > today) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
+  const boughtAt = body.bought_at === undefined || body.bought_at === null || body.bought_at === "" ? today : body.bought_at;
+  if (!validPastDay(boughtAt, today)) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
   const open = await env.DB.prepare("SELECT COUNT(*) AS n FROM holdings WHERE user_id = ? AND closed_at IS NULL").bind(user.id).first();
   if (Number(open?.n || 0) >= MAX_OPEN_HOLDINGS) throw Object.assign(new Error(`You can track up to ${MAX_OPEN_HOLDINGS} open holdings. Remove or close one first.`), { status: 400 });
   const { snapshots, errors } = await holdingSnapshotsFor(env, market, [symbol]);
@@ -2114,7 +2973,7 @@ async function addHolding(request, env) {
 
 async function listHoldings(request, env) {
   const user = await holdingsUser(request, env);
-  const manual = (await readBody(request)).refresh === true;
+  await readBody(request); // a "refresh" flag from an older app is ignored: holdings refresh on the shared schedule only
   const rows = (await env.DB.prepare("SELECT * FROM holdings WHERE user_id = ? ORDER BY created_at DESC LIMIT 100").bind(user.id).all()).results || [];
   // A closed row without a sale price is an undone entry, so it is hidden.
   const open = rows.filter(row => !row.closed_at), closed = rows.filter(row => row.closed_at && row.sell_price != null);
@@ -2129,15 +2988,28 @@ async function listHoldings(request, env) {
     symbolsByMarket.get(row.market).add(row.symbol);
   }
   const loaded = new Map();
-  for (const [marketId, symbols] of symbolsByMarket) if (MARKETS[marketId]) loaded.set(marketId, await holdingSnapshotsFor(env, MARKETS[marketId], [...symbols], { manual }));
+  for (const [marketId, symbols] of symbolsByMarket) if (MARKETS[marketId]) loaded.set(marketId, await holdingSnapshotsFor(env, MARKETS[marketId], [...symbols]));
   const now = new Date().toISOString();
   const updates = [];
+  const eventsByHolding = new Map();
+  for (const event of (await env.DB.prepare("SELECT holding_id, at, kind, reason FROM holding_level_events WHERE user_id = ? ORDER BY at DESC LIMIT 200").bind(user.id).all().catch(() => ({ results: [] }))).results || []) {
+    const list = eventsByHolding.get(event.holding_id) || [];
+    if (list.length < 5) list.push({ at: event.at, kind: event.kind, reason: event.reason });
+    eventsByHolding.set(event.holding_id, list);
+  }
   const base = row => ({ id: row.id, symbol: row.symbol, market: row.market, currency_symbol: MARKETS[row.market]?.symbolPrefix || "$", price_decimals: MARKETS[row.market]?.decimals(row.buy_price) ?? 2, shares: row.shares, buy_price: row.buy_price, bought_at: row.bought_at });
   const openOut = open.map(row => {
     let evaluation;
     try {
       const snapshot = loaded.get(row.market)?.snapshots.get(row.symbol);
-      evaluation = snapshot ? evaluateHolding(row, snapshot) : noDataEvaluation();
+      let levels = null;
+      if (snapshot && row.market === "US") {
+        levels = monitorLevels(row, snapshot);
+        const fresh = monitorStatements(env, row, levels, numeric(snapshot.price), now);
+        updates.push(...fresh);
+        if (levels.events.length) eventsByHolding.set(row.id, [...levels.events.map(event => ({ at: now, kind: event.kind, reason: event.reason })).reverse(), ...(eventsByHolding.get(row.id) || [])].slice(0, 5));
+      }
+      evaluation = snapshot ? evaluateHolding(row, snapshot, levels) : noDataEvaluation();
     } catch { evaluation = noDataEvaluation(); }
     let since = row.last_action_at || now;
     if (evaluation.action !== "NO_DATA" && evaluation.action !== row.last_action) {
@@ -2146,7 +3018,7 @@ async function listHoldings(request, env) {
     }
     const last = lastByChain.get(row.id);
     return {
-      ...base(row), ...evaluation, previous_action: row.last_action || null, action_since: since,
+      ...base(row), ...evaluation, previous_action: row.last_action || null, action_since: since, level_events: eventsByHolding.get(row.id) || [],
       last_entry: last ? { id: last.id, side: last.side, shares: last.shares, price: last.price, at: last.at } : null,
     };
   });
@@ -2161,7 +3033,7 @@ async function listHoldings(request, env) {
   const anyOpen = [...symbolsByMarket.keys()].some(marketId => MARKETS[marketId] && marketIsOpen(MARKETS[marketId]));
   return {
     updated_at: now,
-    refresh_after_seconds: anyOpen ? 300 : 600,
+    refresh_after_seconds: anyOpen ? HOLDING_REFRESH_OPEN_SECONDS : HOLDING_REFRESH_CLOSED_SECONDS,
     open: openOut,
     portfolio: await buildPortfolio(openOut),
     market_trends: Object.fromEntries(await Promise.all([...symbolsByMarket.keys()].filter(id => MARKETS[id]).map(async id => [id, (await readStoredScan(env, MARKETS[id]))?.payload?.market_trend || null]))),
@@ -2176,10 +3048,10 @@ async function listHoldings(request, env) {
 async function increaseHolding(request, env) {
   const user = await holdingsUser(request, env);
   const body = await readBody(request);
-  const id = String(body.id || ""), shares = Number(body.shares), price = Number(body.price);
+  const id = String(body.id || ""), shares = toAmount(body.shares), price = toAmount(body.price);
   if (!/^[A-Za-z0-9_-]{6,40}$/.test(id)) throw Object.assign(new Error("Holding not found"), { status: 404 });
-  if (!Number.isFinite(shares) || shares <= 0 || shares > 1e9) throw Object.assign(new Error("Enter how many more shares you bought"), { status: 400 });
-  if (!Number.isFinite(price) || price <= 0 || price > 1e8) throw Object.assign(new Error("Enter the price you paid per share"), { status: 400 });
+  if (!Number.isFinite(shares) || shares < MIN_AMOUNT || shares > 1e9) throw Object.assign(new Error("Enter how many more shares you bought"), { status: 400 });
+  if (!Number.isFinite(price) || price < MIN_AMOUNT || price > 1e8) throw Object.assign(new Error("Enter the price you paid per share"), { status: 400 });
   const row = await env.DB.prepare("SELECT * FROM holdings WHERE id = ? AND user_id = ?").bind(id, user.id).first();
   if (!row || row.closed_at) throw Object.assign(new Error("Holding not found"), { status: 404 });
   await env.DB.batch([
@@ -2195,12 +3067,12 @@ async function increaseHolding(request, env) {
 async function sellHolding(request, env) {
   const user = await holdingsUser(request, env);
   const body = await readBody(request);
-  const id = String(body.id || ""), price = Number(body.price);
+  const id = String(body.id || ""), price = toAmount(body.price);
   if (!/^[A-Za-z0-9_-]{6,40}$/.test(id)) throw Object.assign(new Error("Holding not found"), { status: 404 });
   if (!Number.isFinite(price) || price <= 0 || price > 1e8) throw Object.assign(new Error("Enter the price you sold at"), { status: 400 });
   const row = await env.DB.prepare("SELECT * FROM holdings WHERE id = ? AND user_id = ?").bind(id, user.id).first();
   if (!row || row.closed_at) throw Object.assign(new Error("Holding not found"), { status: 404 });
-  const sold = body.shares === undefined || body.shares === null || body.shares === "" ? Number(row.shares) : Number(body.shares);
+  const sold = body.shares === undefined || body.shares === null || body.shares === "" ? Number(row.shares) : toAmount(body.shares);
   if (!Number.isFinite(sold) || sold <= 0) throw Object.assign(new Error("Enter how many shares you sold"), { status: 400 });
   if (sold > Number(row.shares) + 1e-9) throw Object.assign(new Error(`You only hold ${Number(row.shares)} shares`), { status: 400 });
   const now = new Date().toISOString();
@@ -2368,19 +3240,19 @@ async function editEntry(request, env) {
   const user = await holdingsUser(request, env);
   const body = await readBody(request);
   const { trade, chain, active, holding } = await latestEntryContext(env, user, String(body.id || ""));
-  const price = Number(body.price);
-  if (!Number.isFinite(price) || price <= 0 || price > 1e8) throw Object.assign(new Error("Enter a valid price"), { status: 400 });
+  const price = toAmount(body.price);
+  if (!Number.isFinite(price) || price < MIN_AMOUNT || price > 1e8) throw Object.assign(new Error("Enter a valid price"), { status: 400 });
   const oldShares = Number(trade.shares), oldPrice = Number(trade.price);
-  const shares = body.shares === undefined || body.shares === null || body.shares === "" ? oldShares : Number(body.shares);
-  if (!Number.isFinite(shares) || shares <= 0 || shares > 1e9) throw Object.assign(new Error("Enter a valid number of shares"), { status: 400 });
+  const shares = body.shares === undefined || body.shares === null || body.shares === "" ? oldShares : toAmount(body.shares);
+  if (!Number.isFinite(shares) || shares < MIN_AMOUNT || shares > 1e9) throw Object.assign(new Error("Enter a valid number of shares"), { status: 400 });
   const now = new Date().toISOString();
   const voidOld = env.DB.prepare("UPDATE holding_trades SET voided_at = ? WHERE id = ? AND user_id = ?").bind(now, trade.id, user.id);
   const record = (count, at, pnl = null) => tradeStatement(env, user.id, trade.holding_id, holding, trade.side, count, price, at, pnl, chain);
   if (trade.side === "BUY" && active.length === 1) {
     if (holding.closed_at) throw Object.assign(new Error("This entry cannot be edited"), { status: 400 });
     const today = new Date().toISOString().slice(0, 10);
-    const boughtAt = body.bought_at ? String(body.bought_at).slice(0, 10) : holding.bought_at;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(boughtAt) || boughtAt > today) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
+    const boughtAt = body.bought_at ? body.bought_at : holding.bought_at;
+    if (!validPastDay(boughtAt, today)) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
     await env.DB.batch([
       env.DB.prepare("UPDATE holdings SET bought_at = ?, shares = ?, buy_price = ? WHERE id = ? AND user_id = ? AND closed_at IS NULL").bind(boughtAt, shares, price, holding.id, user.id),
       voidOld, record(shares, `${boughtAt}T00:00:00.000Z`),
@@ -2438,6 +3310,11 @@ async function allMarketTrends(env, current, scan) {
 }
 
 async function handle(request, env, ctx) {
+  if (request.method === "HEAD") {
+    // Uptime monitors probe with HEAD: answer like GET and drop the body.
+    const probe = await handle(new Request(request.url, { method: "GET", headers: request.headers }), env, ctx);
+    return new Response(null, { status: probe.status, headers: probe.headers });
+  }
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/") {
     return new Response(PAGE, {
@@ -2516,11 +3393,9 @@ async function handle(request, env, ctx) {
       await requireSubscription(request, env);
       const body = await readBody(request);
       const market = marketFrom(body);
-      // Every market is served from the shared stored scan, so repeated requests never multiply upstream calls.
-      // A US manual refresh always rescans and waits for new data (there is no cooldown); simultaneous
-      // refreshes share one scan through the lock, so extra clicks never multiply upstream calls.
-      const manual = !market.auto && body.refresh === true;
-      const scan = await autoScanResponse(env, market, ctx, { wait: manual, force: manual });
+      // Every market is served from the shared stored scan, so repeated requests never multiply upstream calls. There is no manual
+      // refresh: a "refresh" flag sent by an older app or page is ignored.
+      const scan = await autoScanResponse(env, market, ctx);
       return json({ ...scan, all_market_trends: await allMarketTrends(env, market, scan) });
     }
     if (url.pathname === "/api/memory") {
@@ -2550,7 +3425,7 @@ async function handle(request, env, ctx) {
         try { memoryLogged = await rememberRecommendation(env.DB, user.id, payload); }
         catch { memoryLogged = false; }
       }
-      return json({ ...payload, memory_logged: memoryLogged, memory_horizon_trading_days: 5 });
+      return json({ ...payload, memory_logged: memoryLogged, memory_horizon_trading_days: 10 });
     }
     if (url.pathname === "/api/grade") return json({ error: "Public grading is disabled; this deployment stores no visitor portfolio data." }, 405);
     return json({ error: "Not found" }, 404);
@@ -2565,12 +3440,17 @@ export default {
   fetch: handle,
   // One market per cron trigger, so each job has its own outgoing-request budget.
   async scheduled(event, env, ctx) {
-    const byCron = { "5 * * * *": "IN", "*/5 3-10 * * 1-5": "IN", "10 * * * *": "FX", "*/5 13-21 * * 1-5": "US" };
+    const byCron = { "5 * * * *": "IN", "*/15 3-10 * * 1-5": "IN", "10 * * * *": "FX", "*/15 13-21 * * 1-5": "US" };
     const market = MARKETS[byCron[event.cron]];
     if (market) ctx.waitUntil((async () => {
       await refreshScanIfDue(env, market, ctx).catch(() => {});
       await refreshHoldingsIfDue(env, market).catch(() => {});
-      // Once an hour, grade scanner picks whose five-session window has closed.
+      await monitorHoldings(env, market).catch(() => {});
+      // The hourly jobs rank their own market; the forex job also ranks the US scan, which has no hourly job of its own (it runs on weekdays only).
+      for (const target of market.id === "FX" ? [MARKETS.FX, MARKETS.US] : market.id === "IN" ? [MARKETS.IN] : []) {
+        await rankStoredScan(env, target).catch(error => console.error(`AI ranking job failed for ${target.id}: ${cleanError(error)}`));
+      }
+      // Once an hour, grade scanner picks that hit a level or whose window has closed.
       if (market.id === "US" && env.DB && new Date(event.scheduledTime).getUTCMinutes() < 5) {
         await settlePendingRecommendations(env.DB, SCANNER_USER_ID, env).catch(() => {});
       }

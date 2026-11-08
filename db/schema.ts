@@ -28,6 +28,8 @@ export const recommendations = sqliteTable("recommendations", {
   grade: text("grade"),
   targetHit: integer("target_hit", { mode: "boolean" }),
   stopHit: integer("stop_hit", { mode: "boolean" }),
+  // SUPERTREND (4-hour Supertrend scan), DIP (dip scan, market gate open) or DIP_WAIT (dip scan while the gate was closed; logged to test the gate, never shown as an idea).
+  strategy: text("strategy").notNull().default("SUPERTREND"),
 }, table => [
   uniqueIndex("recommendations_user_signal_unique").on(table.userId, table.symbol, table.signalConfirmedAt, table.action),
   index("recommendations_user_status_idx").on(table.userId, table.status, table.generatedAt),
@@ -87,8 +89,34 @@ export const holdings = sqliteTable("holdings", {
   sellPrice: real("sell_price"),
   lastAction: text("last_action"),
   lastActionAt: text("last_action_at"),
+  // Position monitor (US): the ATR the levels are anchored to, the protective level and targets as last ratcheted (the stop only
+  // ever moves up, targets only out), and the highest price seen since entry. Levels are recomputed from these on every pass.
+  monitorAtr: real("monitor_atr"),
+  stopLevel: real("stop_level"),
+  target1: real("target_1"),
+  target2: real("target_2"),
+  peakHigh: real("peak_high"),
+  monitorAt: text("monitor_at"),
 }, table => [
   index("holdings_user_idx").on(table.userId, table.closedAt),
+]);
+
+// Every change the monitor made to a position's levels, with the reason in plain words.
+export const holdingLevelEvents = sqliteTable("holding_level_events", {
+  id: text("id").primaryKey(),
+  holdingId: text("holding_id").notNull(),
+  userId: text("user_id").notNull(),
+  symbol: text("symbol").notNull(),
+  at: text("at").notNull(),
+  kind: text("kind").notNull(), // INITIAL, BREAKEVEN, TARGETS_RAISED, MARKET_TIGHTEN
+  reason: text("reason").notNull(),
+  price: real("price"),
+  stopLevel: real("stop_level"),
+  target1: real("target_1"),
+  target2: real("target_2"),
+}, table => [
+  index("holding_level_events_holding_idx").on(table.holdingId, table.at),
+  index("holding_level_events_user_idx").on(table.userId, table.at),
 ]);
 
 export const holdingTrades = sqliteTable("holding_trades", {

@@ -19,7 +19,7 @@ struct ConnectionView: View {
 
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Your research desk, now on iPhone.")
-                        .font(.system(size: titleSize, weight: .medium, design: .serif))
+                        .font(.system(size: titleSize, weight: .semibold, design: .rounded))
                     Text("Connect your existing web subscription with a one-time code. No brokerage login or order access is requested.")
                         .foregroundStyle(AppTheme.muted)
                 }

@@ -1,0 +1,398 @@
+[
+  {
+    "id": "X-RT-PUT",
+    "name": "PUT /api/holdings -> 404, no crash",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-RT-DELETE",
+    "name": "DELETE /api/holdings -> 404, no crash",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-RT-PATCH",
+    "name": "PATCH /api/holdings -> 404, no crash",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-RT-HEAD",
+    "name": "HEAD / served like GET (uptime monitors)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-RT-HEAD2",
+    "name": "HEAD /health 200",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-RT-TRAIL",
+    "name": "/health/ trailing slash is 404 (by design)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-RT-GETAPI",
+    "name": "GET /api/holdings -> 404 not 500",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-RT-OPT",
+    "name": "OPTIONS returns no CORS allow-all",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-BODY-01",
+    "name": "oversize body (content-length) rejected 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-BODY-02",
+    "name": "oversize body WITHOUT content-length header is also rejected",
+    "ok": true,
+    "detail": "status 400"
+  },
+  {
+    "id": "X-BODY-03",
+    "name": "array JSON body handled as empty -> 400 not 500",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-BODY-04",
+    "name": "null JSON body -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-BODY-05",
+    "name": "non-JSON text body -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-HLD-01",
+    "name": "shares NaN string rejected",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter how many shares you bought\"}"
+  },
+  {
+    "id": "X-HLD-02",
+    "name": "shares Infinity ('1e999') rejected",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter how many shares you bought\"}"
+  },
+  {
+    "id": "X-HLD-03",
+    "name": "negative price rejected",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter the price you paid per share\"}"
+  },
+  {
+    "id": "X-HLD-04",
+    "name": "shares 0 rejected",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter how many shares you bought\"}"
+  },
+  {
+    "id": "X-HLD-05",
+    "name": "shares array [5] rejected (coercion trap)",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter how many shares you bought\"}"
+  },
+  {
+    "id": "X-HLD-06",
+    "name": "shares boolean true rejected (Number(true)=1)",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter how many shares you bought\"}"
+  },
+  {
+    "id": "X-HLD-07",
+    "name": "shares empty string rejected (Number('')=0)",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter how many shares you bought\"}"
+  },
+  {
+    "id": "X-HLD-08",
+    "name": "shares null rejected",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter how many shares you bought\"}"
+  },
+  {
+    "id": "X-HLD-09",
+    "name": "impossible date 2024-02-31 rejected",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter a valid purchase date that is not in the future\"}"
+  },
+  {
+    "id": "X-HLD-10",
+    "name": "date 2024-13-45 rejected",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter a valid purchase date that is not in the future\"}"
+  },
+  {
+    "id": "X-HLD-11",
+    "name": "future date rejected",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter a valid purchase date that is not in the future\"}"
+  },
+  {
+    "id": "X-HLD-12",
+    "name": "date with trailing junk '2024-01-01zzz' (sliced) not silently accepted",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter a valid purchase date that is not in the future\"}"
+  },
+  {
+    "id": "X-HLD-13",
+    "name": "symbol SQLi string rejected",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter a valid ticker symbol\"}"
+  },
+  {
+    "id": "X-HLD-14",
+    "name": "symbol unicode rejected",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter a valid ticker symbol\"}"
+  },
+  {
+    "id": "X-HLD-15",
+    "name": "symbol 16 chars rejected",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter a valid ticker symbol\"}"
+  },
+  {
+    "id": "X-HLD-16",
+    "name": "symbol number type rejected/valid-handled",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"No market data found for 123 (Market data returned HTTP 404)\"}"
+  },
+  {
+    "id": "X-HLD-17",
+    "name": "market 'FX' not trackable",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Holdings can be tracked for US and BSE stocks\"}"
+  },
+  {
+    "id": "X-HLD-18",
+    "name": "tiny share count 1e-12 rejected or sane",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter how many shares you bought\"}"
+  },
+  {
+    "id": "X-HLD-19",
+    "name": "price 1e-9 (sub-paisa) rejected or sane",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter the price you paid per share\"}"
+  },
+  {
+    "id": "X-HLD-20",
+    "name": "no junk rows persisted by rejected adds",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-HLD-21",
+    "name": "list after rejects is empty",
+    "ok": true,
+    "detail": "{\"updated_at\":\"2026-11-05T18:11:16.930Z\",\"refresh_after_seconds\":600,\"open\":[],\"portfolio\":{\"limit_pct\":25,\"markets\":[]},\"market_trends\":{},\"closed\":[],\"totals\":[],\"disclaimer\":\"Automated research sce"
+  },
+  {
+    "id": "X-ID-sell",
+    "name": "sell with unknown id -> 4xx not 5xx",
+    "ok": true,
+    "detail": "got 404 {\"error\":\"Holding not found\"}"
+  },
+  {
+    "id": "X-ID2-sell",
+    "name": "sell with object id -> 4xx not 5xx",
+    "ok": true,
+    "detail": "got 404"
+  },
+  {
+    "id": "X-ID-close",
+    "name": "close with unknown id -> 4xx not 5xx",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter the price you sold at\"}"
+  },
+  {
+    "id": "X-ID2-close",
+    "name": "close with object id -> 4xx not 5xx",
+    "ok": true,
+    "detail": "got 404"
+  },
+  {
+    "id": "X-ID-increase",
+    "name": "increase with unknown id -> 4xx not 5xx",
+    "ok": true,
+    "detail": "got 404 {\"error\":\"Holding not found\"}"
+  },
+  {
+    "id": "X-ID2-increase",
+    "name": "increase with object id -> 4xx not 5xx",
+    "ok": true,
+    "detail": "got 404"
+  },
+  {
+    "id": "X-ID-undo",
+    "name": "undo with unknown id -> 4xx not 5xx",
+    "ok": true,
+    "detail": "got 404 {\"error\":\"That entry was not found or is already undone\"}"
+  },
+  {
+    "id": "X-ID2-undo",
+    "name": "undo with object id -> 4xx not 5xx",
+    "ok": true,
+    "detail": "got 404"
+  },
+  {
+    "id": "X-ID-edit",
+    "name": "edit with unknown id -> 4xx not 5xx",
+    "ok": true,
+    "detail": "got 404 {\"error\":\"That entry was not found or is already undone\"}"
+  },
+  {
+    "id": "X-ID2-edit",
+    "name": "edit with object id -> 4xx not 5xx",
+    "ok": true,
+    "detail": "got 404"
+  },
+  {
+    "id": "X-ID-remove",
+    "name": "remove unknown id is idempotent 200 (by design)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-SPK-01",
+    "name": "discover returns market_trends array",
+    "ok": true,
+    "detail": "200 {\"generated_at\":\"2026-11-05T18:11:17.666Z\",\"market_trend\":{\"state\":\"MIXED\",\"index_state\":\"DOWN\",\"headline\":\"Mixed: index"
+  },
+  {
+    "id": "X-SPK-undefined",
+    "name": "trend spark is array of finite numbers (<=60)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-SPK-undefined",
+    "name": "trend spark is array of finite numbers (<=60)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-SPK-undefined",
+    "name": "trend spark is array of finite numbers (<=60)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-SPK-undefined",
+    "name": "trend spark is array of finite numbers (<=60)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-AN-A1",
+    "name": "analyze {\"symbol\":\"\",\"market\":\"US\"} -> 400",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter a valid ticker symbol\"}"
+  },
+  {
+    "id": "X-AN-A2",
+    "name": "analyze {\"symbol\":\"<script>\",\"market\":\"US\"} -> 400",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter a valid ticker symbol\"}"
+  },
+  {
+    "id": "X-AN-A3",
+    "name": "analyze {\"symbol\":\"AAPL\",\"market\":\"ZZ\"} -> 400",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Unknown market\"}"
+  },
+  {
+    "id": "X-AN-A4",
+    "name": "analyze {} -> 400",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter a valid ticker symbol\"}"
+  },
+  {
+    "id": "X-AN-A5",
+    "name": "analyze {\"symbol\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAA -> 400",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Enter a valid ticker symbol\"}"
+  },
+  {
+    "id": "X-AN-XSS",
+    "name": "error messages never reflect raw input",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-PAIR-code-num",
+    "name": "pair/status code-num -> 4xx",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Invalid pairing request\"}"
+  },
+  {
+    "id": "X-PAIR-code-null",
+    "name": "pair/status code-null -> 4xx",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Invalid pairing request\"}"
+  },
+  {
+    "id": "X-PAIR-code-long",
+    "name": "pair/status code-long -> 4xx",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Invalid pairing request\"}"
+  },
+  {
+    "id": "X-PAIR-no-body",
+    "name": "pair/status no-body -> 4xx",
+    "ok": true,
+    "detail": "got 400 {\"error\":\"Invalid pairing request\"}"
+  },
+  {
+    "id": "X-PAIR-name",
+    "name": "device name sanitised/truncated",
+    "ok": true,
+    "detail": "{\"code\":\"RFZNPGT9\",\"pairing_secret\":\"of_YlON9-4e8sHiIrJwWTaAjelmWOM9j37Gmt2bLC4A\",\"expires_at\":\"2026-11-05T18:21:17.668Z\",\"poll_after_seconds\":2}"
+  },
+  {
+    "id": "X-AUTH-BEARER",
+    "name": "bearer garbage -> 401",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-AUTH-EMPTYBEARER",
+    "name": "empty bearer -> 401",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-AUTH-BASIC",
+    "name": "Basic auth scheme ignored -> 401",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-CSRF-NOORIGIN-COOKIE",
+    "name": "cross-origin w/ cookie 403",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "X-CSRF-BEARER",
+    "name": "cross-origin bearer (no cookie) isn't blocked (mobile ok)",
+    "ok": true,
+    "detail": ""
+  }
+]

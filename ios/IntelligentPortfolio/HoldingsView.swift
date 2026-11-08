@@ -38,7 +38,7 @@ struct HoldingsView: View {
                                 Rectangle().fill(AppTheme.line).frame(height: 10)
                                 VStack(spacing: 0) {
                                     SectionTabs(selection: $detail, cases: HoldingsSection.detailCases)
-                                    scrolling(detail)
+                                    detailPager
                                 }
                                 .frame(height: split.bottom)
                             }
@@ -50,7 +50,7 @@ struct HoldingsView: View {
                                 Rectangle().fill(AppTheme.line).frame(width: 1)
                                 VStack(spacing: 0) {
                                     SectionTabs(selection: $detail, cases: HoldingsSection.detailCases)
-                                    scrolling(detail)
+                                    detailPager
                                 }
                                 .frame(maxWidth: .infinity)
                             }
@@ -67,11 +67,7 @@ struct HoldingsView: View {
             .solidNavigationBar()
             .toolbar {
                 if !model.isGuest {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button { Task { await model.refreshHoldings(manual: true) } } label: { Image(systemName: "arrow.clockwise") }
-                            .disabled(model.isLoadingHoldings)
-                            .accessibilityLabel("Refresh holdings")
-                    }
+                    ToolbarItem(placement: .principal) { MarketPill() }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button { showingAdd = true } label: { Image(systemName: "plus") }
                             .accessibilityLabel("Add a holding")
@@ -103,42 +99,41 @@ struct HoldingsView: View {
             }
         }
     }
+    /// The Portfolio, Performance and History pages beside or below Positions. Swiping moves between them and the tabs above follow.
+    private var detailPager: some View {
+        TabView(selection: $detail) {
+            ForEach(HoldingsSection.detailCases) { tab in
+                scrolling(tab).tag(tab)
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+    }
+
     private func scrolling(_ tab: HoldingsSection) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) { page(for: tab) }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .refreshable { await Task { await model.refreshHoldings(manual: true) }.value }
         .id(tab)
     }
 
     private var pager: some View {
         VStack(spacing: 0) {
             SectionTabs(selection: $section, cases: HoldingsSection.allCases)
-            // Native paging: one horizontal scroll view that snaps a full page at a time, so a swipe always
-            // follows the finger and the tab bar above and the page below can never disagree.
-            GeometryReader { geo in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 0) {
-                        ForEach(HoldingsSection.allCases) { tab in
-                            ScrollView {
-                                VStack(alignment: .leading, spacing: 14) { page(for: tab) }
-                                    .padding(16)
-                                    .readableWidth()
-                                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                            }
-                            .refreshable { await Task { await model.refreshHoldings(manual: true) }.value }
-                            .frame(width: geo.size.width, height: geo.size.height)
-                            .id(tab)
-                        }
+            // A paged TabView keeps swiping and the tab bar above in step; the pages scroll vertically on their own.
+            TabView(selection: $section) {
+                ForEach(HoldingsSection.allCases) { tab in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 14) { page(for: tab) }
+                            .padding(16)
+                            .readableWidth()
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
-                    .scrollTargetLayout()
+                    .tag(tab)
                 }
-                .scrollTargetBehavior(.paging)
-                .scrollPosition(id: Binding<HoldingsSection?>(get: { section }, set: { if let tab = $0 { section = tab } }))
-                .animation(.snappy, value: section)
             }
+            .tabViewStyle(.page(indexDisplayMode: .never))
         }
     }
 
@@ -162,21 +157,10 @@ struct HoldingsView: View {
             .font(.caption)
             .foregroundStyle(AppTheme.muted)
             ForEach(data.totals) { total in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(data.totals.count > 1 ? "Portfolio value · \(total.market)" : "Portfolio value")
-                        .font(.footnote)
-                        .foregroundStyle(AppTheme.muted)
-                    Text(money(total.currencySymbol, 2, total.value))
-                        .font(.system(size: 36, weight: .medium, design: .serif))
-                        .minimumScaleFactor(0.6)
-                        .lineLimit(1)
-                    Text("\(signed(total.currencySymbol, total.pnlValue)) · \(String(format: "%+.2f", total.pnlPct))% on \(money(total.currencySymbol, 2, total.value - total.pnlValue)) invested")
-                        .font(.subheadline)
-                        .foregroundStyle(total.pnlValue >= 0 ? AppTheme.mint : AppTheme.red)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
-                .accessibilityElement(children: .combine)
+                HeroCard(total: total, multiple: data.totals.count > 1)
+            }
+            if data.open.count > 1 {
+                AllocationBar(holdings: data.open)
             }
             if data.open.isEmpty {
                 Text("No holdings yet. Tap + to add a stock you bought, with the price and number of shares.")
@@ -187,7 +171,7 @@ struct HoldingsView: View {
                 HoldingCard(holding: holding, onBuyMore: { positionEdit = PositionEdit(holding: holding, sell: false) }, onSell: { positionEdit = PositionEdit(holding: holding, sell: true) }, onUndo: { undoTarget = holding })
             }
             if !data.closed.isEmpty {
-                Text("CLOSED").font(.caption.monospaced().bold()).foregroundStyle(AppTheme.amber)
+                SectionLabel(text: "Closed positions")
                 ForEach(data.closed) { item in
                     HStack {
                         Text("\(item.symbol) · \(shareText(item.shares)) sh")
@@ -212,44 +196,38 @@ struct HoldingsView: View {
 private struct SectionTabs: View {
     @Binding var selection: HoldingsSection
     var cases: [HoldingsSection] = HoldingsSection.allCases
-    @Namespace private var underline
+    @Namespace private var pill
 
     var body: some View {
-        VStack(spacing: 0) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 0) { ForEach(cases) { tab in heading(tab).frame(maxWidth: .infinity) } }
-                ScrollViewReader { proxy in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) { ForEach(cases) { tab in heading(tab).id(tab) } }
-                            .padding(.horizontal, 8)
-                    }
-                    .onChange(of: selection) { _, tab in withAnimation(.snappy) { proxy.scrollTo(tab, anchor: .center) } }
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 4) { ForEach(cases) { tab in segment(tab).frame(maxWidth: .infinity) } }
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) { ForEach(cases) { tab in segment(tab).id(tab) } }
                 }
+                .onChange(of: selection) { _, tab in withAnimation(.snappy) { proxy.scrollTo(tab, anchor: .center) } }
             }
-            Rectangle().fill(AppTheme.line).frame(height: 1)
         }
-        .padding(.horizontal, 8)
+        .padding(4)
+        .background(AppTheme.panel, in: Capsule())
+        .padding(.horizontal, 16).padding(.vertical, 8)
         .background(AppTheme.background)
     }
 
-    private func heading(_ tab: HoldingsSection) -> some View {
+    private func segment(_ tab: HoldingsSection) -> some View {
         let selected = selection == tab
         return Button { withAnimation(.snappy) { selection = tab } } label: {
-            VStack(spacing: 8) {
-                Label(tab.rawValue, systemImage: tab.icon)
-                    .labelStyle(.titleOnly)
-                    .font(.subheadline.weight(selected ? .bold : .medium))
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .foregroundStyle(selected ? Color.primary : AppTheme.muted)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 10)
-                ZStack {
-                    Rectangle().fill(Color.clear).frame(height: 3)
-                    if selected { Rectangle().fill(AppTheme.amber).frame(height: 3).matchedGeometryEffect(id: "underline", in: underline) }
+            Text(tab.rawValue)
+                .font(.subheadline.weight(selected ? .semibold : .medium))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .foregroundStyle(selected ? AppTheme.amber : AppTheme.muted)
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .background {
+                    if selected { Capsule().fill(AppTheme.amber.opacity(0.16)).matchedGeometryEffect(id: "pill", in: pill) }
                 }
-            }
-            .contentShape(Rectangle())
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -291,6 +269,92 @@ private func shareText(_ shares: Double) -> String {
     shares.formatted(.number.precision(.fractionLength(0...4)))
 }
 
+/// The same colour for the same ticker everywhere (monogram, allocation bar).
+private func symbolColour(_ symbol: String) -> Color {
+    AppTheme.colour(at: symbol.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF })
+}
+
+private struct HeroCard: View {
+    let total: HoldingTotal
+    let multiple: Bool
+
+    var body: some View {
+        let positive = total.pnlValue >= 0
+        let invested = total.value - total.pnlValue
+        VStack(alignment: .leading, spacing: 10) {
+            Text(multiple ? "Portfolio value · \(total.market)" : "Portfolio value")
+                .font(.footnote).foregroundStyle(AppTheme.muted)
+            Text(money(total.currencySymbol, 2, total.value))
+                .font(.system(size: 38, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .minimumScaleFactor(0.6).lineLimit(1)
+            HStack(spacing: 8) {
+                PnLChip(text: "\(money(total.currencySymbol, 2, abs(total.pnlValue))) · \(String(format: "%.2f", abs(total.pnlPct)))%", positive: positive)
+                Text("on \(money(total.currencySymbol, 0, invested)) invested")
+                    .font(.caption).foregroundStyle(AppTheme.muted).lineLimit(1).minimumScaleFactor(0.7)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(alignment: .topTrailing) {
+            RadialGradient(colors: [(positive ? AppTheme.mint : AppTheme.red).opacity(0.14), .clear], center: .center, startRadius: 0, endRadius: 100)
+                .frame(width: 200, height: 200).offset(x: 40, y: -50).allowsHitTesting(false)
+        }
+        .background(AppTheme.panel, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(AppTheme.hairline, lineWidth: 1))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// How the portfolio value is split between holdings, as one slim bar with a legend of the largest.
+private struct AllocationBar: View {
+    let holdings: [Holding]
+
+    private var slices: [(symbol: String, weight: Double)] {
+        // Mixed currencies can't be added up, so weigh the currency with the most value.
+        let byCurrency = Dictionary(grouping: holdings, by: \.currencySymbol)
+        guard let group = byCurrency.max(by: { $0.value.compactMap(\.value).reduce(0, +) < $1.value.compactMap(\.value).reduce(0, +) })?.value else { return [] }
+        let items = group.compactMap { h in h.value.map { (h.symbol, $0) } }.sorted { $0.1 > $1.1 }
+        let total = items.map(\.1).reduce(0, +)
+        guard total > 0 else { return [] }
+        return items.map { ($0.0, $0.1 / total) }
+    }
+
+    var body: some View {
+        let shown = Array(slices.prefix(4))
+        if !shown.isEmpty {
+            let rest = max(0, 1 - shown.map(\.weight).reduce(0, +))
+            VStack(alignment: .leading, spacing: 8) {
+                GeometryReader { geo in
+                    HStack(spacing: 2) {
+                        ForEach(shown, id: \.symbol) { s in
+                            Capsule().fill(symbolColour(s.symbol)).frame(width: max(4, geo.size.width * s.weight - 2))
+                        }
+                        if rest > 0.005 { Capsule().fill(AppTheme.line).frame(maxWidth: .infinity) }
+                    }
+                }
+                .frame(height: 7)
+                HStack(spacing: 12) {
+                    ForEach(shown, id: \.symbol) { s in
+                        HStack(spacing: 4) {
+                            Circle().fill(symbolColour(s.symbol)).frame(width: 6, height: 6)
+                            Text("\(s.symbol) \(Int((s.weight * 100).rounded()))%")
+                        }
+                    }
+                    if rest > 0.005 { Text("Other \(Int((rest * 100).rounded()))%") }
+                    Spacer(minLength: 0)
+                }
+                .font(.caption2).foregroundStyle(AppTheme.muted).lineLimit(1).minimumScaleFactor(0.7)
+            }
+            .padding(.horizontal, 4)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Allocation: " + shown.map { "\($0.symbol) \(Int(($0.weight * 100).rounded())) percent" }.joined(separator: ", "))
+        }
+    }
+}
+
 private struct HoldingCard: View {
     /// Tile columns widen with the text size, so at large sizes they stack in one column instead of squeezing words.
     @ScaledMetric(relativeTo: .caption) private var tileMinimum: CGFloat = 130
@@ -312,28 +376,31 @@ private struct HoldingCard: View {
     @State private var expanded = false
 
     private var titleBlock: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(holding.symbol).font(.title3.bold())
-                Text(holding.market).font(.caption).foregroundStyle(AppTheme.muted)
+        HStack(spacing: 12) {
+            Monogram(symbol: holding.symbol, colour: symbolColour(holding.symbol))
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(holding.symbol).font(.headline)
+                    Text(holding.market).font(.caption).foregroundStyle(AppTheme.muted)
+                }
+                Text("\(shareText(holding.shares)) shares · avg \(money(holding.currencySymbol, holding.priceDecimals, holding.buyPrice))")
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.muted)
             }
-            Text("\(shareText(holding.shares)) shares · avg \(money(holding.currencySymbol, holding.priceDecimals, holding.buyPrice))")
-                .font(.footnote)
-                .foregroundStyle(AppTheme.muted)
         }
     }
 
     private var valueBlock: some View {
         VStack(alignment: .trailing, spacing: 3) {
-            if let value = holding.value { Text(money(holding.currencySymbol, 2, value)).font(.headline) }
+            if let value = holding.value { Text(money(holding.currencySymbol, 2, value)).font(.headline).monospacedDigit() }
             if let pct = holding.pnlPct {
-                Text(String(format: "%+.2f%%", pct)).font(.footnote.monospaced()).foregroundStyle(pct >= 0 ? AppTheme.mint : AppTheme.red)
+                PnLChip(text: String(format: "%.2f%%", abs(pct)), positive: pct >= 0)
             }
-            Text(holding.actionLabel.uppercased())
-                .font(.caption2.bold())
+            Text(holding.actionLabel)
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(tint)
                 .padding(.horizontal, 8).padding(.vertical, 3)
-                .overlay(Rectangle().stroke(tint))
+                .background(tint.opacity(0.15), in: Capsule())
         }
     }
 
@@ -370,15 +437,29 @@ private struct HoldingCard: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: tileMinimum), spacing: 8)], spacing: 8) {
                 stat("Now", money(symbol, decimals, price))
                 stat("Profit / loss", "\(signed(symbol, pnl)) (\(String(format: "%+.2f", pct))%)", color: pnl >= 0 ? AppTheme.mint : AppTheme.red)
-                if let v = holding.stopLevel { stat("Protective level", money(symbol, decimals, v)) }
+                if let v = holding.stopLevel { stat("Exit line", money(symbol, decimals, v)) }
                 if let v = holding.trailingLevel { stat("Trailing (4H)", money(symbol, decimals, v)) }
-                if let v = holding.target1 { stat("Target 1 (2R)", money(symbol, decimals, v)) }
-                if let v = holding.target2 { stat("Target 2 (3R)", money(symbol, decimals, v)) }
+                if let v = holding.target1 { stat("Profit zone 1", money(symbol, decimals, v)) }
+                if let v = holding.target2 { stat("Profit zone 2", money(symbol, decimals, v)) }
                 if let a = holding.trend4h, let d = holding.dailyTrend { stat("4H · Daily", "\(a) · \(d)") }
             }
         }
         ForEach(holding.reasons, id: \.self) { reason in
             Text("• \(reason)").font(.footnote).foregroundStyle(AppTheme.muted)
+        }
+        if let note = holding.stopNote {
+            Text("Protective level: \(note).").font(.caption).foregroundStyle(AppTheme.muted)
+        }
+        if let lines = holding.referenceLines, !lines.isEmpty {
+            ReferenceLinesList(lines: lines, currency: symbol, decimals: decimals)
+        }
+        if let events = holding.levelEvents?.filter({ $0.kind != "INITIAL" }), !events.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                SectionLabel(text: "Level changes")
+                ForEach(events) { event in
+                    Text("• \(event.reason)").font(.caption).foregroundStyle(AppTheme.amber)
+                }
+            }
         }
         if let previous = holding.previousAction, previous != holding.action, holding.action != "NO_DATA" {
             Text("Changed from \(label(previous)) to \(holding.actionLabel)")
@@ -407,12 +488,11 @@ private struct HoldingCard: View {
 
     private func stat(_ title: String, _ value: String, color: Color = .primary) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title.uppercased()).font(.caption2).foregroundStyle(AppTheme.muted)
+            Text(title).font(.caption2).foregroundStyle(AppTheme.muted)
             Text(value).font(.footnote.bold()).foregroundStyle(color)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
-        .overlay(Rectangle().stroke(AppTheme.line))
+        .tile()
     }
 }
 
@@ -630,12 +710,11 @@ private struct PerformancePanel: View {
 
     private func tile(_ title: String, _ value: String, color: Color = .primary) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title.uppercased()).font(.caption2).foregroundStyle(AppTheme.muted)
+            Text(title).font(.caption2).foregroundStyle(AppTheme.muted)
             Text(value).font(.footnote.bold()).foregroundStyle(color)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
-        .overlay(Rectangle().stroke(AppTheme.line))
+        .tile()
     }
 }
 
@@ -836,12 +915,11 @@ private struct PortfolioPanel: View {
 
     private func tile(_ title: String, _ value: String, color: Color = .primary) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title.uppercased()).font(.caption2).foregroundStyle(AppTheme.muted)
+            Text(title).font(.caption2).foregroundStyle(AppTheme.muted)
             Text(value).font(.footnote.bold()).foregroundStyle(color)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
-        .overlay(Rectangle().stroke(AppTheme.line))
+        .tile()
     }
 }
 

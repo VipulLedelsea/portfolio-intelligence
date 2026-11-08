@@ -1,0 +1,836 @@
+[
+  {
+    "id": "SYS-01",
+    "name": "GET /health returns ok, read-only, no order submission",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SYS-02",
+    "name": "GET / serves dashboard HTML",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SYS-03",
+    "name": "Security headers present (CSP, XFO DENY, nosniff, referrer)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SYS-04",
+    "name": "CSP has no wildcard script-src",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SYS-05-privacy",
+    "name": "GET /privacy public page 200",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SYS-05-terms",
+    "name": "GET /terms public page 200",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SYS-05-support",
+    "name": "GET /support public page 200",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SYS-06",
+    "name": "Unknown GET route -> 404 JSON",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SYS-07",
+    "name": "Unknown POST route -> 404",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SYS-08",
+    "name": "PUT/DELETE on API not served (404)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SYS-09",
+    "name": "/api/grade disabled (405)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SYS-10",
+    "name": "GET /api/track-record 200 with summary shape",
+    "ok": true,
+    "detail": "{\"available\":true,\"since\":null,\"horizon_trading_days\":5,\"summary\":{\"settled_picks\":0,\"pending_picks\":0,\"win_rate_pct\":nu"
+  },
+  {
+    "id": "SYS-11",
+    "name": "/api/access with paywall off: subscribed true, signed_in false",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SYS-12",
+    "name": "/api/access never leaks customer_id",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SYS-13",
+    "name": "/api/access?session_id= without sign-in -> 401, not 5xx",
+    "ok": true,
+    "detail": "401"
+  },
+  {
+    "id": "PAY-01 /api/discover",
+    "name": "paywall on + anonymous -> 402",
+    "ok": true,
+    "detail": "402"
+  },
+  {
+    "id": "PAY-01 /api/analyze",
+    "name": "paywall on + anonymous -> 402",
+    "ok": true,
+    "detail": "402"
+  },
+  {
+    "id": "PAY-01 /api/memory",
+    "name": "paywall on + anonymous -> 402",
+    "ok": true,
+    "detail": "402"
+  },
+  {
+    "id": "PAY-01 /api/holdings",
+    "name": "paywall on + anonymous -> 402",
+    "ok": true,
+    "detail": "402"
+  },
+  {
+    "id": "PAY-01 /api/holdings/add",
+    "name": "paywall on + anonymous -> 402",
+    "ok": true,
+    "detail": "402"
+  },
+  {
+    "id": "PAY-02",
+    "name": "paywall on without Stripe key -> configured false, subscribed false",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "PAY-03",
+    "name": "checkout when paywall disabled -> error (not 200)",
+    "ok": true,
+    "detail": "502"
+  },
+  {
+    "id": "PAY-04",
+    "name": "checkout anonymous -> 401",
+    "ok": true,
+    "detail": "401"
+  },
+  {
+    "id": "AUTH-01",
+    "name": "/auth/dev disabled outside dev mode (404)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "AUTH-02",
+    "name": "/auth/dev (dev mode) redirects 302 with HttpOnly SameSite cookie",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "AUTH-03",
+    "name": "session cookie recognised -> signed_in true",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "AUTH-04",
+    "name": "forged cookie rejected",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "AUTH-05",
+    "name": "malformed cookie rejected",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "AUTH-06",
+    "name": "cross-origin POST with session cookie -> 403 (CSRF)",
+    "ok": true,
+    "detail": "403"
+  },
+  {
+    "id": "AUTH-07",
+    "name": "same-origin POST with cookie allowed",
+    "ok": true,
+    "detail": "200"
+  },
+  {
+    "id": "AUTH-08",
+    "name": "forged oai-* identity headers ignored when AUTH_MODE != oai",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "AUTH-09",
+    "name": "Google sign-in not configured -> clean JSON error, not crash",
+    "ok": true,
+    "detail": "503"
+  },
+  {
+    "id": "AUTH-10",
+    "name": "Google callback with bad state -> redirect /?signin=failed",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "AUTH-11",
+    "name": "logout clears cookie (Max-Age=0)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "AUTH-12",
+    "name": "session invalid after logout",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "MOB-01",
+    "name": "pair/start returns 8-char code, secret, expiry",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "MOB-02",
+    "name": "device name sanitised (no < > characters)",
+    "ok": true,
+    "detail": "Vipul's scriptiPhone"
+  },
+  {
+    "id": "MOB-03",
+    "name": "pairing code/secret stored hashed only",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "MOB-04",
+    "name": "status before approval -> approved:false",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "MOB-05",
+    "name": "status with wrong secret -> 404",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "MOB-06",
+    "name": "status with malformed code -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "MOB-07",
+    "name": "approve without sign-in -> 401",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "MOB-08",
+    "name": "approve with invalid code format -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "MOB-09",
+    "name": "approve unknown (valid-format) code -> 410",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "MOB-10",
+    "name": "approve accepts lowercase code, returns approved",
+    "ok": true,
+    "detail": "{\"approved\":true,\"expires_at\":\"2026-11-05T18:21:01.029Z\"}"
+  },
+  {
+    "id": "MOB-11",
+    "name": "status after approval issues token",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "MOB-12",
+    "name": "token stored hashed only",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "MOB-13",
+    "name": "second claim of same pairing -> 409",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "MOB-14",
+    "name": "re-approve a claimed code -> 409",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "MOB-15",
+    "name": "bearer token recognised (auth_type mobile)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "MOB-16",
+    "name": "garbage bearer rejected",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "MOB-17",
+    "name": "expired pairing: approve -> 410",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "MOB-18",
+    "name": "expired pairing: status -> 410 or 404",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "MOB-19",
+    "name": "pair/start rate-limited at 30/min (429)",
+    "ok": true,
+    "detail": "limited=10"
+  },
+  {
+    "id": "MOB-20",
+    "name": "revoke with unknown token still safe (200/401, no 5xx)",
+    "ok": true,
+    "detail": "200"
+  },
+  {
+    "id": "MOB-21",
+    "name": "revoke without token -> 401",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "MOB-22",
+    "name": "delete-account with web cookie (not mobile) -> 401",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-01",
+    "name": "holdings list requires sign-in -> 401",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-02",
+    "name": "add requires sign-in -> 401",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-03",
+    "name": "empty list shape (open/closed/totals arrays)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-04",
+    "name": "add: missing symbol -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-05",
+    "name": "add: invalid symbol chars -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-06",
+    "name": "add: symbol >15 chars -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-07",
+    "name": "add: zero shares -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-08",
+    "name": "add: negative shares -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-09",
+    "name": "add: NaN/string shares -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-10",
+    "name": "add: zero price -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-11",
+    "name": "add: absurd price (>1e8) -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-12",
+    "name": "add: absurd shares (>1e9) -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-13",
+    "name": "add: future purchase date -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-14",
+    "name": "add: malformed date -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-15",
+    "name": "add: forex market not trackable -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-16",
+    "name": "add: BSE symbol outside Sensex 30 -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-17",
+    "name": "add: symbol with no market data -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-18",
+    "name": "add: oversized body -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-19",
+    "name": "add: non-object JSON body doesn't 5xx",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-20",
+    "name": "add: invalid JSON doesn't 5xx",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-21",
+    "name": "add AAPL (lowercase symbol normalised) -> added + id",
+    "ok": true,
+    "detail": "{\"added\":true,\"id\":\"1jh1EIhoP9zBBu4Y\"}"
+  },
+  {
+    "id": "HLD-22",
+    "name": "decision HOLD when trend up & strong",
+    "ok": true,
+    "detail": "HOLD"
+  },
+  {
+    "id": "HLD-23",
+    "name": "decision EXIT when price < protective level",
+    "ok": true,
+    "detail": "EXIT"
+  },
+  {
+    "id": "HLD-24",
+    "name": "decision EXIT when 4H trend turns down",
+    "ok": true,
+    "detail": "EXIT"
+  },
+  {
+    "id": "HLD-25",
+    "name": "decision TAKE_PROFIT at/above target",
+    "ok": true,
+    "detail": "TAKE_PROFIT"
+  },
+  {
+    "id": "HLD-26",
+    "name": "decision WATCH when daily ADX < 20",
+    "ok": true,
+    "detail": "WATCH"
+  },
+  {
+    "id": "HLD-27",
+    "name": "decision WATCH when daily trend down",
+    "ok": true,
+    "detail": "WATCH"
+  },
+  {
+    "id": "HLD-28",
+    "name": "levels ordered: stop < buy < target1 < target2",
+    "ok": true,
+    "detail": "[97,100,108,112]"
+  },
+  {
+    "id": "HLD-29",
+    "name": "P&L math: NVDA 10sh bought 100 now 150 => +500 / +50%",
+    "ok": true,
+    "detail": "500/50"
+  },
+  {
+    "id": "HLD-30",
+    "name": "portfolio totals = sum of open costs/values",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-31",
+    "name": "portfolio concentration object present",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-32",
+    "name": "refresh_after_seconds 300 or 600",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-33",
+    "name": "increase: weighted average (10@100 + 10@120 => 20@110)",
+    "ok": true,
+    "detail": "{\"id\":\"1jh1EIhoP9zBBu4Y\",\"symbol\":\"AAPL\",\"market\":\"US\",\"currency_symbol\":\"$\",\"price_decimals\":2,\"shares\":20,\"buy_price\":110,\"bought_at\":\"2026-11-05\",\"action\":\"EXIT\",\"action_label\":\"Exit signal\",\"headline\":\"Price is below the protective level for this position\",\"reasons\":[\"Price $100.00 is under the protective level $107.00 (one and a half daily ranges below your buy price).\"],\"current_price\":100,\"cost\":2200,\"value\":2000,\"pnl_value\":-200,\"pnl_pct\":-9.09,\"stop_level\":107,\"trailing_level\":107,\"target_1\":118,\"target_2\":122,\"trend_4h\":\"LONG\",\"daily_trend\":\"LONG\",\"daily_adx\":30,\"market_time\":\"2026-11-05T18:11:01.014Z\",\"previous_action\":\"HOLD\",\"action_since\":\"2026-11-05T18:11:02.768Z\",\"last_entry\":{\"id\":\"5OHYLyiwEzDB\",\"side\":\"BUY\",\"shares\":10,\"price\":120,\"at\":\"2026-11-05T18:11:02.767Z\"}}"
+  },
+  {
+    "id": "HLD-34",
+    "name": "increase: bad shares -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-35",
+    "name": "increase: bad price -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-36",
+    "name": "increase: unknown id -> 404",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-37",
+    "name": "increase: invalid id format -> 404",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-38",
+    "name": "partial sell: remaining 15 and closed entry created",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-39",
+    "name": "partial sell P&L at average cost (130-110)*5 = 100",
+    "ok": true,
+    "detail": "100"
+  },
+  {
+    "id": "HLD-40",
+    "name": "sell more than held -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-41",
+    "name": "sell zero shares -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-42",
+    "name": "sell bad price -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-43",
+    "name": "sell unknown id -> 404",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-44",
+    "name": "full sell (no shares arg) closes position",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-45",
+    "name": "sold position cannot be sold again -> 404",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-46",
+    "name": "close legacy endpoint closes holding",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-47",
+    "name": "close bad sell_price -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-48",
+    "name": "close already-closed is idempotent (200)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-49",
+    "name": "stats returns markets + history + disclaimer",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-50",
+    "name": "history sorted newest first",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-51",
+    "name": "history: only newest entry per stock is undoable",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-52",
+    "name": "list exposes last_entry for undo UI",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-53",
+    "name": "undo partial sale restores shares to 20 and removes closed piece",
+    "ok": true,
+    "detail": "{\"undone\":true}"
+  },
+  {
+    "id": "HLD-54",
+    "name": "undo same entry twice -> 404",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-55",
+    "name": "undo non-latest entry rejected (400)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-56",
+    "name": "edit latest buy (10@120 -> 5@130): avg recalculated (10@100+5@130 => 15@110)",
+    "ok": true,
+    "detail": "[{\"edited\":true},{\"id\":\"1jh1EIhoP9zBBu4Y\",\"symbol\":\"AAPL\",\"market\":\"US\",\"currency_symbol\":\"$\",\"price_decimals\":2,\"shares\":15,\"buy_price\":110,\"bought_at\":\"2026-11-05\",\"action\":\"EXIT\",\"action_label\":\"Exit signal\",\"headline\":\"Price is below the protective level for this position\",\"reasons\":[\"Price $100.00 is under the protective level $107.00 (one and a half daily ranges below your buy price).\"],\"current_price\":100,\"cost\":1650,\"value\":1500,\"pnl_value\":-150,\"pnl_pct\":-9.09,\"stop_level\":107,\"trailing_level\":107,\"target_1\":118,\"target_2\":122,\"trend_4h\":\"LONG\",\"daily_trend\":\"LONG\",\"daily_adx\":30,\"market_time\":\"2026-11-05T18:11:01.014Z\",\"previous_action\":\"EXIT\",\"action_since\":\"2026-11-05T18:11:02.768Z\",\"last_entry\":{\"id\":\"H4kImUqqis9Q\",\"side\":\"BUY\",\"shares\":5,\"price\":130,\"at\":\"2026-11-05T18:11:02.767Z\"}}]"
+  },
+  {
+    "id": "HLD-57",
+    "name": "edit leaves an audit trail (voided original remains)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-58",
+    "name": "edit with invalid price -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-59",
+    "name": "undo opening purchase removes position from open and closed lists",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-60",
+    "name": "remove deletes holding",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-61",
+    "name": "remove invalid id -> 404",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-62",
+    "name": "user-2 sees none of user-1's holdings",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-63",
+    "name": "user-2 cannot sell user-1's holding (404)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-64",
+    "name": "user-2 cannot remove user-1's holding",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-65",
+    "name": "user-2 cannot undo user-1's entry (404)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-66",
+    "name": "mobile bearer sees same holdings as web user",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-67",
+    "name": "max 20 open holdings enforced",
+    "ok": true,
+    "detail": "20"
+  },
+  {
+    "id": "HLD-68",
+    "name": "21st add -> 400 with clear message",
+    "ok": true,
+    "detail": "{\"error\":\"You can track up to 20 open holdings. Remove or close one first.\"}"
+  },
+  {
+    "id": "HLD-69",
+    "name": "BSE holding added with ₹ currency symbol",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "HLD-70",
+    "name": "totals kept per market (USD and INR never summed)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SCN-01",
+    "name": "analyze invalid ticker -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SCN-02",
+    "name": "analyze empty ticker -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SCN-03",
+    "name": "analyze unknown market -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SCN-04",
+    "name": "analyze BSE symbol outside universe -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SCN-05",
+    "name": "analyze forex symbol outside universe -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SCN-06",
+    "name": "discover unknown market -> 400",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SCN-07",
+    "name": "memory requires sign-in -> 401",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "SCN-08",
+    "name": "memory for signed-in new user returns 200 object",
+    "ok": true,
+    "detail": "{\"available\":true,\"newly_settled\":0,\"settlement_warning\":null,\"horizon_trading_days\":5,\"summary\":{\"total_calls\":0,\"pending_calls\":0,\"settled_calls\":0,"
+  },
+  {
+    "id": "SCN-09",
+    "name": "discover (BSE) with no stored scan responds JSON (no crash)",
+    "ok": true,
+    "detail": "200 {\"generated_at\":\"2026-11-05T18:11:08.436Z\",\"market_trend\":{\"state\":\"UP\",\"index_state\":\"UP\",\"headline"
+  },
+  {
+    "id": "DEL-01",
+    "name": "mobile account delete wipes holdings + trades",
+    "ok": true,
+    "detail": "9->0/0"
+  },
+  {
+    "id": "DEL-02",
+    "name": "deleted account's bearer token no longer works",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "id": "DEL-03",
+    "name": "deleting data doesn't affect other users",
+    "ok": true,
+    "detail": ""
+  }
+]

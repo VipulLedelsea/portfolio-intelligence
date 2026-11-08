@@ -201,12 +201,12 @@ final class AppModel: ObservableObject {
         await refreshHoldings()
     }
 
-    /// `manual` accepts only very fresh server data, so a pull or tap really re-checks the market.
-    func refreshHoldings(manual: Bool = false) async {
+    /// Reads the shared holdings check; the server re-checks the market on its own schedule, so there is no manual refresh.
+    func refreshHoldings() async {
         guard let token else { holdings = nil; return }
         isLoadingHoldings = true
         defer { isLoadingHoldings = false }
-        do { holdings = try await api.holdings(token: token, refresh: manual) }
+        do { holdings = try await api.holdings(token: token) }
         catch { report(error) }
     }
 
@@ -295,14 +295,14 @@ final class AppModel: ObservableObject {
 
     /// Reads the latest scan. BSE and forex scans are produced by the server on its own
     /// schedule, so this only reads the stored result and re-checks every few minutes.
-    func refreshScanner(manual: Bool = false, fromTimer: Bool = false) async {
+    func refreshScanner(fromTimer: Bool = false) async {
         // The timer calls this from inside autoRefreshTask, so cancelling it here would cancel the request itself.
         if !fromTimer { autoRefreshTask?.cancel() }
         let requested = market
         isScanning = true
         defer { isScanning = false }
         do {
-            let result = try await api.discover(market: requested, token: token, refresh: manual && !requested.isAutomatic)
+            let result = try await api.discover(market: requested, token: token)
             guard requested == market else { return }
             discovery = result
             errorMessage = nil

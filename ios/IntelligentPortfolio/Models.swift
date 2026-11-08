@@ -57,8 +57,8 @@ enum Market: String, CaseIterable, Identifiable, Sendable {
         case .forex: "Forex"
         }
     }
-    /// BSE and forex scans refresh on the server schedule and cannot be refreshed by hand.
-    var isAutomatic: Bool { self != .us }
+    /// Every scan refreshes on the server schedule and cannot be refreshed by hand.
+    var isAutomatic: Bool { true }
     var scanTitle: String {
         switch self {
         case .us: "S&P 500"
@@ -89,6 +89,9 @@ struct DiscoveryResponse: Decodable, Sendable {
     let marketTrends: [MarketTrend]?
     let allMarketTrends: [MarketTrend]?
     let recentSetups: [RecentSetup]?
+    let dipScan: DipScan?
+    let patternScan: PatternScan?
+    let ranking: RankedIdeas?
     let autoRefresh: Bool?
     let refreshedAt: String?
     let warmingUp: Bool?
@@ -102,6 +105,162 @@ struct DiscoveryResponse: Decodable, Sendable {
     let freshEntryCount: Int
     let method: String
     let nextStep: String
+}
+
+/// One ranked list of every scanner's ideas. `source` is "ai" when a Claude model ranked them and "rules" when the fixed scoring did.
+struct RankedIdeas: Decodable, Sendable {
+    let available: Bool
+    let source: String
+    let model: String?
+    let headline: String
+    let nothingCompelling: Bool
+    let marketState: String?
+    let items: [RankedIdea]
+    let rejected: [RankedReject]
+    let dataGaps: [String]
+    let orderingNotes: String?
+    let method: String?
+}
+
+struct RankedReject: Decodable, Identifiable, Sendable {
+    var id: String
+    let symbol: String
+    let strategy: String
+    let tag: String
+    let reason: String
+}
+
+struct RankedEvidence: Decodable, Hashable, Sendable {
+    let label: String
+    /// Backtested trades, win rate and expected value are nil where the strategy has not been backtested in that market (India, forex).
+    let n: Int?
+    let winRatePct: Double?
+    let evPct: Double?
+    let experimental: Bool
+    let note: String
+}
+
+struct RankedIdea: Decodable, Identifiable, Hashable, Sendable {
+    let id: String
+    let rank: Int
+    let symbol: String
+    let company: String
+    let sector: String
+    let strategy: String
+    let tag: String
+    let detail: String?
+    let direction: String
+    let currencySymbol: String?
+    let priceDecimals: Int?
+    let price: Double
+    let entry: Double
+    let stop: Double
+    let target1: Double?
+    let target2: Double?
+    let atr: Double?
+    let exitRule: String
+    let stopPct: Double?
+    let rrT1: Double?
+    let rrT2: Double?
+    let fromEntryAtr: Double?
+    let ageDays: Int?
+    let alignmentNote: String?
+    let score: Double
+    let confidence: String
+    let reason: String
+    let sources: [String]?
+    let crowded: Bool?
+    let evidence: RankedEvidence
+    let bull: String?
+    let bear: String?
+    let invalidation: String?
+    let bars: [DailyBar]?
+}
+
+/// The third scanner mode (experimental): candlestick patterns on a breakout or breakdown day.
+struct PatternScan: Decodable, Sendable {
+    let available: Bool
+    let reason: String?
+    let experimental: Bool?
+    let scanned: Int?
+    let breakoutCount: Int?
+    let breakdownCount: Int?
+    let breakouts: [PatternPick]?
+    let breakdowns: [PatternPick]?
+    let notice: String?
+    let method: String?
+}
+
+struct PatternPick: Decodable, Identifiable, Hashable, Sendable {
+    var id: String { "\(symbol)-\(direction)" }
+    let symbol: String
+    let company: String
+    let sector: String
+    let currencySymbol: String?
+    let priceDecimals: Int?
+    let direction: String
+    let patterns: [String]
+    let label: String
+    let price: Double
+    let signalClose: Double
+    let signalAsOf: String
+    let volumeRatio: Double
+    let aboveSma200Pct: Double
+    let breakoutLevel: Double
+    let patternExtreme: Double
+    let score: Double
+    let atr14Pct: Double
+    let riskAtr: Double
+    let stopPrice: Double
+    let target1: Double
+    let target2: Double
+    let failureLevel: Double
+    let horizonTradingDays: Int
+    let referenceLines: [ReferenceLine]?
+    let bars: [DailyBar]?
+}
+
+/// The second scanner mode: dips inside an uptrend, shown only while the market is under stress.
+struct DipScan: Decodable, Sendable {
+    let available: Bool
+    let reason: String?
+    let gate: DipGate?
+    let scanned: Int?
+    let dipCount: Int?
+    let candidates: [DipPick]?
+    let waiting: [DipPick]?
+    let method: String?
+}
+
+struct DipGate: Decodable, Sendable {
+    let open: Bool
+    let spy5DPct: Double?
+    let breadthPct: Double
+    let headline: String
+    let note: String
+}
+
+struct DipPick: Decodable, Identifiable, Hashable, Sendable {
+    var id: String { symbol }
+    let symbol: String
+    let company: String
+    let sector: String
+    let currencySymbol: String?
+    let priceDecimals: Int?
+    let price: Double
+    let signalClose: Double
+    let rsi2: Double
+    let return3DPct: Double
+    let aboveSma200Pct: Double
+    let sharp: Bool
+    let score: Double
+    let label: String
+    let atr14Pct: Double
+    let stopPrice: Double
+    let target1: Double
+    let target2: Double
+    let referenceLines: [ReferenceLine]?
+    let bars: [DailyBar]?
 }
 
 struct Candidate: Decodable, Identifiable, Hashable, Sendable {
@@ -200,7 +359,24 @@ struct ChartPayload: Decodable, Sendable {
     let source: String?
     let series: [Candle]
     let levels: ScenarioLevels
+    /// Chart context (20-day low, recent highs, moving averages). Reference only: they do not set the stop or targets.
+    let referenceLines: [ReferenceLine]?
     let explanation: [String]?
+}
+
+struct ReferenceLine: Decodable, Identifiable, Hashable, Sendable {
+    var id: String { key }
+    let key: String
+    let label: String
+    let value: Double
+}
+
+struct DailyBar: Decodable, Hashable, Sendable {
+    let d: String
+    let o: Double
+    let h: Double
+    let l: Double
+    let c: Double
 }
 
 struct ScenarioLevels: Decodable, Sendable {
@@ -265,7 +441,16 @@ struct TrackRecordResponse: Decodable, Sendable {
     let since: String?
     let horizonTradingDays: Int?
     let summary: TrackRecordSummary?
+    /// One summary per scanner (Supertrend, dip scan, and dips seen while the market gate was closed), so they can be compared.
+    let strategies: [TrackRecordStrategy]?
     let methodology: String?
+}
+
+struct TrackRecordStrategy: Decodable, Identifiable, Sendable {
+    let id: String
+    let label: String
+    let since: String?
+    let summary: TrackRecordSummary
 }
 
 struct TrackRecordSummary: Decodable, Sendable {
@@ -310,6 +495,13 @@ struct HoldingsResponse: Decodable, Sendable {
     let disclaimer: String
 }
 
+struct LevelEvent: Decodable, Identifiable, Sendable {
+    var id: String { at + kind }
+    let at: String
+    let kind: String
+    let reason: String
+}
+
 struct Holding: Decodable, Identifiable, Sendable {
     let id: String
     let symbol: String
@@ -328,9 +520,14 @@ struct Holding: Decodable, Identifiable, Sendable {
     let pnlValue: Double?
     let pnlPct: Double?
     let stopLevel: Double?
+    /// Why the protective level sits where it does ("raised to your buy price once the trade gained one daily range", ...).
+    let stopNote: String?
     let trailingLevel: Double?
     let target1: Double?
     let target2: Double?
+    let referenceLines: [ReferenceLine]?
+    /// The position monitor's recent changes to this position's levels, newest first, each with its reason.
+    let levelEvents: [LevelEvent]?
     let trend4h: String?
     let dailyTrend: String?
     let previousAction: String?

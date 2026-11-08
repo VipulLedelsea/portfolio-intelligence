@@ -7,7 +7,7 @@ struct MemoryView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("The system grades every research call after five completed market sessions.")
+                    Text("US Supertrend ideas are followed until the daily Supertrend breaks and graded at the next open, with no time limit. Other calls are graded when they hit a level or after ten completed market sessions.")
                         .foregroundStyle(AppTheme.muted)
                     TrackRecordPanel(record: model.trackRecord)
                     if model.isGuest {
@@ -66,14 +66,16 @@ private struct MemoryRow: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading) {
-                Text(record.symbol).font(.headline.monospaced())
+                Text(record.symbol).font(.headline)
                 Text("\(record.action) · \(record.direction)").font(.caption).foregroundStyle(AppTheme.muted)
             }
             Spacer()
             VStack(alignment: .trailing) {
                 Text(record.status == "PENDING" ? "PENDING" : record.grade ?? "SETTLED")
-                    .font(.caption.monospaced().bold())
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(gradeColor)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(gradeColor.opacity(0.15), in: Capsule())
                 if let value = record.strategyReturnPct {
                     Text(String(format: "%+.2f%%", value)).font(.caption).foregroundStyle(AppTheme.muted)
                 }
@@ -93,14 +95,27 @@ private struct MemoryRow: View {
 /// App-wide results of every fresh scanner pick, wins and losses included. Always shows how many picks sit behind each number.
 struct TrackRecordPanel: View {
     let record: TrackRecordResponse?
+    @State private var strategy = "SUPERTREND"
+
+    /// The summary for the chosen scanner; falls back to the Supertrend summary from older servers.
+    private var chosen: TrackRecordStrategy? { record?.strategies?.first { $0.id == strategy } }
+    private var shownSummary: TrackRecordSummary? { chosen?.summary ?? record?.summary }
+    private func shortName(_ id: String) -> String { id == "SUPERTREND" ? "Supertrend" : id == "DIP" ? "Dip scan" : id == "PATTERN" ? "Pattern" : "Dip, gate closed" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("SCANNER TRACK RECORD").font(.caption2).foregroundStyle(AppTheme.muted)
-            if let summary = record?.summary, record?.available == true {
+            SectionLabel(text: "Scanner track record")
+            if let strategies = record?.strategies, strategies.count > 1 {
+                Picker("Scanner", selection: $strategy) {
+                    ForEach(strategies) { Text(shortName($0.id)).tag($0.id) }
+                }
+                .pickerStyle(.segmented)
+                if let label = chosen?.label { Text(label).font(.footnote).foregroundStyle(AppTheme.muted) }
+            }
+            if let summary = shownSummary, record?.available == true {
                 let n = summary.settledPicks
                 if n == 0 {
-                    Text("No scanner picks have been graded yet. \(summary.pendingPicks) are waiting for their five-session window to close.")
+                    Text("No scanner picks have been graded yet. \(summary.pendingPicks) are still running: Supertrend picks close when the daily trend breaks.")
                         .foregroundStyle(AppTheme.muted)
                 } else {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {
