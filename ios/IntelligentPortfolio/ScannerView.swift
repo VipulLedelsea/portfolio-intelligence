@@ -741,6 +741,11 @@ private struct RankedDetailSheet: View {
     private var candles: [Candle] {
         (idea.bars ?? []).map { Candle(date: $0.d, open: $0.o, high: $0.h, low: $0.l, close: $0.c, supertrend: nil, supertrendDirection: nil, barStatus: nil) }
     }
+    private var evidenceText: String {
+        let e = idea.evidence
+        guard let ev = e.evPct, let wins = e.winRatePct, let n = e.n else { return "No backtest in this market. " + e.note }
+        return String(format: "%+.2f%% per trade, %.0f%% wins, %@ trades. ", ev, wins, n.formatted()) + e.note + (e.experimental ? " Experimental: not recommended." : "")
+    }
     /// Supertrend ideas have no target, so the chart shows 1 and 2 ATR zones from the entry for reference only.
     private var chartTarget1: Double { idea.target1 ?? (idea.entry + (long ? 1 : -1) * (idea.atr ?? 0)) }
     private var chartTarget2: Double { idea.target2 ?? (idea.entry + (long ? 2 : -2) * (idea.atr ?? 0)) }
@@ -771,9 +776,7 @@ private struct RankedDetailSheet: View {
                     }
                     block("Exit", idea.exitRule)
                     if let note = idea.alignmentNote { block("Trend and market", note) }
-                    block("Backtest behind the score",
-                          String(format: "%+.2f%% per trade, %.0f%% wins, %@ trades. ", idea.evidence.evPct, idea.evidence.winRatePct, idea.evidence.n.formatted()) + idea.evidence.note
-                          + (idea.evidence.experimental ? " Experimental: not recommended." : ""))
+                    block("Backtest behind the score", evidenceText)
                     if let bull = idea.bull { block("Bull case", bull) }
                     if let bear = idea.bear { block("Bear case", bear) }
                     if let invalid = idea.invalidation { block("What invalidates it", invalid) }

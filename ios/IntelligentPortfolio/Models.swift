@@ -132,9 +132,10 @@ struct RankedReject: Decodable, Identifiable, Sendable {
 
 struct RankedEvidence: Decodable, Hashable, Sendable {
     let label: String
-    let n: Int
-    let winRatePct: Double
-    let evPct: Double
+    /// Backtested trades, win rate and expected value are nil where the strategy has not been backtested in that market (India, forex).
+    let n: Int?
+    let winRatePct: Double?
+    let evPct: Double?
     let experimental: Bool
     let note: String
 }

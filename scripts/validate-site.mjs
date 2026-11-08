@@ -345,6 +345,7 @@ assert.equal(fxScan.market, "FX");
 assert.equal(fxScan.auto_refresh, true, "Forex scans must refresh automatically");
 assert.equal(fxScan.successful, 13, "All 13 forex pairs must be scanned");
 assert.ok(fxScan.refreshed_at && fxScan.next_refresh_at, "Automatic scans must report refresh times");
+assert.ok(fxScan.ranking?.available && fxScan.ranking.items.every(item => item.evidence.ev_pct === null && item.confidence === "Low"), "Forex ranks its ideas, with unknown evidence and Low confidence (no backtest)");
 const fxCandidate = [...fxScan.candidates, ...fxScan.late_candidates][0];
 assert.equal(fxCandidate.price_decimals, 5, "Forex prices need five decimals");
 assert.equal(fxCandidate.currency_symbol, "");

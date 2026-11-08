@@ -1427,6 +1427,12 @@ const RANK_EVIDENCE = {
   PATTERN_SHORT: { label: "Pattern", n: 379, win_rate_pct: 57, avg_win_pct: null, avg_loss_pct: null, ev_pct: -0.61, experimental: true,
     note: "Bearish candlestick pattern on a 20-day-low breakdown with volume 1.4x average, 5-day hold. Beat breakdowns without a pattern by about +0.6% but still lost money in absolute terms, and the edge sat mostly in the first half." },
 };
+// Supertrend on the Sensex 30 and on forex pairs has not been backtested, so there is no figure to score: the evidence is marked unknown,
+// confidence stays Low, and the scores lean on reward to risk, alignment and entry quality only.
+RANK_EVIDENCE.SUPERTREND_IN = { label: "Supertrend", n: 0, win_rate_pct: null, avg_win_pct: null, avg_loss_pct: null, ev_pct: null, experimental: false,
+  note: "Not backtested on the Sensex 30. The US result does not carry over automatically: this market, its hours and its costs differ. Ideas exit at the first of the stop, target 1 or the tenth daily close." };
+RANK_EVIDENCE.SUPERTREND_FX = { label: "Supertrend", n: 0, win_rate_pct: null, avg_win_pct: null, avg_loss_pct: null, ev_pct: null, experimental: false,
+  note: "Not backtested on forex pairs. The only forex test (chart patterns) found nothing that beat random entries. Ideas exit at the first of the stop, target 1 or the tenth daily close." };
 const RANK_MAX_STOP_PCT = 12, RANK_MAX_CHASE_ATR = 1.5, RANK_STALE_DAYS = 6, RANK_MIN_PROVEN_TRADES = 100, RANK_MAX_ITEMS = 30;
 
 const rankDaysOld = date => { const t = Date.parse(String(date).slice(0, 10)); return Number.isFinite(t) ? Math.max(0, Math.round((Date.now() - t) / 86400000)) : null; };
@@ -1457,9 +1463,9 @@ function rankHardFilter(item) {
 // Rules score, 0-100, with the weights of the ranking brief: expected value 35, reward to risk 20, trend and market alignment 15,
 // entry quality 15, liquidity 10, freshness 5. Used to order the list when no AI key is set, and handed to the model as a reference.
 function rankRulesScore(item) {
-  const ev = item.evidence.ev_pct;
-  const evPart = clamp((ev + 1) / 3 * 100, 0, 100);
-  const rrRef = item.strategy === "SUPERTREND" ? 1.8 : (item.rr_t2 ?? item.rr_t1 ?? 1);
+  const ev = item.evidence.ev_pct, known = ev !== null;
+  const evPart = known ? clamp((ev + 1) / 3 * 100, 0, 100) : 40; // no backtest in this market: a below-average, not a negative, score
+  const rrRef = item.strategy === "SUPERTREND" && item.rr_t2 === null ? 1.8 : (item.rr_t2 ?? item.rr_t1 ?? 1);
   const rrPart = clamp(rrRef / 3 * 100, 0, 100);
   const alignPart = item.alignment_score;
   const entryPart = clamp(100 - 40 * clamp(Math.max(0, item.from_entry_atr ?? 0) / RANK_MAX_CHASE_ATR, 0, 1) - (item.stop_atr > 3 ? 25 : 0) - (item.stop_atr < 1 ? 15 : 0), 0, 100);
@@ -1469,12 +1475,13 @@ function rankRulesScore(item) {
   let score = 0.35 * evPart + 0.2 * rrPart + 0.15 * alignPart + 0.15 * entryPart + 0.1 * liquidityPart + 0.05 * freshPart;
   if (item.evidence.experimental) score -= 12;
   if (item.evidence.n < RANK_MIN_PROVEN_TRADES) score -= 10;
-  if (ev <= 0) score = Math.min(score, 40);
+  if (known && ev <= 0) score = Math.min(score, 40);
   return round(clamp(score, 0, 100), 1);
 }
 
 function rankConfidence(item) {
   const e = item.evidence;
+  if (e.ev_pct === null) return "Low";
   if (e.ev_pct > 0.5 && e.n >= 500 && item.alignment_score >= 70) return "High";
   if (e.ev_pct > 0) return "Med";
   return "Low";
@@ -1482,7 +1489,7 @@ function rankConfidence(item) {
 
 function rankRulesReason(item) {
   const e = item.evidence, signed = value => `${value >= 0 ? "+" : ""}${value}`;
-  const parts = [`${e.label}: backtest ${signed(e.ev_pct)}% per trade, ${e.win_rate_pct}% wins (${e.n.toLocaleString("en-US")} trades)`];
+  const parts = [e.ev_pct === null ? `${e.label}: not backtested in this market` : `${e.label}: backtest ${signed(e.ev_pct)}% per trade, ${e.win_rate_pct}% wins (${e.n.toLocaleString("en-US")} trades)`];
   if (item.rr_t1 !== null) parts.push(`R:R ${item.rr_t1} to target 1`);
   else parts.push("exits on the daily trend line");
   if (item.from_entry_atr !== null) parts.push(`${item.from_entry_atr} ATR from the entry`);
@@ -1490,19 +1497,23 @@ function rankRulesReason(item) {
   return parts.join(" · ");
 }
 
-function buildRanking({ candidates, dipScan, patternScan, snapshots, trend }) {
+function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, marketId = "US" }) {
   const marketState = trend?.state || "UNKNOWN";
   const agrees = direction => marketState === "UP" ? (direction === "LONG" ? 100 : 25) : marketState === "DOWN" ? (direction === "SHORT" ? 100 : 25) : 55;
   const raw = [];
   for (const c of candidates || []) {
     const entry = numeric(c.signal_entry_price), atr = numeric(c.daily_atr) || numeric(c.signal_atr);
     if (!(entry > 0) || !["LONG", "SHORT"].includes(c.direction)) continue;
-    const levels = pickLevels(c.direction, entry, numeric(c.signal_atr), "US", numeric(c.daily_atr), c.daily_supertrend_value);
+    // US stocks exit on the daily Supertrend line with no target (backtested). India and forex have no such test and keep the scanner's own
+    // ATR stop, two targets and ten-day limit.
+    const us = marketId === "US";
+    const levels = pickLevels(c.direction, entry, numeric(c.signal_atr), marketId, numeric(c.daily_atr), c.daily_supertrend_value);
     raw.push({
-      strategy: "SUPERTREND", evidence_key: "SUPERTREND", symbol: c.symbol, company: c.company, sector: c.sector, direction: c.direction, price: c.price,
-      entry: round(entry, 4), stop: round(levels.stop, 4), target_1: null, target_2: null, atr, atr_pct: atr > 0 ? round(atr / entry * 100, 2) : null,
+      strategy: "SUPERTREND", evidence_key: us ? "SUPERTREND" : marketId === "FX" ? "SUPERTREND_FX" : "SUPERTREND_IN", symbol: c.symbol, company: c.company, sector: c.sector, direction: c.direction, price: c.price,
+      entry: round(entry, 4), stop: round(levels.stop, 4), target_1: us ? null : round(levels.target1, 6), target_2: us ? null : round(levels.target2, 6), atr, atr_pct: atr > 0 ? round(atr / entry * 100, 2) : null,
       volume_ratio: null, age_days: rankDaysOld(c.signal_confirmed_at), scanner_score: c.score, tag: "Supertrend", detail: c.label,
-      exit_rule: "Leave when a day closes " + (c.direction === "SHORT" ? "over" : "under") + " the daily Supertrend line, at the next open. No fixed target and no time limit.",
+      exit_rule: us ? "Leave when a day closes " + (c.direction === "SHORT" ? "over" : "under") + " the daily Supertrend line, at the next open. No fixed target and no time limit."
+        : "Leave at the stop, at target 1 or 2, or at the close of day 10, whichever comes first.",
       alignment_score: Math.round((agrees(c.direction) + (c.daily_aligned && c.daily_adx >= 20 ? 100 : 40)) / 2),
       alignment_note: `Daily Supertrend ${c.daily_supertrend_direction}, daily ADX ${c.daily_adx}${c.daily_adx_rising ? " and rising" : ""}; market ${marketState.toLowerCase()}.`,
       currency_symbol: c.currency_symbol, price_decimals: c.price_decimals,
@@ -1562,14 +1573,21 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend }) {
     if (index < 12) item.bars = snapshots.get(item.symbol)?.chart_daily || [];
     delete item.evidence_key;
   });
-  const positive = kept.filter(item => item.evidence.ev_pct > 0);
+  const positive = kept.filter(item => item.evidence.ev_pct > 0), unknown = kept.filter(item => item.evidence.ev_pct === null);
+  const headline = positive.length ? `${positive.length} idea${positive.length === 1 ? "" : "s"} with a positive backtest edge today`
+    : unknown.length ? `${unknown.length} Supertrend idea${unknown.length === 1 ? "" : "s"}; this market has no backtest, so none can be called proven`
+    : (kept.length ? "Nothing here has a positive backtest edge today" : "No scanner ideas today");
   return {
     available: true, source: "rules", model: null,
-    headline: positive.length ? `${positive.length} idea${positive.length === 1 ? "" : "s"} with a positive backtest edge today` : (kept.length ? "Nothing here has a positive backtest edge today" : "No scanner ideas today"),
-    nothing_compelling: !positive.length,
+    headline,
+    nothing_compelling: !positive.length && !unknown.length,
     market_state: marketState,
     items: kept, rejected: rejected.slice(0, 40),
-    data_gaps: ["No earnings calendar or news feed is connected, so earnings or events inside the holding window are not checked.", "Dollar volume is not in the data feed; liquidity is judged from the volume ratio only.", "Backtest figures are per strategy, not per stock, and most were tested on the S&P 500 in a mostly rising market."],
+    data_gaps: [
+      "No earnings calendar or news feed is connected, so earnings or events inside the holding window are not checked.",
+      marketId === "FX" ? "Forex has no volume data, so liquidity is not assessed." : "Dollar volume is not in the data feed; liquidity is judged from the volume ratio only.",
+      marketId === "US" ? "Backtest figures are per strategy, not per stock, and most were tested on the S&P 500 in a mostly rising market." : "Supertrend has not been backtested in this market, so expected value is unknown and scores rest on reward to risk, alignment and entry quality. The dip and pattern scanners are US-only.",
+    ],
     ordering_notes: null, deep_dives: [],
     method: "Rules: expected value from each scanner's backtest 35%, reward to risk 20%, trend and market alignment 15%, entry quality 15%, liquidity 10%, freshness 5%. Experimental and unproven scanners are penalised, negative-edge scanners are capped, and a third setup in the same sector and direction loses ground. Hard filters drop setups with a stop already hit, a stop wider than 12%, a chase of more than 1.5 ATR, or a stale signal.",
   };
@@ -1620,11 +1638,15 @@ function rankModelInput(ranking, market) {
     rr_to_target_1: item.rr_t1, rr_to_target_2: item.rr_t2, from_entry_atr: item.from_entry_atr, age_days: item.age_days, atr_pct: item.atr_pct, volume_ratio: item.volume_ratio,
     alignment: item.alignment_note, scanner_rank_within_its_list: item.scanner_rank_in_list, scanner_score: item.scanner_score, rules_score: item.rules_score, rules_rank: item.rank,
     same_sector_crowded: item.crowded, evidence: Object.keys(RANK_EVIDENCE).find(key => RANK_EVIDENCE[key] === item.evidence) });
+  const setups = ranking.items.map(slim);
+  const used = new Set(setups.map(setup => setup.evidence));
   return {
     as_of: new Date().toISOString().slice(0, 10), market: market || "US", market_trend: ranking.market_state,
-    strategy_evidence: RANK_EVIDENCE,
+    market_note: market === "FX" ? "Forex pairs: no volume data, no backtest for Supertrend here, ideas exit at the stop, a target or day 10. Where evidence is unknown, say so and keep confidence Low; do not borrow the US figures."
+      : market === "IN" ? "Sensex 30 (BSE) stocks in rupees: no backtest for Supertrend here, ideas exit at the stop, a target or day 10. Where evidence is unknown, say so and keep confidence Low; do not borrow the US figures." : undefined,
+    strategy_evidence: Object.fromEntries(Object.entries(RANK_EVIDENCE).filter(([key]) => used.has(key))),
     hard_filters_applied_by_code: { stop_wider_than_pct: RANK_MAX_STOP_PCT, chase_beyond_atr: RANK_MAX_CHASE_ATR, stale_after_days: RANK_STALE_DAYS, stop_already_hit: true },
-    setups: ranking.items.map(slim),
+    setups,
     rejected_by_code: ranking.rejected.map(({ id, reason }) => ({ id, reason })),
   };
 }
@@ -1715,11 +1737,12 @@ function validateAiRanking(parsed, validIds) {
   };
 }
 
-const RANK_ROW = { id: "RANK:US" };
-async function readAiRanking(env) {
-  if (!env.DB) return scanMemory.get(RANK_ROW.id) || null;
+// One stored AI ranking per market, in the same table as the scans (RANK:US, RANK:IN, RANK:FX).
+const rankRowId = marketId => `RANK:${marketId || "US"}`;
+async function readAiRanking(env, marketId = "US") {
+  if (!env.DB) return scanMemory.get(rankRowId(marketId)) || null;
   try {
-    const row = await env.DB.prepare("SELECT payload, generated_at, refreshing_until FROM scan_cache WHERE market = ? LIMIT 1").bind(RANK_ROW.id).first();
+    const row = await env.DB.prepare("SELECT payload, generated_at, refreshing_until FROM scan_cache WHERE market = ? LIMIT 1").bind(rankRowId(marketId)).first();
     if (row?.payload) return { ...JSON.parse(row.payload), generated_at: row.generated_at, refreshing_until: row.refreshing_until };
   } catch { /* table or row missing */ }
   return null;
@@ -1730,15 +1753,16 @@ async function ensureAiRanking(env, payload, ctx) {
   const ranking = payload?.ranking;
   if (!(env.AI || env.ANTHROPIC_API_KEY) || !env.DB || !ranking?.items?.length) return;
   const hash = rankInputHash(ranking.items);
-  const stored = await readAiRanking(env);
+  const rowId = rankRowId(payload.market);
+  const stored = await readAiRanking(env, payload.market);
   const age = stored ? (Date.now() - Date.parse(stored.generated_at)) / 1000 : Infinity;
   if (stored && stored.input_hash === hash && age < 3 * 3600) return;
   if (age < AI_RANKING_MIN_GAP_SECONDS) return;
   try {
-    await env.DB.prepare("INSERT OR IGNORE INTO scan_cache (market, payload, generated_at, refreshing_until) VALUES (?, NULL, ?, NULL)").bind(RANK_ROW.id, new Date(0).toISOString()).run();
+    await env.DB.prepare("INSERT OR IGNORE INTO scan_cache (market, payload, generated_at, refreshing_until) VALUES (?, NULL, ?, NULL)").bind(rowId, new Date(0).toISOString()).run();
     const now = new Date();
     const claimed = await env.DB.prepare("UPDATE scan_cache SET refreshing_until = ? WHERE market = ? AND (refreshing_until IS NULL OR refreshing_until <= ?)")
-      .bind(new Date(now.getTime() + 6 * 60 * 1000).toISOString(), RANK_ROW.id, now.toISOString()).run();
+      .bind(new Date(now.getTime() + 6 * 60 * 1000).toISOString(), rowId, now.toISOString()).run();
     if (!(Number(claimed?.meta?.changes ?? 0) > 0)) return;
   } catch { return; }
   const work = (async () => {
@@ -1751,7 +1775,7 @@ async function ensureAiRanking(env, payload, ctx) {
       if (!record.result) record.error = "The model's answer had no usable ranking";
     } catch (error) { record.error = cleanError(error); console.error(`AI ranking failed: ${record.error}`); }
     try {
-      await env.DB.prepare("UPDATE scan_cache SET payload = ?, generated_at = ?, refreshing_until = NULL WHERE market = ?").bind(JSON.stringify(record), new Date().toISOString(), RANK_ROW.id).run();
+      await env.DB.prepare("UPDATE scan_cache SET payload = ?, generated_at = ?, refreshing_until = NULL WHERE market = ?").bind(JSON.stringify(record), new Date().toISOString(), rowId).run();
     } catch { /* the rules ranking still serves */ }
   })();
   if (ctx?.waitUntil) ctx.waitUntil(work); else await work;
@@ -1803,7 +1827,7 @@ async function discover(market = MARKETS.US, env = {}, previous = null) {
   const dipScan = market.id === "US" ? buildDipScan(snapshots, indexSnapshots.get("SPY"), metadata) : null;
   const patternScan = market.id === "US" ? buildPatternScan(snapshots, metadata) : null;
   const candidates = allCandidates.filter(candidate => candidate.entry_eligible);
-  const ranking = market.id === "US" ? buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0] }) : null;
+  const ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id });
   const lateCandidates = allCandidates.filter(candidate => !candidate.entry_eligible);
   // When each fresh setup was first seen. There is no closing time: a setup leaves the list when its price runs away or the trend fails, not when time runs out.
   const nowIso = new Date().toISOString();
@@ -2466,8 +2490,8 @@ async function refreshScan(env, market, ctx) {
 // The AI ranking runs in its own scheduled job (the hourly forex trigger), never inside a scan or a visitor's request: a model call can take
 // a minute or two, and work started by a request is cut off shortly after the response. It reads the stored US scan and does nothing when
 // the ideas have not changed since the last ranking.
-async function rankStoredScan(env) {
-  const stored = await readStoredScan(env, MARKETS.US);
+async function rankStoredScan(env, market) {
+  const stored = await readStoredScan(env, market);
   if (stored?.payload?.ranking?.items?.length) await ensureAiRanking(env, stored.payload, null);
 }
 
@@ -2484,7 +2508,7 @@ async function refreshScanIfDue(env, market, ctx, { wait = false } = {}) {
   const stored = await readStoredScan(env, market);
   const age = stored ? (Date.now() - Date.parse(stored.generatedAt)) / 1000 : Infinity;
   // A stored US scan from before the ranking existed is rebuilt once (and at most every 5 minutes), even while the market is closed.
-  const outdated = market.id === "US" && stored && !stored.payload?.ranking && age > 5 * 60;
+  const outdated = stored && !stored.payload?.ranking && age > 5 * 60;
   if (!outdated && age < refreshInterval(market)) return stored;
   if (!outdated && !marketIsOpen(market) && stored && age < AUTO_REFRESH_CLOSED_SECONDS) return stored;
   if (await claimScanRefresh(env, market)) {
@@ -2501,9 +2525,9 @@ async function autoScanResponse(env, market, ctx, { wait = false } = {}) {
     return { market: market.id, market_label: market.label, auto_refresh: market.auto, warming_up: true, candidates: [], long_candidates: [], short_candidates: [], late_candidates: [], direction_counts: { LONG: 0, SHORT: 0 }, errors: [], successful: 0, universe_size: market.universe?.length ?? 0, fresh_entry_count: 0, method: "", next_step: "", message: "The first scan for this market is being prepared automatically. It will appear shortly.", read_only: true, order_submission_supported: false };
   }
   let payload = stored.payload;
-  if (market.id === "US" && payload?.ranking?.items?.length) {
-    // Reading only: the AI ranking is produced after a scheduled scan, never by a visitor's request.
-    try { payload = { ...payload, ranking: mergeAiRanking(payload.ranking, await readAiRanking(env)) }; } catch { /* the rules ranking still serves */ }
+  if (payload?.ranking?.items?.length) {
+    // Reading only: the AI ranking is produced by its own scheduled job, never by a visitor's request.
+    try { payload = { ...payload, ranking: mergeAiRanking(payload.ranking, await readAiRanking(env, market.id)) }; } catch { /* the rules ranking still serves */ }
   }
   return withRefreshInfo(payload, stored.generatedAt, market);
 }
@@ -3422,7 +3446,10 @@ export default {
       await refreshScanIfDue(env, market, ctx).catch(() => {});
       await refreshHoldingsIfDue(env, market).catch(() => {});
       await monitorHoldings(env, market).catch(() => {});
-      if (market.id === "FX") await rankStoredScan(env).catch(error => console.error(`AI ranking job failed: ${cleanError(error)}`));
+      // The hourly jobs rank their own market; the forex job also ranks the US scan, which has no hourly job of its own (it runs on weekdays only).
+      for (const target of market.id === "FX" ? [MARKETS.FX, MARKETS.US] : market.id === "IN" ? [MARKETS.IN] : []) {
+        await rankStoredScan(env, target).catch(error => console.error(`AI ranking job failed for ${target.id}: ${cleanError(error)}`));
+      }
       // Once an hour, grade scanner picks that hit a level or whose window has closed.
       if (market.id === "US" && env.DB && new Date(event.scheduledTime).getUTCMinutes() < 5) {
         await settlePendingRecommendations(env.DB, SCANNER_USER_ID, env).catch(() => {});
