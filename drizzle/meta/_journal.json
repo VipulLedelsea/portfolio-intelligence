@@ -64,6 +64,13 @@
       "when": 1794004871735,
       "tag": "0008_position_monitor",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1794157452314,
+      "tag": "0009_fantastic_baron_strucker",
+      "breakpoints": true
     }
   ]
 }

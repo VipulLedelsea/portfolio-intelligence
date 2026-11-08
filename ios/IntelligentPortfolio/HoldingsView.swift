@@ -156,6 +156,14 @@ struct HoldingsView: View {
             }
             .font(.caption)
             .foregroundStyle(AppTheme.muted)
+            if let alerts = data.alerts, !alerts.items.isEmpty {
+                AlertsCard(alerts: alerts)
+                    .task(id: alerts.unseen) {
+                        guard alerts.unseen > 0 else { return }
+                        try? await Task.sleep(for: .seconds(4))
+                        await model.markAlertsSeen()
+                    }
+            }
             ForEach(data.totals) { total in
                 HeroCard(total: total, multiple: data.totals.count > 1)
             }
@@ -193,6 +201,29 @@ struct HoldingsView: View {
 
 /// The four Holdings tabs as a heading bar: the current tab is bold with an amber underline that slides to the next
 /// one, the others are muted. On narrow screens or with large text it scrolls sideways instead of truncating.
+/// What happened to your holdings while the app was closed. New items have a dot; they are marked seen a few seconds after they appear.
+private struct AlertsCard: View {
+    let alerts: HoldingAlerts
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionLabel(text: alerts.unseen > 0 ? "Alerts · \(alerts.unseen) new" : "Recent alerts")
+            ForEach(alerts.items.prefix(6)) { item in
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        if item.seenAt == nil { Circle().fill(item.severity == "high" ? Color.red : Color.orange).frame(width: 8, height: 8) }
+                        Text(item.title).font(.subheadline.weight(.semibold))
+                    }
+                    Text(item.detail).font(.caption).foregroundStyle(AppTheme.muted)
+                }
+                .opacity(item.seenAt == nil ? 1 : 0.7)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
+    }
+}
+
 private struct SectionTabs: View {
     @Binding var selection: HoldingsSection
     var cases: [HoldingsSection] = HoldingsSection.allCases
