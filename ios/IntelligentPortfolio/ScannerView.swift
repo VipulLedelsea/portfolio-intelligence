@@ -237,6 +237,15 @@ struct ScannerView: View {
                             .padding(.top, 18)
                         DipScanSection(dip: dip)
                     }
+
+                    if let pattern = discovery.patternScan, pattern.available {
+                        let count = (pattern.breakoutCount ?? 0) + (pattern.breakdownCount ?? 0)
+                        ScannerBoxHeader(title: "Pattern scan",
+                                         chip: count > 0 ? "Experimental · \(count)" : "Experimental",
+                                         tint: AppTheme.amber)
+                            .padding(.top, 18)
+                        PatternScanSection(pattern: pattern)
+                    }
                 } else if model.isScanning {
                     ProgressView("Loading the \(model.market.scanTitle) scan…")
                         .tint(AppTheme.amber)
@@ -582,6 +591,155 @@ private struct DipScanSection: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .sheet(item: $selected) { pick in DipDetailSheet(pick: pick) }
+    }
+}
+
+/// The pattern scan: candlestick patterns on a breakout (long) or breakdown (short) day, with entry, stop, targets and every exit rule.
+private struct PatternScanSection: View {
+    let pattern: PatternScan
+    @State private var selected: PatternPick?
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "flask.fill").foregroundStyle(AppTheme.amber)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Experimental, not a recommendation").font(.headline)
+                    Text(pattern.notice ?? "Backtests found no reliable edge for these patterns. Picks are logged so live results can confirm or reject them.")
+                        .font(.footnote).foregroundStyle(AppTheme.muted)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .panel()
+            list(title: "Breakouts · long", picks: pattern.breakouts ?? [], tint: AppTheme.mint)
+            list(title: "Breakdowns · short", picks: pattern.breakdowns ?? [], tint: AppTheme.red)
+            if (pattern.breakouts ?? []).isEmpty && (pattern.breakdowns ?? []).isEmpty {
+                Text("No candlestick pattern broke out on volume today.")
+                    .font(.footnote).foregroundStyle(AppTheme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .sheet(item: $selected) { pick in PatternDetailSheet(pick: pick) }
+    }
+
+    @ViewBuilder
+    private func list(title: String, picks: [PatternPick], tint: Color) -> some View {
+        if !picks.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionLabel(text: "\(title) · \(picks.count)")
+                ListFrame {
+                    ForEach(Array(picks.enumerated()), id: \.element.id) { index, pick in
+                        if index > 0 { RowDivider() }
+                        Button { selected = pick } label: { PatternRow(pick: pick, tint: tint) }.buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct PatternRow: View {
+    let pick: PatternPick
+    let tint: Color
+    private func money(_ value: Double) -> String { PriceFormat.string(value, prefix: pick.currencySymbol, decimals: pick.priceDecimals) }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Monogram(symbol: pick.symbol, colour: tint)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(pick.symbol).font(.headline)
+                Text("\(pick.company) · \(Int(pick.score))/100").font(.caption).foregroundStyle(AppTheme.muted).lineLimit(1)
+                Text(pick.patterns.joined(separator: " + ")).font(.caption2.weight(.semibold)).foregroundStyle(tint)
+                Text(String(format: "Volume %.1f× average · %.1f%% from 200-day", pick.volumeRatio, abs(pick.aboveSma200Pct)))
+                    .font(.caption2).foregroundStyle(AppTheme.muted)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(money(pick.price)).font(.headline)
+                Text("Stop \(money(pick.stopPrice))").font(.caption).foregroundStyle(AppTheme.red)
+                Text("Target \(money(pick.target1))").font(.caption).foregroundStyle(AppTheme.mint)
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A pattern pick's daily chart and every exit: stop, two targets, the failed-breakout close, and the day-10 limit.
+private struct PatternDetailSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let pick: PatternPick
+    private var long: Bool { pick.direction == "LONG" }
+    private func money(_ value: Double) -> String { PriceFormat.string(value, prefix: pick.currencySymbol, decimals: pick.priceDecimals) }
+    private var candles: [Candle] {
+        (pick.bars ?? []).map { Candle(date: $0.d, open: $0.o, high: $0.h, low: $0.l, close: $0.c, supertrend: nil, supertrendDirection: nil, barStatus: nil) }
+    }
+    private var lines: [ReferenceLine] {
+        [ReferenceLine(key: "breakout", label: long ? "Breakout level (20-day high)" : "Breakdown level (20-day low)", value: pick.breakoutLevel)] + (pick.referenceLines ?? [])
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("\(pick.company) · \(pick.label)").font(.subheadline).foregroundStyle(AppTheme.muted)
+                    if candles.count > 1 {
+                        CandlestickChart(series: candles,
+                                         levels: ScenarioLevels(reference: pick.signalClose, current: pick.price, risk: pick.stopPrice, target1: pick.target1, target2: pick.target2),
+                                         referenceLines: lines)
+                            .aspectRatio(1.5, contentMode: .fit)
+                            .frame(minHeight: 240, maxHeight: 440)
+                            .panel()
+                        Text("Daily candles, last 60 sessions. Amber is the signal close, red the stop, green the targets, blue dotted lines the breakout level and chart reference.")
+                            .font(.caption).foregroundStyle(AppTheme.muted)
+                    }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
+                        tile(long ? "Buy at" : "Short at", "Next open · signal \(money(pick.signalClose))")
+                        tile("Now", money(pick.price))
+                        tile("Stop (\(String(format: "%.1f", pick.riskAtr)) ATR)", money(pick.stopPrice))
+                        tile("Target 1 (1R)", money(pick.target1))
+                        tile("Target 2 (2R)", money(pick.target2))
+                        tile("Fails if a day closes \(long ? "under" : "over")", money(pick.failureLevel))
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        SectionLabel(text: "Every exit")
+                        exit("Stop", "Leave if price touches \(money(pick.stopPrice)), just \(long ? "under" : "over") the pattern's \(long ? "low" : "high") of \(money(pick.patternExtreme)).")
+                        exit("Target 1", "Take profit at \(money(pick.target1)), the same distance as the stop (1R). This is where the track record grades a win.")
+                        exit("Target 2", "Optional second zone at \(money(pick.target2)) (2R).")
+                        exit("Failed \(long ? "breakout" : "breakdown")", "If a day closes back \(long ? "under" : "over") \(money(pick.failureLevel)), the idea has failed. Leave at the next open.")
+                        exit("Time limit", "Close anything still open at the close of day \(pick.horizonTradingDays).")
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .panel()
+                    Text("Experimental. Backtests did not show a reliable edge for these patterns, and the stop and targets are research levels, not orders.")
+                        .font(.caption2).foregroundStyle(AppTheme.muted)
+                    ReferenceLinesList(lines: pick.referenceLines ?? [], currency: pick.currencySymbol, decimals: pick.priceDecimals)
+                }
+                .padding(16)
+            }
+            .background(AppTheme.background)
+            .navigationTitle(pick.symbol)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+        }
+    }
+
+    private func exit(_ title: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.subheadline.weight(.semibold))
+            Text(text).font(.footnote).foregroundStyle(AppTheme.muted)
+        }
+    }
+
+    private func tile(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading) {
+            Text(title.uppercased()).font(.caption2).foregroundStyle(AppTheme.muted)
+            Text(value).font(.headline.monospaced()).minimumScaleFactor(0.7).lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
     }
 }
 

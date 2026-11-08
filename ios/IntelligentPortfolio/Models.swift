@@ -90,6 +90,7 @@ struct DiscoveryResponse: Decodable, Sendable {
     let allMarketTrends: [MarketTrend]?
     let recentSetups: [RecentSetup]?
     let dipScan: DipScan?
+    let patternScan: PatternScan?
     let autoRefresh: Bool?
     let refreshedAt: String?
     let warmingUp: Bool?
@@ -103,6 +104,49 @@ struct DiscoveryResponse: Decodable, Sendable {
     let freshEntryCount: Int
     let method: String
     let nextStep: String
+}
+
+/// The third scanner mode (experimental): candlestick patterns on a breakout or breakdown day.
+struct PatternScan: Decodable, Sendable {
+    let available: Bool
+    let reason: String?
+    let experimental: Bool?
+    let scanned: Int?
+    let breakoutCount: Int?
+    let breakdownCount: Int?
+    let breakouts: [PatternPick]?
+    let breakdowns: [PatternPick]?
+    let notice: String?
+    let method: String?
+}
+
+struct PatternPick: Decodable, Identifiable, Hashable, Sendable {
+    var id: String { "\(symbol)-\(direction)" }
+    let symbol: String
+    let company: String
+    let sector: String
+    let currencySymbol: String?
+    let priceDecimals: Int?
+    let direction: String
+    let patterns: [String]
+    let label: String
+    let price: Double
+    let signalClose: Double
+    let signalAsOf: String
+    let volumeRatio: Double
+    let aboveSma200Pct: Double
+    let breakoutLevel: Double
+    let patternExtreme: Double
+    let score: Double
+    let atr14Pct: Double
+    let riskAtr: Double
+    let stopPrice: Double
+    let target1: Double
+    let target2: Double
+    let failureLevel: Double
+    let horizonTradingDays: Int
+    let referenceLines: [ReferenceLine]?
+    let bars: [DailyBar]?
 }
 
 /// The second scanner mode: dips inside an uptrend, shown only while the market is under stress.

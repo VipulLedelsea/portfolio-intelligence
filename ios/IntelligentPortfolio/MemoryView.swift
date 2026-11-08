@@ -100,7 +100,7 @@ struct TrackRecordPanel: View {
     /// The summary for the chosen scanner; falls back to the Supertrend summary from older servers.
     private var chosen: TrackRecordStrategy? { record?.strategies?.first { $0.id == strategy } }
     private var shownSummary: TrackRecordSummary? { chosen?.summary ?? record?.summary }
-    private func shortName(_ id: String) -> String { id == "SUPERTREND" ? "Supertrend" : id == "DIP" ? "Dip scan" : "Dip, gate closed" }
+    private func shortName(_ id: String) -> String { id == "SUPERTREND" ? "Supertrend" : id == "DIP" ? "Dip scan" : id == "PATTERN" ? "Pattern" : "Dip, gate closed" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {

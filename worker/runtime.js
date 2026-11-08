@@ -736,6 +736,47 @@ function dipInputs(closes, daily) {
   };
 }
 
+// Candlestick patterns at a breakout or breakdown, from completed daily bars. A pattern only counts when it forms on the day the close
+// breaks the prior 20-day high (or low) on volume at least 1.4x the 50-day average, on the right side of the 200-day average. This is the
+// "BRK" setting of research/pattern-backtest/backtest9.mjs. Backtests found no edge for the long side and only a weak, unstable one for
+// the short side, so the scan is experimental and every pick is logged under its own strategy to be judged on live results.
+const PATTERN_VOLUME_RATIO = 1.4, PATTERN_STOP_PAD_ATR = 0.25, PATTERN_STOP_MIN_ATR = 1, PATTERN_STOP_MAX_ATR = 3;
+const PATTERN_SPANS = { "Bullish engulfing": 2, "Hammer": 1, "Morning star": 3, "Three white soldiers": 3, "Bearish engulfing": 2, "Shooting star": 1, "Evening star": 3, "Three black crows": 3 };
+function candlePatternInputs(daily) {
+  if (daily.length < 201) return null;
+  const o = daily.map(bar => bar.open), h = daily.map(bar => bar.high), l = daily.map(bar => bar.low), c = daily.map(bar => bar.close), v = daily.map(bar => bar.volume);
+  const t = daily.length - 1, close = c[t];
+  const ranges = h.map((high, i) => i === 0 ? high - l[i] : Math.max(high - l[i], Math.abs(high - c[i - 1]), Math.abs(l[i] - c[i - 1])));
+  const atr = mean(ranges.slice(-14));
+  const volumeAverage = mean(v.slice(-51, -1));
+  if (!(atr > 0) || !(volumeAverage > 0)) return null;
+  const volumeRatio = v[t] / volumeAverage;
+  const high20 = Math.max(...h.slice(-21, -1)), low20 = Math.min(...l.slice(-21, -1)), sma200 = mean(c.slice(-200));
+  const side = close > high20 && close > sma200 ? "LONG" : close < low20 && close < sma200 ? "SHORT" : null;
+  if (!side || volumeRatio < PATTERN_VOLUME_RATIO) return null;
+  const body = i => Math.abs(c[i] - o[i]), green = i => c[i] > o[i], red = i => c[i] < o[i];
+  const upper = i => h[i] - Math.max(o[i], c[i]), lower = i => Math.min(o[i], c[i]) - l[i];
+  const found = [];
+  if (side === "LONG") {
+    if (red(t - 1) && green(t) && o[t] <= c[t - 1] && c[t] >= o[t - 1] && body(t) > body(t - 1) && body(t) >= 0.5 * atr) found.push("Bullish engulfing");
+    if (h[t] - l[t] >= 0.8 * atr && body(t) > 0 && lower(t) >= 2 * body(t) && upper(t) <= 0.3 * body(t) + 0.05 * (h[t] - l[t])) found.push("Hammer");
+    if (red(t - 2) && body(t - 2) >= 0.6 * atr && body(t - 1) <= 0.3 * body(t - 2) && Math.max(o[t - 1], c[t - 1]) < c[t - 2] && green(t) && c[t] > (o[t - 2] + c[t - 2]) / 2) found.push("Morning star");
+    if ([t - 2, t - 1, t].every(i => green(i) && body(i) >= 0.5 * atr && upper(i) <= 0.3 * body(i)) && c[t - 1] > c[t - 2] && c[t] > c[t - 1] && o[t - 1] > o[t - 2] && o[t - 1] < c[t - 2] && o[t] > o[t - 1] && o[t] < c[t - 1]) found.push("Three white soldiers");
+  } else {
+    if (green(t - 1) && red(t) && o[t] >= c[t - 1] && c[t] <= o[t - 1] && body(t) > body(t - 1) && body(t) >= 0.5 * atr) found.push("Bearish engulfing");
+    if (h[t] - l[t] >= 0.8 * atr && body(t) > 0 && upper(t) >= 2 * body(t) && lower(t) <= 0.3 * body(t) + 0.05 * (h[t] - l[t])) found.push("Shooting star");
+    if (green(t - 2) && body(t - 2) >= 0.6 * atr && body(t - 1) <= 0.3 * body(t - 2) && Math.min(o[t - 1], c[t - 1]) > c[t - 2] && red(t) && c[t] < (o[t - 2] + c[t - 2]) / 2) found.push("Evening star");
+    if ([t - 2, t - 1, t].every(i => red(i) && body(i) >= 0.5 * atr && lower(i) <= 0.3 * body(i)) && c[t - 1] < c[t - 2] && c[t] < c[t - 1] && o[t - 1] < o[t - 2] && o[t - 1] > c[t - 2] && o[t] < o[t - 1] && o[t] > c[t - 1]) found.push("Three black crows");
+  }
+  if (!found.length) return null;
+  const span = Math.max(...found.map(name => PATTERN_SPANS[name]));
+  return {
+    direction: side, patterns: found, close: round(close, 4), as_of: daily.at(-1).date, atr: round(atr, 4), volume_ratio: round(volumeRatio, 2),
+    breakout_level: round(side === "LONG" ? high20 : low20, 4), above_sma200_pct: round((close / sma200 - 1) * 100, 2),
+    pattern_extreme: round(side === "LONG" ? Math.min(...l.slice(-span)) : Math.max(...h.slice(-span)), 4),
+  };
+}
+
 // Chart reference lines, shown beside the stop and targets so a position can be read against the chart. They do not set any
 // level: backtests (research/pattern-backtest, ml_chart.py) found swing-low stops and prior-high targets did worse than ATR levels.
 function chartRefs(closes, daily) {
@@ -790,6 +831,7 @@ function snapshotFromPayload(symbol, dailyItem, signalItem, quote, market = MARK
     atr_14: round(atr14, 4),
     atr_14_pct: round(atr14 / price * 100, 3),
     dip: dipInputs(closes, daily),
+    pattern: candlePatternInputs(daily),
     recent_daily: daily.slice(-12).map(bar => ({ d: String(bar.date).slice(0, 10), h: bar.high, l: bar.low, c: bar.close })),
     chart_refs: chartRefs(closes, daily),
     chart_daily: daily.slice(-60).map(bar => ({ d: String(bar.date).slice(0, 10), o: bar.open, h: bar.high, l: bar.low, c: bar.close })),
@@ -1319,6 +1361,49 @@ function buildDipScan(snapshots, spy, metadata) {
   };
 }
 
+// ---- Pattern scan: a third scanner mode (experimental) ----
+// Candlestick patterns on a breakout (long) or breakdown (short) day. Levels: the stop sits just past the pattern's own extreme, kept between
+// 1 and 3 daily ATRs from the signal close; targets 1 and 2 are 1R and 2R; the idea is also dead when a day closes back through the breakout
+// level; and the time limit is the close of day 10. Backtests (research/pattern-backtest/README.md, backtest9.mjs) found no edge on the long
+// side (-0.2% to -0.5% against breakouts without a pattern) and a weak short-side edge that was concentrated in the first half and still lost
+// money on absolute terms, so these are not recommendations. Each is logged under the PATTERN strategy to be judged on live results.
+function scorePattern(snapshot, metadata = {}) {
+  const p = snapshot.pattern;
+  if (!p) return null;
+  const long = p.direction === "LONG", atr = p.atr;
+  const raw = long ? p.close - p.pattern_extreme + PATTERN_STOP_PAD_ATR * atr : p.pattern_extreme + PATTERN_STOP_PAD_ATR * atr - p.close;
+  const risk = clamp(raw, PATTERN_STOP_MIN_ATR * atr, PATTERN_STOP_MAX_ATR * atr);
+  const step = long ? 1 : -1;
+  const score = round(clamp(45 + clamp((p.volume_ratio - PATTERN_VOLUME_RATIO) * 12, 0, 25) + (p.patterns.length - 1) * 10 + clamp(p.above_sma200_pct * (long ? 1 : -1), 0, 20) * 0.5, 0, 100), 1);
+  return {
+    symbol: snapshot.symbol, company: metadata.company || snapshot.symbol, sector: metadata.sector || "Unknown",
+    currency_symbol: snapshot.currency_symbol, price_decimals: snapshot.price_decimals ?? 2,
+    direction: p.direction, patterns: p.patterns, label: `${p.patterns.join(" + ")} on a ${long ? "breakout" : "breakdown"}`,
+    price: snapshot.price, signal_close: p.close, signal_as_of: p.as_of, volume_ratio: p.volume_ratio, above_sma200_pct: p.above_sma200_pct,
+    breakout_level: p.breakout_level, pattern_extreme: p.pattern_extreme, score,
+    atr_14: p.atr, atr_14_pct: round(p.atr / p.close * 100, 2), risk_atr: round(risk / atr, 2),
+    stop_price: round(Math.max(0.01, p.close - step * risk), 4),
+    target_1: round(Math.max(0.01, p.close + step * risk), 4), target_2: round(Math.max(0.01, p.close + step * 2 * risk), 4),
+    failure_level: p.breakout_level, horizon_trading_days: 10,
+    reference_lines: referenceLines(snapshot.chart_refs),
+    bars: snapshot.chart_daily || [],
+  };
+}
+
+function buildPatternScan(snapshots, metadata) {
+  const ready = [...snapshots.values()].filter(snapshot => snapshot.dip);
+  if (ready.length < 50) return { available: false, reason: "Not enough daily history was returned to check the 200-day average." };
+  const picks = ready.map(snapshot => scorePattern(snapshot, metadata.get(snapshot.symbol))).filter(Boolean)
+    .sort((a, b) => b.score - a.score || a.symbol.localeCompare(b.symbol));
+  const breakouts = picks.filter(pick => pick.direction === "LONG"), breakdowns = picks.filter(pick => pick.direction === "SHORT");
+  return {
+    available: true, experimental: true, scanned: ready.length, breakout_count: breakouts.length, breakdown_count: breakdowns.length,
+    breakouts: breakouts.slice(0, 15), breakdowns: breakdowns.slice(0, 15),
+    notice: "Experimental. In backtests on the S&P 500 these patterns did not beat a breakout without a pattern on the long side, and only weakly and unreliably on the short side. They are logged to the track record so live results can confirm or reject them. Research, not advice.",
+    method: "Pattern scan: the day's candles form a bullish pattern (engulfing, hammer, morning star, three white soldiers) while the close breaks the prior 20-day high on volume at least 1.4x the 50-day average and above the 200-day average, or the bearish mirror (engulfing, shooting star, evening star, three black crows) on a close under the prior 20-day low below the 200-day average. Entry is the next open. The stop sits just past the pattern's extreme (between 1 and 3 daily ATRs away), targets are 1R and 2R, the idea fails if a day closes back through the breakout level, and any trade still open is closed at the close of day 10.",
+  };
+}
+
 async function discover(market = MARKETS.US, env = {}, previous = null) {
   const records = market.universe || await loadUniverse();
   const metadata = new Map(records.map(record => [record.symbol, record]));
@@ -1333,6 +1418,7 @@ async function discover(market = MARKETS.US, env = {}, previous = null) {
   const trends = indexes.map((info, position) => marketTrend(info, indexSnapshots.get(info.symbol), snapshots, position === 0, market.id)).filter(Boolean);
   const allCandidates = [...snapshots.entries()].map(([symbol, snapshot]) => scoreCandidate(snapshot, metadata.get(symbol))).sort((a, b) => b.score - a.score || a.symbol.localeCompare(b.symbol));
   const dipScan = market.id === "US" ? buildDipScan(snapshots, indexSnapshots.get("SPY"), metadata) : null;
+  const patternScan = market.id === "US" ? buildPatternScan(snapshots, metadata) : null;
   const candidates = allCandidates.filter(candidate => candidate.entry_eligible);
   const lateCandidates = allCandidates.filter(candidate => !candidate.entry_eligible);
   // When each fresh setup was first seen. There is no closing time: a setup leaves the list when its price runs away or the trend fails, not when time runs out.
@@ -1364,6 +1450,7 @@ async function discover(market = MARKETS.US, env = {}, previous = null) {
     late_candidates: lateCandidates.slice(0, 20),
     recent_setups: recent,
     dip_scan: dipScan,
+    pattern_scan: patternScan,
     direction_counts: { LONG: longCandidates.length, SHORT: shortCandidates.length },
     fresh_entry_count: candidates.length,
     late_or_extended_count: lateCandidates.length,
@@ -1618,6 +1705,20 @@ async function recordScannerPicks(env, payload) {
       }
     }
   }
+  // Pattern scan picks (long breakouts and short breakdowns), logged under their own PATTERN strategy and graded on their own stop, first target or day 10.
+  const pattern = payload.pattern_scan;
+  if (pattern?.available) {
+    for (const pick of [...(pattern.breakouts || []), ...(pattern.breakdowns || [])]) {
+      if (!pick.symbol || !(pick.signal_close > 0) || !pick.signal_as_of || !["LONG", "SHORT"].includes(pick.direction)) continue;
+      statements.push(env.DB.prepare(`INSERT OR IGNORE INTO recommendations (id, user_id, symbol, action, direction, generated_at,
+        signal_confirmed_at, entry_price, current_price, stop_price, target_1, target_2, confidence, entry_status, daily_adx,
+        horizon_trading_days, status, strategy) VALUES (?, ?, ?, 'IDEA', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PATTERN_BREAKOUT', 0, 10, 'PENDING', 'PATTERN')`).bind(
+        crypto.randomUUID(), SCANNER_USER_ID, pick.symbol, pick.direction, payload.generated_at, pick.signal_as_of,
+        round(pick.signal_close, 4), round(numeric(pick.price), 4), pick.stop_price, pick.target_1, pick.target_2,
+        round(clamp(numeric(pick.score) / 100, 0, 1), 3),
+      ));
+    }
+  }
   if (statements.length) await env.DB.batch(statements);
   return statements.length;
 }
@@ -1657,6 +1758,7 @@ const TRACK_STRATEGIES = {
   SUPERTREND: "Supertrend scanner",
   DIP: "Dip scan (market gate open)",
   DIP_WAIT: "Dips while the market gate was closed (not recommended; logged to test the gate)",
+  PATTERN: "Pattern scan: candlestick breakouts and breakdowns (experimental; logged to test it)",
 };
 async function publicTrackRecord(db) {
   if (!db) return { available: false, reason: "Track record storage is not configured." };
@@ -1677,7 +1779,7 @@ async function publicTrackRecord(db) {
     horizon_trading_days: 10,
     summary: strategies[0].summary,
     strategies,
-    methodology: "Every fresh US entry a scanner surfaces is recorded once per ticker and signal close, at the price available when it first appeared, under the scanner that produced it. Supertrend picks are followed until a daily bar closes under the daily Supertrend line (over it for a short), and are graded at the next open; there is no target and no time limit beyond a 120-day safety limit. Dip picks exit at the first of their own stop, first target, or the close of the tenth trading day, and are graded as soon as a level is hit. Open picks, stopped picks and losers are all counted. Backtests are hypothetical; only these live results are a record."
+    methodology: "Every fresh US entry a scanner surfaces is recorded once per ticker and signal close, at the price available when it first appeared, under the scanner that produced it. Supertrend picks are followed until a daily bar closes under the daily Supertrend line (over it for a short), and are graded at the next open; there is no target and no time limit beyond a 120-day safety limit. Dip picks exit at the first of their own stop, first target, or the close of the tenth trading day, and are graded as soon as a level is hit. Pattern picks (candlestick breakouts and breakdowns) use the same rule as dips: their own stop, first target (1R), or the close of day 10. Open picks, stopped picks and losers are all counted. Backtests are hypothetical; only these live results are a record."
   };
 }
 
