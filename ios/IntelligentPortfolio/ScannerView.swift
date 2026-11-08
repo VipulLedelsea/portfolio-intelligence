@@ -741,6 +741,15 @@ private struct RankedDetailSheet: View {
     private var candles: [Candle] {
         (idea.bars ?? []).map { Candle(date: $0.d, open: $0.o, high: $0.h, low: $0.l, close: $0.c, supertrend: nil, supertrendDirection: nil, barStatus: nil) }
     }
+    private func filingText(_ f: FilingCheck) -> String? {
+        var parts: [String] = []
+        if let days = f.earningsInDays, let date = f.earningsEstimate, days <= 45 {
+            parts.append("Earnings expected about \(date) (an estimate from past SEC filings, not a calendar).")
+        }
+        if let cautions = f.cautions, !cautions.isEmpty { parts.append("Recent filing: " + cautions.joined(separator: "; ") + ".") }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
     private var evidenceText: String {
         let e = idea.evidence
         guard let ev = e.evPct, let wins = e.winRatePct, let n = e.n else { return "No backtest in this market. " + e.note }
@@ -780,6 +789,7 @@ private struct RankedDetailSheet: View {
                     if let bull = idea.bull { block("Bull case", bull) }
                     if let bear = idea.bear { block("Bear case", bear) }
                     if let invalid = idea.invalidation { block("What invalidates it", invalid) }
+                    if let filing = idea.filing, let text = filingText(filing) { block("SEC filings", text) }
                     if idea.crowded == true { block("Crowding", "Other ideas in the same sector and direction rank higher, so this is largely the same bet.") }
                     Text("Research, not advice. Levels are research scenarios, not orders.").font(.caption2).foregroundStyle(AppTheme.muted)
                 }

@@ -1410,6 +1410,112 @@ function buildPatternScan(snapshots, metadata) {
   };
 }
 
+// ---- SEC filing check (US stocks) ----
+// Free and keyless: SEC EDGAR lists every filing by company. It has no earnings calendar, but a company's earnings releases (8-K item 2.02)
+// are quarterly and seasonal, so the next one is estimated from the same quarter a year ago. It is an estimate, labelled as such. EDGAR also
+// shows serious events (non-reliance on financials, bankruptcy, delisting notice, late filings) which skip an idea outright.
+const EDGAR_STALE_MS = 20 * 3600 * 1000, EDGAR_MAX_FETCH = 40, EDGAR_EARNINGS_WINDOW_DAYS = 14, EDGAR_EARNINGS_SKIP_DAYS = 3;
+const EDGAR_SEVERE_ITEMS = { "4.02": "the company said past financial statements can no longer be relied on", "1.03": "bankruptcy or receivership", "3.01": "a stock-exchange delisting notice", "2.04": "a debt acceleration event" };
+const EDGAR_CAUTION_ITEMS = { "4.01": "an auditor change", "5.02": "an executive or director change", "2.05": "a restructuring" };
+
+function edgarHeaders(env) {
+  return { accept: "application/json", "user-agent": env?.SEC_CONTACT ? `IntelligentPortfolio/1.0 ${env.SEC_CONTACT}` : "IntelligentPortfolio/1.0 research tool" };
+}
+
+async function edgarCacheRead(env, id) {
+  if (!env?.DB) return scanMemory.get(id) || null;
+  try {
+    const row = await env.DB.prepare("SELECT payload FROM scan_cache WHERE market = ? LIMIT 1").bind(id).first();
+    return row?.payload ? JSON.parse(row.payload) : null;
+  } catch { return null; }
+}
+async function edgarCacheWrite(env, id, value) {
+  if (!env?.DB) { scanMemory.set(id, value); return; }
+  try {
+    await env.DB.prepare("INSERT OR IGNORE INTO scan_cache (market, payload, generated_at, refreshing_until) VALUES (?, NULL, ?, NULL)").bind(id, new Date(0).toISOString()).run();
+    await env.DB.prepare("UPDATE scan_cache SET payload = ?, generated_at = ? WHERE market = ?").bind(JSON.stringify(value), new Date().toISOString(), id).run();
+  } catch { /* the next scan retries */ }
+}
+
+async function edgarCikMap(env) {
+  const cached = await edgarCacheRead(env, "EDGAR:CIK");
+  if (cached?.at && Date.now() - cached.at < 7 * 86400000 && cached.map) return cached.map;
+  try {
+    const response = await fetch("https://www.sec.gov/files/company_tickers.json", { headers: edgarHeaders(env), signal: AbortSignal.timeout(20000) });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const rows = Object.values(await response.json());
+    const map = {};
+    for (const row of rows) if (row?.ticker && row.cik_str) map[String(row.ticker).toUpperCase()] = Number(row.cik_str);
+    await edgarCacheWrite(env, "EDGAR:CIK", { at: Date.now(), map });
+    return map;
+  } catch { return cached?.map || null; }
+}
+
+const dayNumber = iso => Math.floor(Date.parse(`${String(iso).slice(0, 10)}T00:00:00Z`) / 86400000);
+
+// Pure: turns a submissions "recent" block into the flags the ranking uses. todayDay is a day number so it can be tested.
+function edgarFlagsFrom(recent, todayDay) {
+  const forms = recent?.form || [], dates = recent?.filingDate || [], items = recent?.items || [];
+  const earnings = [], severe = [], cautions = [];
+  for (let i = 0; i < forms.length; i++) {
+    const form = forms[i], date = dates[i], codes = String(items[i] || "").split(",").map(code => code.trim()).filter(Boolean);
+    const age = todayDay - dayNumber(date);
+    if (form === "8-K" && codes.includes("2.02")) earnings.push(dayNumber(date));
+    if (age <= 30 && form.startsWith("8-K")) for (const code of codes) {
+      if (EDGAR_SEVERE_ITEMS[code]) severe.push(`${EDGAR_SEVERE_ITEMS[code]} (8-K ${String(date).slice(0, 10)})`);
+      else if (EDGAR_CAUTION_ITEMS[code]) cautions.push(`${EDGAR_CAUTION_ITEMS[code]} (8-K ${String(date).slice(0, 10)})`);
+    }
+    if (age <= 90 && (form === "NT 10-Q" || form === "NT 10-K")) severe.push(`a late-filing notice (${form}, ${String(date).slice(0, 10)})`);
+  }
+  earnings.sort((a, b) => b - a);
+  let estimate = null;
+  if (earnings.length) {
+    const quarterly = earnings[0] + 91;
+    const seasonal = earnings.length >= 4 ? earnings[3] + 364 : null; // the release four quarters back, plus a year
+    estimate = seasonal !== null && Math.abs(seasonal - quarterly) <= 21 ? seasonal : quarterly;
+  }
+  const inDays = estimate === null ? null : estimate - todayDay;
+  return {
+    earnings_in_days: inDays !== null && inDays >= -7 ? inDays : null,
+    earnings_estimate: inDays !== null && inDays >= -7 ? new Date(estimate * 86400000).toISOString().slice(0, 10) : null,
+    last_reported_days_ago: earnings.length ? todayDay - earnings[0] : null,
+    severe: [...new Set(severe)].slice(0, 3), cautions: [...new Set(cautions)].slice(0, 3),
+  };
+}
+
+// Returns Map(symbol -> flags) for the US symbols asked about. Cached per symbol for 20 hours; never throws.
+async function loadFilingFlags(env, symbols) {
+  const out = new Map();
+  try {
+    const cache = (await edgarCacheRead(env, "EDGAR:FLAGS")) || {};
+    const now = Date.now(), todayDay = Math.floor(now / 86400000), due = [];
+    for (const symbol of symbols) {
+      const hit = cache[symbol];
+      if (hit && now - hit.at < EDGAR_STALE_MS) out.set(symbol, { ...hit.flags, source: "SEC EDGAR", checked_at: new Date(hit.at).toISOString() });
+      else due.push(symbol);
+    }
+    if (due.length) {
+      const ciks = await edgarCikMap(env);
+      let changed = false;
+      for (const symbol of due.slice(0, EDGAR_MAX_FETCH)) {
+        const cik = ciks?.[symbol.toUpperCase().replace(/\./g, "-")];
+        if (!cik) { if (cache[symbol]) out.set(symbol, { ...cache[symbol].flags, source: "SEC EDGAR", checked_at: new Date(cache[symbol].at).toISOString(), stale: true }); continue; }
+        try {
+          const response = await fetch(`https://data.sec.gov/submissions/CIK${String(cik).padStart(10, "0")}.json`, { headers: edgarHeaders(env), signal: AbortSignal.timeout(15000) });
+          if (!response.ok) continue;
+          const flags = edgarFlagsFrom((await response.json())?.filings?.recent, todayDay);
+          cache[symbol] = { at: now, flags };
+          out.set(symbol, { ...flags, source: "SEC EDGAR", checked_at: new Date(now).toISOString() });
+          changed = true;
+        } catch { /* no flags for this one this time */ }
+        await new Promise(resolve => setTimeout(resolve, 120)); // stay well under the SEC's 10 requests per second
+      }
+      if (changed) await edgarCacheWrite(env, "EDGAR:FLAGS", cache);
+    }
+  } catch (error) { console.error(`SEC filing check failed: ${cleanError(error)}`); }
+  return out;
+}
+
 // ---- Unified ranking: one list for every idea from every scanner ----
 // The scanners (Supertrend, dip, pattern) feed one ranked "Top ideas" list, each row tagged with the scanner that found it. Code does the
 // arithmetic (levels, risk, distance, hard filters, a rules score); when an Anthropic key is configured, a Claude model then ranks the
@@ -1457,6 +1563,10 @@ function rankHardFilter(item) {
   if (item.stop_pct !== null && item.stop_pct > RANK_MAX_STOP_PCT) return `The stop is ${item.stop_pct}% from entry, wider than the ${RANK_MAX_STOP_PCT}% limit.`;
   if (item.strategy !== "SUPERTREND" && item.from_entry_atr !== null && item.from_entry_atr > RANK_MAX_CHASE_ATR) return `Price has already run ${item.from_entry_atr} ATR past the signal close (limit ${RANK_MAX_CHASE_ATR}).`;
   if (item.age_days !== null && item.age_days > RANK_STALE_DAYS && item.strategy !== "SUPERTREND") return `The signal is ${item.age_days} days old.`;
+  const f = item.filing;
+  if (f?.severe?.length) return `SEC filing red flag: ${f.severe[0]}.`;
+  if (f && item.strategy !== "SUPERTREND" && f.earnings_in_days !== null && f.earnings_in_days <= EDGAR_EARNINGS_SKIP_DAYS)
+    return `Earnings are expected ${f.earnings_in_days <= 0 ? "now" : `in about ${f.earnings_in_days} day${f.earnings_in_days === 1 ? "" : "s"}`} (estimated from past SEC filings), inside this idea's 10-day hold.`;
   return null;
 }
 
@@ -1476,6 +1586,8 @@ function rankRulesScore(item) {
   if (item.evidence.experimental) score -= 12;
   if (item.evidence.n < RANK_MIN_PROVEN_TRADES) score -= 10;
   if (known && ev <= 0) score = Math.min(score, 40);
+  if (item.filing?.earnings_in_days != null && item.filing.earnings_in_days <= EDGAR_EARNINGS_WINDOW_DAYS) score -= 10; // earnings inside the next two weeks
+  if (item.filing?.cautions?.length) score -= 3;
   return round(clamp(score, 0, 100), 1);
 }
 
@@ -1494,10 +1606,13 @@ function rankRulesReason(item) {
   else parts.push("exits on the daily trend line");
   if (item.from_entry_atr !== null) parts.push(`${item.from_entry_atr} ATR from the entry`);
   if (e.experimental) parts.push("experimental, not recommended");
+  const f = item.filing;
+  if (f?.earnings_in_days != null && f.earnings_in_days <= EDGAR_EARNINGS_WINDOW_DAYS) parts.push(`earnings expected about ${f.earnings_estimate} (estimate)`);
+  if (f?.cautions?.length) parts.push(`recent filing: ${f.cautions[0]}`);
   return parts.join(" · ");
 }
 
-function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, marketId = "US" }) {
+function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, marketId = "US", filings = new Map() }) {
   const marketState = trend?.state || "UNKNOWN";
   const agrees = direction => marketState === "UP" ? (direction === "LONG" ? 100 : 25) : marketState === "DOWN" ? (direction === "SHORT" ? 100 : 25) : 55;
   const raw = [];
@@ -1547,7 +1662,7 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
   for (const strategy of ["SUPERTREND", "DIP", "PATTERN"]) raw.filter(r => r.strategy === strategy).sort((a, b) => b.scanner_score - a.scanner_score).forEach((r, i) => byListPosition.set(r, i + 1));
   const items = [], rejected = [];
   for (const r of raw) {
-    const item = rankItem({ ...r, id: `${r.strategy}:${r.symbol}:${r.direction}`, evidence: RANK_EVIDENCE[r.evidence_key], scanner_rank_in_list: byListPosition.get(r) });
+    const item = rankItem({ ...r, id: `${r.strategy}:${r.symbol}:${r.direction}`, evidence: RANK_EVIDENCE[r.evidence_key], scanner_rank_in_list: byListPosition.get(r), filing: filings.get(r.symbol) || null });
     const reason = rankHardFilter(item);
     if (reason) rejected.push({ id: item.id, symbol: item.symbol, strategy: item.strategy, tag: item.tag, reason });
     else items.push(item);
@@ -1584,7 +1699,7 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
     market_state: marketState,
     items: kept, rejected: rejected.slice(0, 40),
     data_gaps: [
-      "No earnings calendar or news feed is connected, so earnings or events inside the holding window are not checked.",
+      marketId === "US" ? "Earnings dates are estimated from past SEC filings (there is no earnings calendar), and no news feed is connected, so news and events inside the holding window are not checked." : "No earnings calendar or news feed is connected for this market, so earnings or events inside the holding window are not checked.",
       marketId === "FX" ? "Forex has no volume data, so liquidity is not assessed." : "Dollar volume is not in the data feed; liquidity is judged from the volume ratio only.",
       marketId === "US" ? "Backtest figures are per strategy, not per stock, and most were tested on the S&P 500 in a mostly rising market." : "Supertrend has not been backtested in this market, so expected value is unknown and scores rest on reward to risk, alignment and entry quality. The dip and pattern scanners are US-only.",
     ],
@@ -1637,7 +1752,7 @@ function rankModelInput(ranking, market) {
     price: item.price, entry: item.entry, stop: item.stop, target_1: item.target_1, target_2: item.target_2, exit_rule: item.exit_rule, stop_pct: item.stop_pct, stop_atr: item.stop_atr,
     rr_to_target_1: item.rr_t1, rr_to_target_2: item.rr_t2, from_entry_atr: item.from_entry_atr, age_days: item.age_days, atr_pct: item.atr_pct, volume_ratio: item.volume_ratio,
     alignment: item.alignment_note, scanner_rank_within_its_list: item.scanner_rank_in_list, scanner_score: item.scanner_score, rules_score: item.rules_score, rules_rank: item.rank,
-    same_sector_crowded: item.crowded, evidence: Object.keys(RANK_EVIDENCE).find(key => RANK_EVIDENCE[key] === item.evidence) });
+    same_sector_crowded: item.crowded, sec_filings: item.filing ? { earnings_expected_in_days_estimate: item.filing.earnings_in_days, earnings_estimate_date: item.filing.earnings_estimate, caution_filings_last_30_days: item.filing.cautions } : undefined, evidence: Object.keys(RANK_EVIDENCE).find(key => RANK_EVIDENCE[key] === item.evidence) });
   const setups = ranking.items.map(slim);
   const used = new Set(setups.map(setup => setup.evidence));
   return {
@@ -1645,7 +1760,7 @@ function rankModelInput(ranking, market) {
     market_note: market === "FX" ? "Forex pairs: no volume data, no backtest for Supertrend here, ideas exit at the stop, a target or day 10. Where evidence is unknown, say so and keep confidence Low; do not borrow the US figures."
       : market === "IN" ? "Sensex 30 (BSE) stocks in rupees: no backtest for Supertrend here, ideas exit at the stop, a target or day 10. Where evidence is unknown, say so and keep confidence Low; do not borrow the US figures." : undefined,
     strategy_evidence: Object.fromEntries(Object.entries(RANK_EVIDENCE).filter(([key]) => used.has(key))),
-    hard_filters_applied_by_code: { stop_wider_than_pct: RANK_MAX_STOP_PCT, chase_beyond_atr: RANK_MAX_CHASE_ATR, stale_after_days: RANK_STALE_DAYS, stop_already_hit: true },
+    hard_filters_applied_by_code: { sec_red_flag_filings: true, dip_and_pattern_with_earnings_within_days: EDGAR_EARNINGS_SKIP_DAYS, stop_wider_than_pct: RANK_MAX_STOP_PCT, chase_beyond_atr: RANK_MAX_CHASE_ATR, stale_after_days: RANK_STALE_DAYS, stop_already_hit: true },
     setups,
     rejected_by_code: ranking.rejected.map(({ id, reason }) => ({ id, reason })),
   };
@@ -1827,7 +1942,12 @@ async function discover(market = MARKETS.US, env = {}, previous = null) {
   const dipScan = market.id === "US" ? buildDipScan(snapshots, indexSnapshots.get("SPY"), metadata) : null;
   const patternScan = market.id === "US" ? buildPatternScan(snapshots, metadata) : null;
   const candidates = allCandidates.filter(candidate => candidate.entry_eligible);
-  const ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id });
+  let ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id });
+  if (market.id === "US" && ranking.items.length) {
+    // Second pass with the SEC filing flags for the ideas that survived the first one.
+    const filings = await loadFilingFlags(env, [...new Set(ranking.items.map(item => item.symbol))]);
+    if (filings.size) ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id, filings });
+  }
   const lateCandidates = allCandidates.filter(candidate => !candidate.entry_eligible);
   // When each fresh setup was first seen. There is no closing time: a setup leaves the list when its price runs away or the trend fails, not when time runs out.
   const nowIso = new Date().toISOString();

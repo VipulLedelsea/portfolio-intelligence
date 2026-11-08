@@ -140,6 +140,14 @@ struct RankedEvidence: Decodable, Hashable, Sendable {
     let note: String
 }
 
+/// SEC EDGAR check for US ideas. The earnings date is an estimate from past filings, not a calendar.
+struct FilingCheck: Decodable, Hashable, Sendable {
+    let earningsInDays: Int?
+    let earningsEstimate: String?
+    let severe: [String]?
+    let cautions: [String]?
+}
+
 struct RankedIdea: Decodable, Identifiable, Hashable, Sendable {
     let id: String
     let rank: Int
@@ -174,6 +182,7 @@ struct RankedIdea: Decodable, Identifiable, Hashable, Sendable {
     let bull: String?
     let bear: String?
     let invalidation: String?
+    let filing: FilingCheck?
     let bars: [DailyBar]?
 }
 
