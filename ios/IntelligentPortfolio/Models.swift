@@ -495,8 +495,26 @@ struct DeleteResponse: Decodable, Sendable {
     let deleted: Bool
 }
 
+/// Something that happened to a held position while the app was closed (a change of read, a raised protective level, earnings, a serious filing).
+struct HoldingAlert: Decodable, Identifiable, Sendable {
+    let id: String
+    let symbol: String
+    let at: String
+    let kind: String
+    let severity: String
+    let title: String
+    let detail: String
+    let seenAt: String?
+}
+
+struct HoldingAlerts: Decodable, Sendable {
+    let unseen: Int
+    let items: [HoldingAlert]
+}
+
 struct HoldingsResponse: Decodable, Sendable {
     let updatedAt: String
+    let alerts: HoldingAlerts?
     let refreshAfterSeconds: Int?
     let open: [Holding]
     let closed: [ClosedHolding]

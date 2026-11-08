@@ -1415,7 +1415,7 @@ function buildPatternScan(snapshots, metadata) {
 // Free and keyless: SEC EDGAR lists every filing by company. It has no earnings calendar, but a company's earnings releases (8-K item 2.02)
 // are quarterly and seasonal, so the next one is estimated from the same quarter a year ago. It is an estimate, labelled as such. EDGAR also
 // shows serious events (non-reliance on financials, bankruptcy, delisting notice, late filings) which skip an idea outright.
-const EDGAR_STALE_MS = 20 * 3600 * 1000, EDGAR_MAX_FETCH = 40, EDGAR_EARNINGS_WINDOW_DAYS = 14, EDGAR_EARNINGS_SKIP_DAYS = 3;
+const EDGAR_STALE_MS = 20 * 3600 * 1000, EDGAR_EARNINGS_WINDOW_DAYS = 14, EDGAR_EARNINGS_SKIP_DAYS = 3;
 const EDGAR_SEVERE_ITEMS = { "4.02": "the company said past financial statements can no longer be relied on", "1.03": "bankruptcy or receivership", "3.01": "a stock-exchange delisting notice", "2.04": "a debt acceleration event" };
 const EDGAR_CAUTION_ITEMS = { "4.01": "an auditor change", "5.02": "an executive or director change", "2.05": "a restructuring" };
 
@@ -1493,7 +1493,8 @@ async function robinhoodNextEarnings(symbol, todayDay) {
 }
 
 // Returns Map(symbol -> flags) for the US symbols asked about. Cached per symbol for 20 hours; never throws.
-async function loadFilingFlags(env, symbols) {
+// maxFetch caps the symbols looked up in one run (each costs up to two outgoing requests, and a scheduled run may make 50 in all); cached ones are free.
+async function loadFilingFlags(env, symbols, maxFetch = 6) {
   const out = new Map();
   try {
     const cache = (await edgarCacheRead(env, "EDGAR:FLAGS")) || {};
@@ -1506,7 +1507,7 @@ async function loadFilingFlags(env, symbols) {
     if (due.length) {
       const ciks = await edgarCikMap(env);
       let changed = false;
-      for (const symbol of due.slice(0, EDGAR_MAX_FETCH)) {
+      for (const symbol of due.slice(0, maxFetch)) {
         const cik = ciks?.[symbol.toUpperCase().replace(/\./g, "-")];
         let flags = null;
         if (cik) {
@@ -2877,18 +2878,52 @@ function monitorStatements(env, row, levels, price, now) {
 }
 
 // Cron pass: watches every open US position against the shared, freshly refreshed snapshots and ratchets levels without anyone opening the app.
+const ALERT_ACTIONS = { EXIT: ["high", "Exit signal"], TAKE_PROFIT: ["high", "Profit target reached"], WATCH: ["info", "Weakening: watch it"] };
+
+function alertStatement(env, row, now, { kind, severity, title, detail, key }) {
+  return env.DB.prepare(`INSERT OR IGNORE INTO holding_alerts (id, user_id, holding_id, symbol, at, kind, severity, title, detail, dedupe_key, seen_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`).bind(crypto.randomUUID(), row.user_id, row.id, row.symbol, now, kind, severity, title, String(detail).slice(0, 400), key);
+}
+
 async function monitorHoldings(env, market) {
   if (!env.DB || market.id !== "US") return 0;
   const stored = await readStoredScan(env, holdKey(market));
   const snapshots = stored?.payload?.snapshots;
   if (!snapshots) return 0;
   const rows = (await env.DB.prepare("SELECT * FROM holdings WHERE market = ? AND closed_at IS NULL LIMIT 1000").bind(market.id).all()).results || [];
-  const now = new Date().toISOString(), statements = [];
+  const now = new Date().toISOString(), day = now.slice(0, 10), statements = [];
   for (const row of rows) {
     const snapshot = snapshots[row.symbol];
     if (!snapshot) continue;
-    try { statements.push(...monitorStatements(env, row, monitorLevels(row, snapshot), numeric(snapshot.price), now)); } catch { /* one bad row must not stop the rest */ }
+    try {
+      const levels = monitorLevels(row, snapshot);
+      statements.push(...monitorStatements(env, row, levels, numeric(snapshot.price), now));
+      // Alerts: a change of read (recorded here so it is not lost when nobody has the app open) and a raised protective level.
+      const evaluation = evaluateHolding(row, snapshot, levels);
+      if (evaluation.action !== "NO_DATA" && evaluation.action !== row.last_action) {
+        statements.push(env.DB.prepare("UPDATE holdings SET last_action = ?, last_action_at = ? WHERE id = ? AND user_id = ?").bind(evaluation.action, now, row.id, row.user_id));
+        const meta = ALERT_ACTIONS[evaluation.action];
+        if (row.last_action && meta) statements.push(alertStatement(env, row, now, { kind: evaluation.action, severity: meta[0], title: `${row.symbol}: ${meta[1]}`, detail: `${evaluation.headline}. ${evaluation.reasons[0] || ""}`, key: `${row.id}:${evaluation.action}:${day}` }));
+      }
+      for (const event of levels.events) if (event.kind === "LINE_RAISED") statements.push(alertStatement(env, row, now, { kind: "STOP_RAISED", severity: "info", title: `${row.symbol}: protective level raised`, detail: event.reason, key: `${row.id}:STOP:${day}` }));
+    } catch { /* one bad row must not stop the rest */ }
   }
+  // Upcoming earnings and serious filings on held stocks, from the same cached lookups as the ranking.
+  try {
+    const held = [...new Set(rows.filter(row => snapshots[row.symbol]).map(row => row.symbol))];
+    const filings = held.length ? await loadFilingFlags(env, held, 3) : new Map();
+    for (const row of rows) {
+      const f = filings.get(row.symbol);
+      if (!f) continue;
+      if (f.earnings_in_days != null && f.earnings_in_days >= 0 && f.earnings_in_days <= 7) {
+        const when = f.earnings_in_days === 0 ? "today" : f.earnings_in_days === 1 ? "tomorrow" : `in ${f.earnings_in_days} days`;
+        const timing = f.earnings_timing === "pm" ? " after the close" : f.earnings_timing === "am" ? " before the open" : "";
+        statements.push(alertStatement(env, row, now, { kind: "EARNINGS_SOON", severity: "info", title: `${row.symbol}: earnings ${when}`,
+          detail: `${f.earnings_confirmed ? "Confirmed" : "Expected"} ${f.earnings_estimate}${timing}${f.earnings_confirmed ? "" : " (not yet confirmed by the company)"}. Reports can move a stock sharply either way.`, key: `${row.id}:EARN:${f.earnings_estimate}` }));
+      }
+      for (const text of f.severe || []) statements.push(alertStatement(env, row, now, { kind: "FILING_RED_FLAG", severity: "high", title: `${row.symbol}: serious SEC filing`, detail: `Recent filing shows ${text}.`, key: `${row.id}:RED:${text}` }));
+    }
+  } catch { /* alerts for filings are best effort */ }
   for (let index = 0; index < statements.length; index += 50) await env.DB.batch(statements.slice(index, index + 50));
   return statements.length;
 }
@@ -3153,6 +3188,8 @@ async function listHoldings(request, env) {
     if (evaluation.action !== "NO_DATA" && evaluation.action !== row.last_action) {
       since = now;
       updates.push(env.DB.prepare("UPDATE holdings SET last_action = ?, last_action_at = ? WHERE id = ? AND user_id = ?").bind(evaluation.action, now, row.id, user.id));
+      const meta = ALERT_ACTIONS[evaluation.action];
+      if (row.last_action && meta) updates.push(alertStatement(env, row, now, { kind: evaluation.action, severity: meta[0], title: `${row.symbol}: ${meta[1]}`, detail: `${evaluation.headline}. ${evaluation.reasons[0] || ""}`, key: `${row.id}:${evaluation.action}:${now.slice(0, 10)}` }));
     }
     const last = lastByChain.get(row.id);
     return {
@@ -3161,6 +3198,7 @@ async function listHoldings(request, env) {
     };
   });
   if (updates.length) await env.DB.batch(updates).catch(() => {});
+  const alertRows = (await env.DB.prepare("SELECT id, holding_id, symbol, at, kind, severity, title, detail, seen_at FROM holding_alerts WHERE user_id = ? ORDER BY at DESC LIMIT 30").bind(user.id).all().catch(() => ({ results: [] }))).results || [];
   const totals = new Map();
   for (const item of openOut) {
     if (item.action === "NO_DATA") continue;
@@ -3173,6 +3211,7 @@ async function listHoldings(request, env) {
     updated_at: now,
     refresh_after_seconds: anyOpen ? HOLDING_REFRESH_OPEN_SECONDS : HOLDING_REFRESH_CLOSED_SECONDS,
     open: openOut,
+    alerts: { unseen: alertRows.filter(row => !row.seen_at).length, items: alertRows },
     portfolio: await buildPortfolio(openOut),
     market_trends: Object.fromEntries(await Promise.all([...symbolsByMarket.keys()].filter(id => MARKETS[id]).map(async id => [id, (await readStoredScan(env, MARKETS[id]))?.payload?.market_trend || null]))),
     closed: closed.slice(0, 20).map(row => ({ ...base(row), sell_price: row.sell_price, closed_at: row.closed_at, pnl_value: round((row.sell_price - row.buy_price) * row.shares, 2), pnl_pct: round((row.sell_price / row.buy_price - 1) * 100, 2) })),
@@ -3289,6 +3328,14 @@ function computeHoldingStats(closed) {
       months: [...months.values()].sort((a, b) => b.month.localeCompare(a.month)).slice(0, 12).map(month => ({ ...month, pnl: round(month.pnl, 2) })),
     };
   });
+}
+
+// Marks every alert as seen (the user opened the list). Only this user's rows.
+async function markAlertsSeen(request, env) {
+  const user = await holdingsUser(request, env);
+  await readBody(request);
+  await env.DB.prepare("UPDATE holding_alerts SET seen_at = ? WHERE user_id = ? AND seen_at IS NULL").bind(new Date().toISOString(), user.id).run();
+  return { seen: true };
 }
 
 async function holdingStats(request, env) {
@@ -3508,6 +3555,7 @@ async function handle(request, env, ctx) {
     if (url.pathname === "/api/holdings/undo") return json(await undoEntry(request, env));
     if (url.pathname === "/api/holdings/edit") return json(await editEntry(request, env));
     if (url.pathname === "/api/holdings/stats") return json(await holdingStats(request, env));
+    if (url.pathname === "/api/holdings/alerts/seen") return json(await markAlertsSeen(request, env));
     if (url.pathname === "/api/holdings/add") return json(await addHolding(request, env));
     if (url.pathname === "/api/holdings/increase") return json(await increaseHolding(request, env));
     if (url.pathname === "/api/holdings/sell") return json(await sellHolding(request, env));

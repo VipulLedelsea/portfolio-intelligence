@@ -119,6 +119,24 @@ export const holdingLevelEvents = sqliteTable("holding_level_events", {
   index("holding_level_events_user_idx").on(table.userId, table.at),
 ]);
 
+// Things that happened to a held position while the user was away. dedupe_key keeps each event to one row; seen_at is set when the user opens the list.
+export const holdingAlerts = sqliteTable("holding_alerts", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  holdingId: text("holding_id").notNull(),
+  symbol: text("symbol").notNull(),
+  at: text("at").notNull(),
+  kind: text("kind").notNull(), // EXIT, TAKE_PROFIT, WATCH, STOP_RAISED, EARNINGS_SOON, FILING_RED_FLAG
+  severity: text("severity").notNull(), // high or info
+  title: text("title").notNull(),
+  detail: text("detail").notNull(),
+  dedupeKey: text("dedupe_key").notNull(),
+  seenAt: text("seen_at"),
+}, table => [
+  index("holding_alerts_user_idx").on(table.userId, table.at),
+  uniqueIndex("holding_alerts_dedupe_idx").on(table.dedupeKey),
+]);
+
 export const holdingTrades = sqliteTable("holding_trades", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull(),

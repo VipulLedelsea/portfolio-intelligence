@@ -210,6 +210,12 @@ final class AppModel: ObservableObject {
         catch { report(error) }
     }
 
+    /// Marks the alerts as seen once the user has had a chance to read them, so the next visit shows only what is new.
+    func markAlertsSeen() async {
+        guard let token, (holdings?.alerts?.unseen ?? 0) > 0 else { return }
+        try? await api.markAlertsSeen(token: token)
+    }
+
     /// How long the Holdings tab waits before re-checking: a minute while a market is open, ten when closed.
     var holdingsRefreshInterval: Duration { .seconds(max(30, holdings?.refreshAfterSeconds ?? 300)) }
 
