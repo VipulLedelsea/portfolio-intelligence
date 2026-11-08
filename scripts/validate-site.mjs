@@ -359,16 +359,22 @@ assert.equal(usScan.successful, 503, "Every S&P 500 symbol must be scanned");
 assert.ok(fetchLog.length <= 30, `A full US scan must stay far below the free plan's 50-request limit (used ${fetchLog.length})`);
 const usCalls = fetchLog.length;
 await Promise.all([1, 2, 3, 4].map(() => post("/api/discover", { market: "US", refresh: true })));
-assert.equal(fetchLog.length, usCalls, "Manual refreshes within a minute must be served from the shared scan with no provider calls");
+assert.equal(fetchLog.length, usCalls, "A refresh flag must be ignored: requests are served from the shared scan with no provider calls");
 const realNow = Date.now;
 Date.now = () => realNow() + 61000;
 await post("/api/discover", { market: "US", refresh: true });
+assert.equal(fetchLog.length, usCalls, "A refresh flag must stay ignored even after a minute: there is no manual refresh");
+Date.now = () => realNow() + 7 * 3600 * 1000; // past both the 15-minute open interval and the 6-hour closed interval
+await post("/api/discover", { market: "US" });
+// The rebuild runs in the background (waitUntil), so wait until the provider calls stop before counting them.
+for (let last = -1; last !== fetchLog.length;) { last = fetchLog.length; await new Promise(resolve => setTimeout(resolve, 400)); }
 const callsPerUsScan = fetchLog.length - usCalls;
-assert.ok(callsPerUsScan > 0 && callsPerUsScan <= usCalls, "A manual refresh after a minute must rescan");
-await Promise.all([1, 2, 3].map(() => post("/api/discover", { market: "US", refresh: true })));
-assert.ok(fetchLog.length - usCalls - callsPerUsScan <= callsPerUsScan, "Simultaneous manual refreshes must share one scan");
+assert.ok(callsPerUsScan > 0 && callsPerUsScan <= usCalls, "An overdue scan must be rebuilt on the schedule");
+await Promise.all([1, 2, 3].map(() => post("/api/discover", { market: "US" })));
+for (let last = -1; last !== fetchLog.length;) { last = fetchLog.length; await new Promise(resolve => setTimeout(resolve, 400)); }
+assert.ok(fetchLog.length - usCalls - callsPerUsScan <= callsPerUsScan, "Simultaneous requests must share one scan");
 Date.now = realNow;
-assert.equal(usScan.auto_refresh, false, "US keeps a manual refresh control");
+assert.equal(usScan.auto_refresh, true, "US scans refresh automatically; there is no manual refresh");
 assert.ok(usScan.market_trend && ["UP", "MIXED", "DOWN"].includes(usScan.market_trend.state), "The US scan must report the market trend");
 assert.equal(usScan.market_trend.index_symbol, "SPY");
 assert.ok(usScan.market_trends.every(item => item.market === "US"), "Each trend must say which market it belongs to");
@@ -557,7 +563,7 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
     rows.push(row("hold-ddd", "DDD", { shares: 1 }));
     cache.get("HOLD:US").generated_at = new Date(Date.now() - 3600 * 1000).toISOString(); // the shared snapshot is overdue, so the cron pass refreshes it first
     const pending = [];
-    await module.default.scheduled({ cron: "*/5 13-21 * * 1-5", scheduledTime: Date.now() }, { DB: db }, { waitUntil: promise => pending.push(promise) });
+    await module.default.scheduled({ cron: "*/15 13-21 * * 1-5", scheduledTime: Date.now() }, { DB: db }, { waitUntil: promise => pending.push(promise) });
     await Promise.all(pending);
     assert.ok(rows.find(r => r.id === "hold-ddd").stop_level > 0, "The cron pass sets levels for a position nobody has opened");
     assert.ok(kindsFor("hold-ddd").includes("INITIAL"));
@@ -632,7 +638,7 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
   assert.ok(["HOLD", "WATCH", "TAKE_PROFIT"].includes(bySymbol.AAPL.action));
   assert.ok(bySymbol.AAPL.trailing_level > 0 && bySymbol.AAPL.target_1 > bySymbol.AAPL.buy_price);
   assert.match(list.disclaimer, /not personal financial advice/);
-  assert.ok([300, 600].includes(list.refresh_after_seconds), "The response must tell clients how soon to re-check");
+  assert.ok([900, 1800].includes(list.refresh_after_seconds), "The response must tell clients how soon to re-check");
   assert.equal(db.rows.find(row => row.symbol === "NVDA").last_action, bySymbol.NVDA.action, "The latest decision must be remembered so changes can be shown");
   assert.equal((await (await as("bob", "/api/holdings")).json()).open.length, 0, "Holdings must stay private to their owner");
   const fetchesAfterList = holdingFetches;
