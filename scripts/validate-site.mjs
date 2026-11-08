@@ -57,6 +57,8 @@ assert.equal(access.paywall_enabled, false);
 assert.equal(access.subscribed, true);
 const gatedResponse = await workerModule.default.fetch(new Request("https://example.test/api/discover", { method: "POST", body: "{}" }), { PAYWALL_ENABLED: "true" }, { waitUntil() {} });
 assert.equal(gatedResponse.status, 402);
+const briefingGated = await workerModule.default.fetch(new Request("https://example.test/api/briefing", { method: "POST", body: "{}" }), { PAYWALL_ENABLED: "true" }, { waitUntil() {} });
+assert.equal(briefingGated.status, 402, "The briefing must respect the paywall");
 const emptySummary = { total_calls: 0, pending_calls: 0, settled_calls: 0, scored_setups: 0, average_return_pct: null, win_rate: null, gross_wins: 0, gross_losses: 0 };
 const fakeDb = {
   prepare(sql) {
@@ -817,4 +819,9 @@ globalThis.fetch = realFetch;
   assert.equal(again.find(item => item.symbol === "BBB").dropped_at, nowIso, "A dropped setup keeps its original drop time on later scans");
 }
 
+const briefingResponse = await workerModule.default.fetch(new Request("https://example.test/api/briefing", { method: "POST", body: "{}" }), {}, { waitUntil() {} });
+assert.equal(briefingResponse.status, 200, "The briefing must load without an account");
+const briefing = await briefingResponse.json();
+assert.equal(briefing.markets.length, 3, "The briefing must cover US, India and forex");
+assert.equal(briefing.holdings, null, "Holdings stay out of the briefing when nobody is signed in");
 console.log("Artifact is valid ESM; read-only, subscription, persistent-memory, and iPhone pairing gates passed");

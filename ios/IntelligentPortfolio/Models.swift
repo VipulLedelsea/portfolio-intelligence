@@ -771,3 +771,71 @@ struct MarketTrend: Decodable, Sendable {
     /// Recent closes of the index, oldest first, for the desk display's line chart. Absent on older server data.
     let spark: [Double]?
 }
+
+
+// MARK: - Today's briefing
+
+struct BriefingEarnings: Decodable, Hashable, Sendable {
+    let date: String
+    let inDays: Int
+    let confirmed: Bool
+    let timing: String?
+}
+
+struct BriefingIdea: Decodable, Identifiable, Hashable, Sendable {
+    var id: String { symbol + direction }
+    let rank: Int
+    let symbol: String
+    let tag: String
+    let direction: String
+    let score: Double
+    let confidence: String?
+    let reason: String?
+    let entry: Double
+    let stop: Double
+    let target1: Double?
+    let currencySymbol: String?
+    let priceDecimals: Int?
+    let earnings: BriefingEarnings?
+}
+
+struct BriefingTrend: Decodable, Hashable, Sendable {
+    let state: String
+    let headline: String
+    let note: String
+}
+
+struct BriefingMarket: Decodable, Identifiable, Sendable {
+    let id: String
+    let label: String
+    let warmingUp: Bool?
+    let unavailable: Bool?
+    let generatedAt: String?
+    let trend: BriefingTrend?
+    let headline: String?
+    let top: [BriefingIdea]
+}
+
+struct BriefingAttention: Decodable, Identifiable, Sendable {
+    var id: String { symbol + action }
+    let symbol: String
+    let market: String
+    let action: String
+    let actionLabel: String
+    let headline: String
+    let pnlPct: Double?
+}
+
+struct BriefingHoldings: Decodable, Sendable {
+    let count: Int
+    let counts: [String: Int]
+    let attention: [BriefingAttention]
+    let alerts: HoldingAlerts
+}
+
+struct Briefing: Decodable, Sendable {
+    let asOf: String
+    let markets: [BriefingMarket]
+    let holdings: BriefingHoldings?
+    let disclaimer: String
+}

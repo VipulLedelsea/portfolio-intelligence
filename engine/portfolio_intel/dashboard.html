@@ -31,6 +31,7 @@
 <section class="shell paywall hidden" id="paywall"><div class="paywall-card"><div class="eyebrow">IntelligentPortfolio Pro</div><h2>Find the setup before the move.</h2><p class="paywall-copy">Unlock the full S&amp;P 500 scanner, confirmed daily direction, rising-trend-strength filters, 4-hour entry signals, candlestick charts, and timing-aware targets.</p><div class="price-line"><strong>$14.99</strong><span>/ month</span></div><ul class="paywall-list"><li>Daily direction plus precise 4-hour entry timing</li><li>ADX filters weak or fading trend regimes</li><li>Targets anchored to the original signal entry</li><li>Cancel anytime through Stripe</li></ul><div class="paywall-actions"><a class="hidden" id="sign-in" href="/auth/google/start" target="_top">Sign in with Google</a><button class="hidden" id="subscribe">Subscribe securely with Stripe</button></div><div class="paywall-status" id="paywall-status"></div></div></section>
 <main class="shell hidden" id="app">
   <div class="advice-strip" role="note"><b>Not investment advice.</b> IntelligentPortfolio is a read-only research tool. Signals are automated scenarios from public price data, not recommendations to buy or sell, and trading can lose money. <a href="/terms">Read the terms</a>.</div>
+  <section class="memory-section hidden" id="briefing" style="margin-top:18px"><div class="memory-head"><div><h3>Today's briefing</h3><p id="briefing-sub"></p></div></div><div id="briefing-body"></div></section>
   <section class="hero"><h2>Trade with the daily move—and only when it strengthens.</h2><p><span id="hero-scope">The read-only engine scans every current S&amp;P 500 constituent with Robinhood data.</span> Confirmed daily Supertrend sets direction; daily ADX (14) must be at least 20 and rising versus five sessions ago; then confirmed 4-hour Supertrend finds the entry. Only aligned, strengthening signals from the latest two completed 4-hour bars can rank as fresh.</p><label class="market-select"><span>Market</span><select id="market-select" aria-label="Market"><option value="US">US stocks</option><option value="IN">India (BSE)</option><option value="FX">Forex</option></select></label><div class="actions"><button id="scan">Scan the S&amp;P 500</button><span class="status" id="scan-status">Ready to scan Robinhood market data.</span></div></section>
   <section id="discovery" class="hidden"><div id="trend-card"></div><div class="section-head"><div><h3 id="list-title">Daily-aligned entry windows</h3><p id="method"></p></div><div class="status" id="timestamp"></div></div><div id="top-ideas-wrap" class="hidden" style="margin-bottom:34px"><div class="section-head"><div><h3>Top ideas</h3><p id="top-ideas-sub"></p></div></div><div class="candidates" id="top-ideas"></div><details id="top-ideas-more" class="note" style="margin-top:12px"></details></div><div class="filters"><button class="filter active" data-filter="all">Fresh entries</button><button class="filter" data-filter="long">Fresh longs</button><button class="filter" data-filter="short">Fresh shorts</button><button class="filter" data-filter="late">Filtered setups</button></div><div class="candidates" id="candidates"></div>
   <div id="recent-wrap" class="hidden" style="margin-top:34px"><div class="section-head"><div><h3>Recent setups</h3><p>Setups that were fresh entries in the last 24 hours and no longer are, with the reason and how the price has moved since the signal.</p></div></div><div class="candidates" id="recent-list"></div></div></section>
@@ -399,4 +400,38 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!el('hold
 fetch('/api/access').then(r=>r.json()).then(a=>{if(!a.signed_in){signinEl.classList.remove('hidden');return}
  formEl.classList.remove('hidden');el('hp-tabs').classList.remove('hidden');load()}).catch(()=>{});
 })();
-</script></body></html>
+</script><script>
+(()=>{
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const box=document.getElementById('briefing'),body=document.getElementById('briefing-body'),sub=document.getElementById('briefing-sub');
+const ago=iso=>{const m=Math.max(0,Math.round((Date.now()-Date.parse(iso))/60000));return m<2?'just now':m<90?m+' min ago':m<2880?Math.round(m/60)+' h ago':Math.round(m/1440)+' days ago'};
+const px=(sym,dec,v)=>sym+Number(v).toFixed(dec==null?2:dec);
+const trendCol=s=>s==='UP'?'#4ade80':s==='DOWN'?'#f87171':'#fbbf24';
+function render(b){
+ let h='';
+ for(const m of b.markets){
+  if(m.warming_up||m.unavailable){h+=`<div class="status" style="margin:10px 0"><b>${esc(m.label)}</b>: ${m.unavailable?'not available right now':'still loading the first scan'}</div>`;continue}
+  h+=`<div style="margin:14px 0"><div class="h-head"><span style="color:${trendCol(m.trend&&m.trend.state)}">●</span> ${esc(m.label)}${m.trend?` · ${esc(m.trend.headline)}`:''} <span class="status" style="float:right">${m.generated_at?esc(ago(m.generated_at)):''}</span></div>`;
+  if(m.headline)h+=`<div class="status">${esc(m.headline)}</div>`;
+  h+=m.top.map(t=>`<div class="status" style="margin:6px 0;padding:8px 10px;border:1px solid #2c3a4a"><b>#${esc(t.rank)} ${esc(t.symbol)}</b> ${esc(t.direction)} · ${esc(t.tag)} · ${esc(t.score)}/100 ${esc(t.confidence||'')}<br>${esc(t.reason||'')}<br>Entry ${px(t.currency_symbol||'',t.price_decimals,t.entry)} · Stop ${px(t.currency_symbol||'',t.price_decimals,t.stop)}${t.earnings?`<br><span class="caution">! Earnings ${t.earnings.confirmed?'confirmed':'expected about'} ${esc(t.earnings.date)}${t.earnings.timing==='pm'?' after the close':t.earnings.timing==='am'?' before the open':''}</span>`:''}</div>`).join('');
+  h+='</div>';
+ }
+ const x=b.holdings;
+ if(x){
+  const parts=Object.entries(x.counts).map(([k,v])=>`${v} ${({HOLD:'hold',WATCH:'watch',TAKE_PROFIT:'take profit',EXIT:'exit',NO_DATA:'no data'})[k]||k}`).join(' · ');
+  h+=`<div style="margin:14px 0"><div class="h-head">Your holdings${x.alerts.unseen?` · ${x.alerts.unseen} new alert${x.alerts.unseen===1?'':'s'}`:''}</div><div class="status">${x.count?esc(parts):'No holdings yet.'}</div>`;
+  h+=x.attention.map(a=>`<div class="status" style="margin:6px 0"><b>${esc(a.symbol)}</b>: ${esc(a.action_label)} · ${esc(a.headline)}</div>`).join('');
+  h+=x.alerts.items.map(a=>`<div class="status" style="margin:6px 0;${a.seen_at?'opacity:.7':''}"><b>${a.seen_at?'':'● '}${esc(a.title)}</b><br>${esc(a.detail)}</div>`).join('');
+  h+='</div>';
+ }
+ body.innerHTML=h;
+ sub.textContent='Where each market stands, the top ideas, and what changed on your holdings. Research, not advice.';
+ box.classList.remove('hidden');
+}
+async function load(){
+ try{const r=await fetch('/api/briefing',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});if(!r.ok)return;render(await r.json())}catch{}
+}
+load();setInterval(()=>{if(!document.hidden)load()},5*60*1000);
+})();
+</script>
+</body></html>

@@ -63,6 +63,7 @@ final class AppModel: ObservableObject {
     }
     @Published var fold: AdaptiveLayout.FoldState = .unknown
     @Published var holdings: HoldingsResponse?
+    @Published var briefing: Briefing?
     @Published var isLoadingHoldings = false
     @Published var holdingStats: HoldingStatsResponse?
     @Published var disclaimerAccepted = UserDefaults.standard.bool(forKey: AppModel.disclaimerKey)
@@ -207,6 +208,13 @@ final class AppModel: ObservableObject {
         isLoadingHoldings = true
         defer { isLoadingHoldings = false }
         do { holdings = try await api.holdings(token: token) }
+        catch { report(error) }
+    }
+
+    /// Reads the briefing: stored results only, so it is cheap and never starts a scan.
+    func refreshBriefing() async {
+        guard let token else { briefing = nil; return }
+        do { briefing = try await api.briefing(token: token) }
         catch { report(error) }
     }
 
