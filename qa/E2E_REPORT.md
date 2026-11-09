@@ -67,3 +67,8 @@ Passed: signed-in UI state (sign-out, pair button, briefing with holdings summar
 | S4 | Observation | Adding the same symbol twice creates two separate positions instead of warning or merging. | Open: product call. |
 
 Not exercised live: alert creation (needs a real change of read on a held stock; covered offline by MON-01 to MON-14), approving a learning rule (none proposed yet), completing a pairing (needs the app's code).
+
+## Update after second deploy (worker version dcbbbc1c)
+- S2 verified live (label now follows the 900/1800 s interval).
+- S1 verified live on the real account: add KO 4 shares, partial sell 1 (history 2 rows, 1 closed lot, realized 232.07 over 3 trades), remove, and everything returned exactly to baseline (0 KO rows, 0 closed lots, realized 212.07 over 2 trades). EBAY 15 and CBOE 7 unchanged throughout.
+- The earlier ghost row from the pre-fix test was already gone when checked, so no manual cleanup was needed; cause not determined.
