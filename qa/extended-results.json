@@ -201,7 +201,7 @@
     "id": "X-HLD-21",
     "name": "list after rejects is empty",
     "ok": true,
-    "detail": "{\"updated_at\":\"2026-11-09T15:53:45.439Z\",\"refresh_after_seconds\":1800,\"open\":[],\"alerts\":{\"unseen\":0,\"items\":[]},\"portfolio\":{\"limit_pct\":25,\"markets\":[]},\"market_trends\":{},\"closed\":[],\"totals\":[],\"d"
+    "detail": "{\"updated_at\":\"2026-11-09T16:25:15.688Z\",\"refresh_after_seconds\":1800,\"open\":[],\"alerts\":{\"unseen\":0,\"items\":[]},\"portfolio\":{\"limit_pct\":25,\"markets\":[]},\"market_trends\":{},\"closed\":[],\"totals\":[],\"d"
   },
   {
     "id": "X-ID-sell",
@@ -273,7 +273,7 @@
     "id": "X-SPK-01",
     "name": "discover returns market_trends array",
     "ok": true,
-    "detail": "200 {\"generated_at\":\"2026-11-09T15:53:48.177Z\",\"market_trend\":{\"state\":\"MIXED\",\"index_state\":\"DOWN\",\"headline\":\"Mixed: index"
+    "detail": "200 {\"generated_at\":\"2026-11-09T16:25:18.526Z\",\"market_trend\":{\"state\":\"MIXED\",\"index_state\":\"DOWN\",\"headline\":\"Mixed: index"
   },
   {
     "id": "X-SPK-undefined",
@@ -363,7 +363,7 @@
     "id": "X-PAIR-name",
     "name": "device name sanitised/truncated",
     "ok": true,
-    "detail": "{\"code\":\"EKUXYAJF\",\"pairing_secret\":\"icYuii8cfZz0HTV4WrXjiyLMrJfhsDlaKFzMoTBWgAE\",\"expires_at\":\"2026-11-09T16:03:48.190Z\",\"poll_after_seconds\":2}"
+    "detail": "{\"code\":\"5KRNWPB6\",\"pairing_secret\":\"4OVXLOKYwrHPiMYH2JV9HjuZtuNXWC5TCxgoDm0Kh0o\",\"expires_at\":\"2026-11-09T16:35:18.540Z\",\"poll_after_seconds\":2}"
   },
   {
     "id": "X-AUTH-BEARER",

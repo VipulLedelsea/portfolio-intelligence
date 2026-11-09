@@ -4017,9 +4017,12 @@ async function removeHolding(request, env) {
   const user = await holdingsUser(request, env);
   const id = String((await readBody(request)).id || "");
   if (!/^[A-Za-z0-9_-]{6,40}$/.test(id)) throw Object.assign(new Error("Holding not found"), { status: 404 });
+  // A partial sell moves the sold shares into their own closed lot (its own holding id) that shares this position's chain id, so removing a
+  // position must clear those lots and every trade in the chain too, or ghost history and realized P&L stay behind. Lots go first: they are found through the trades.
   await env.DB.batch([
+    env.DB.prepare("DELETE FROM holdings WHERE user_id = ? AND id IN (SELECT holding_id FROM holding_trades WHERE user_id = ? AND chain_id = ? AND holding_id != ?)").bind(user.id, user.id, id, id),
     env.DB.prepare("DELETE FROM holdings WHERE id = ? AND user_id = ?").bind(id, user.id),
-    env.DB.prepare("DELETE FROM holding_trades WHERE holding_id = ? AND user_id = ?").bind(id, user.id),
+    env.DB.prepare("DELETE FROM holding_trades WHERE (holding_id = ? OR chain_id = ?) AND user_id = ?").bind(id, id, user.id),
     env.DB.prepare("DELETE FROM holding_alerts WHERE holding_id = ? AND user_id = ?").bind(id, user.id),
     env.DB.prepare("DELETE FROM holding_level_events WHERE holding_id = ? AND user_id = ?").bind(id, user.id),
   ]);

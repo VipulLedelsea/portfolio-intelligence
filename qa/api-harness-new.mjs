@@ -201,11 +201,34 @@ const cookie2 = (await worker.fetch(new Request(ORIGIN + "/auth/dev"), baseEnv, 
 const hl = await call("/api/holdings", { cookie: cookie2, body: {} });
 check("MON-14", "/api/holdings exposes alerts block", hl.status === 200 && hl.data.alerts && typeof hl.data.alerts.unseen === "number", JSON.stringify(hl.data.alerts)?.slice(0, 150));
 
+// ---------- NEW-10 remove must clear partial-sell residue (live finding: voided/closed lot rows survived "remove") ----------
+seedHold([mkSnap("RMV", 100)]);
+const rmvAdd = await call("/api/holdings/add", { cookie: cookie2, body: { symbol: "RMV", shares: 4, price: 90, bought_at: "2026-11-02" } });
+const rmvId = rmvAdd.data.id;
+await call("/api/holdings/sell", { cookie: cookie2, body: { id: rmvId, shares: 1, price: 95 } });
+const lotRows = () => sqlite.prepare("SELECT COUNT(*) n FROM holdings WHERE symbol='RMV'").get().n;
+const tradeRows = () => sqlite.prepare("SELECT COUNT(*) n FROM holding_trades WHERE symbol='RMV'").get().n;
+check("RMV-01", "setup: partial sell makes a closed lot plus open position", lotRows() === 2 && tradeRows() === 2, `holdings ${lotRows()} trades ${tradeRows()}`);
+await call("/api/holdings/remove", { cookie: cookie2, body: { id: rmvId } });
+check("RMV-02", "remove deletes the position AND its partial-sell lot rows", lotRows() === 0, `holdings left ${lotRows()}`);
+check("RMV-03", "remove deletes every trade in the position's chain", tradeRows() === 0, `trades left ${tradeRows()}`);
+const stRmv = await call("/api/holdings/stats", { cookie: cookie2, body: {} });
+check("RMV-04", "removed position leaves no history or realized P&L", !JSON.stringify(stRmv.data).includes("RMV"));
+// another user's chain with the same ids is untouched
+sqlite.prepare("INSERT INTO holdings (id,user_id,symbol,market,shares,buy_price,bought_at,created_at) VALUES ('keep-0001','other-user','KEEP','US',1,1,'2024-01-01',?)").run(t);
+sqlite.prepare("INSERT INTO holding_trades (id,user_id,holding_id,chain_id,symbol,market,side,shares,price,at,realized_pnl) VALUES ('kt-0001','other-user','keep-lot1','keep-0001','KEEP','US','SELL',1,1,?,0)").run(t);
+await call("/api/holdings/remove", { cookie: cookie2, body: { id: "keep-0001" } });
+check("RMV-05", "remove never touches another user's rows", sqlite.prepare("SELECT COUNT(*) n FROM holdings WHERE id='keep-0001'").get().n === 1 && sqlite.prepare("SELECT COUNT(*) n FROM holding_trades WHERE id='kt-0001'").get().n === 1);
+
 // ---------- NEW-9 dashboard chart scale must ignore non-numeric level fields (live bug: levels.exit_kind is a string -> NaN axis, blank chart) ----------
 const dash = await readFile(resolve(root, "engine/portfolio_intel/dashboard.html"), "utf8");
 check("UI-01", "renderChart filters non-finite values out of chart.levels before computing the price scale", /Object\.values\(levels\)\.map\(Number\)\.filter\(Number\.isFinite\)/.test(dash));
 const built = await readFile(resolve(root, "dist/server/index.js"), "utf8");
 check("UI-02", "built worker bundle contains the same fix", /Object\.values\(levels\)\.map\(Number\)\.filter\(Number\.isFinite\)/.test(built.replace(/\\\\/g, "\\")), "run build-site.mjs first");
+
+check("UI-03", "holdings status label threshold matches the 900/1800 s intervals (was >=600, always 'markets closed')", /refresh_after_seconds>=1500\?'30 minutes \(markets closed\)'/.test(dash));
+const swift = await readFile(resolve(root, "ios/IntelligentPortfolio/HoldingsView.swift"), "utf8");
+check("UI-04", "iOS holdings status label matches the 15/30 minute intervals", />= 1500 \? "every 30 minutes, markets closed" : "every 15 minutes, market open"/.test(swift));
 
 const failed = results.filter(r => !r.ok);
 console.log(`New-feature harness: ${results.length - failed.length}/${results.length} passed`);

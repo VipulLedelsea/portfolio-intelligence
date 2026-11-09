@@ -267,7 +267,7 @@
     "id": "MOB-10",
     "name": "approve accepts lowercase code, returns approved",
     "ok": true,
-    "detail": "{\"approved\":true,\"expires_at\":\"2026-11-09T16:03:39.452Z\"}"
+    "detail": "{\"approved\":true,\"expires_at\":\"2026-11-09T16:35:09.860Z\"}"
   },
   {
     "id": "MOB-11",
@@ -465,7 +465,7 @@
     "id": "HLD-21",
     "name": "add AAPL (lowercase symbol normalised) -> added + id",
     "ok": true,
-    "detail": "{\"added\":true,\"id\":\"FV4CI8DL9-0JzEbh\"}"
+    "detail": "{\"added\":true,\"id\":\"bpWj3XxRVbgMJrps\"}"
   },
   {
     "id": "HLD-22",
@@ -537,7 +537,7 @@
     "id": "HLD-33",
     "name": "increase: weighted average (10@100 + 10@120 => 20@110)",
     "ok": true,
-    "detail": "{\"id\":\"FV4CI8DL9-0JzEbh\",\"symbol\":\"AAPL\",\"market\":\"US\",\"currency_symbol\":\"$\",\"price_decimals\":2,\"shares\":20,\"buy_price\":110,\"bought_at\":\"2026-11-09\",\"action\":\"HOLD\",\"action_label\":\"Hold\",\"headline\":\"Trend is intact\",\"reasons\":[\"The daily trend is up and the exit line is $96.00. There is no time limit: stay in while the daily Supertrend holds.\"],\"current_price\":100,\"cost\":2200,\"value\":2000,\"pnl_value\":-200,\"pnl_pct\":-9.09,\"stop_level\":96,\"reference_lines\":[],\"stop_basis\":\"INITIAL\",\"stop_note\":\"two daily ranges under your buy price until the daily Supertrend line is available\",\"trailing_level\":96,\"target_1\":112,\"target_2\":114,\"trend_4h\":\"LONG\",\"daily_trend\":\"LONG\",\"daily_adx\":30,\"market_time\":\"2026-11-09T15:53:39.436Z\",\"previous_action\":\"HOLD\",\"action_since\":\"2026-11-09T15:53:39.587Z\",\"level_events\":[{\"at\":\"2026-11-09T15:53:39.587Z\",\"kind\":\"INITIAL\",\"reason\":\"Protective level set at $96.00 (two daily ranges under your buy price, because the daily Supertrend line is not available). It rises with the trend and you exit if a day closes under it.\"}],\"last_entry\":{\"id\":\"0gJJNGu1SrFG\",\"side\":\"BUY\",\"shares\":10,\"price\":120,\"at\":\"2026-11-09T15:53:39.676Z\"}}"
+    "detail": "{\"id\":\"bpWj3XxRVbgMJrps\",\"symbol\":\"AAPL\",\"market\":\"US\",\"currency_symbol\":\"$\",\"price_decimals\":2,\"shares\":20,\"buy_price\":110,\"bought_at\":\"2026-11-09\",\"action\":\"HOLD\",\"action_label\":\"Hold\",\"headline\":\"Trend is intact\",\"reasons\":[\"The daily trend is up and the exit line is $96.00. There is no time limit: stay in while the daily Supertrend holds.\"],\"current_price\":100,\"cost\":2200,\"value\":2000,\"pnl_value\":-200,\"pnl_pct\":-9.09,\"stop_level\":96,\"reference_lines\":[],\"stop_basis\":\"INITIAL\",\"stop_note\":\"two daily ranges under your buy price until the daily Supertrend line is available\",\"trailing_level\":96,\"target_1\":112,\"target_2\":114,\"trend_4h\":\"LONG\",\"daily_trend\":\"LONG\",\"daily_adx\":30,\"market_time\":\"2026-11-09T16:25:09.844Z\",\"previous_action\":\"HOLD\",\"action_since\":\"2026-11-09T16:25:10.143Z\",\"level_events\":[{\"at\":\"2026-11-09T16:25:10.143Z\",\"kind\":\"INITIAL\",\"reason\":\"Protective level set at $96.00 (two daily ranges under your buy price, because the daily Supertrend line is not available). It rises with the trend and you exit if a day closes under it.\"}],\"last_entry\":{\"id\":\"XnPEY3yPrQ_a\",\"side\":\"BUY\",\"shares\":10,\"price\":120,\"at\":\"2026-11-09T16:25:10.259Z\"}}"
   },
   {
     "id": "HLD-34",
@@ -675,7 +675,7 @@
     "id": "HLD-56",
     "name": "edit latest buy (10@120 -> 5@130): avg recalculated (10@100+5@130 => 15@110)",
     "ok": true,
-    "detail": "[{\"edited\":true},{\"id\":\"FV4CI8DL9-0JzEbh\",\"symbol\":\"AAPL\",\"market\":\"US\",\"currency_symbol\":\"$\",\"price_decimals\":2,\"shares\":15,\"buy_price\":110,\"bought_at\":\"2026-11-09\",\"action\":\"HOLD\",\"action_label\":\"Hold\",\"headline\":\"Trend is intact\",\"reasons\":[\"The daily trend is up and the exit line is $96.00. There is no time limit: stay in while the daily Supertrend holds.\"],\"current_price\":100,\"cost\":1650,\"value\":1500,\"pnl_value\":-150,\"pnl_pct\":-9.09,\"stop_level\":96,\"reference_lines\":[],\"stop_basis\":\"INITIAL\",\"stop_note\":\"two daily ranges under your buy price until the daily Supertrend line is available\",\"trailing_level\":96,\"target_1\":112,\"target_2\":114,\"trend_4h\":\"LONG\",\"daily_trend\":\"LONG\",\"daily_adx\":30,\"market_time\":\"2026-11-09T15:53:39.436Z\",\"previous_action\":\"HOLD\",\"action_since\":\"2026-11-09T15:53:39.587Z\",\"level_events\":[{\"at\":\"2026-11-09T15:53:39.587Z\",\"kind\":\"INITIAL\",\"reason\":\"Protective level set at $96.00 (two daily ranges under your buy price, because the daily Supertrend line is not available). It rises with the trend and you exit if a day closes under it.\"}],\"last_entry\":{\"id\":\"ig_YLfsOe1SN\",\"side\":\"BUY\",\"shares\":5,\"price\":130,\"at\":\"2026-11-09T15:53:39.676Z\"}}]"
+    "detail": "[{\"edited\":true},{\"id\":\"bpWj3XxRVbgMJrps\",\"symbol\":\"AAPL\",\"market\":\"US\",\"currency_symbol\":\"$\",\"price_decimals\":2,\"shares\":15,\"buy_price\":110,\"bought_at\":\"2026-11-09\",\"action\":\"HOLD\",\"action_label\":\"Hold\",\"headline\":\"Trend is intact\",\"reasons\":[\"The daily trend is up and the exit line is $96.00. There is no time limit: stay in while the daily Supertrend holds.\"],\"current_price\":100,\"cost\":1650,\"value\":1500,\"pnl_value\":-150,\"pnl_pct\":-9.09,\"stop_level\":96,\"reference_lines\":[],\"stop_basis\":\"INITIAL\",\"stop_note\":\"two daily ranges under your buy price until the daily Supertrend line is available\",\"trailing_level\":96,\"target_1\":112,\"target_2\":114,\"trend_4h\":\"LONG\",\"daily_trend\":\"LONG\",\"daily_adx\":30,\"market_time\":\"2026-11-09T16:25:09.844Z\",\"previous_action\":\"HOLD\",\"action_since\":\"2026-11-09T16:25:10.143Z\",\"level_events\":[{\"at\":\"2026-11-09T16:25:10.143Z\",\"kind\":\"INITIAL\",\"reason\":\"Protective level set at $96.00 (two daily ranges under your buy price, because the daily Supertrend line is not available). It rises with the trend and you exit if a day closes under it.\"}],\"last_entry\":{\"id\":\"WuE6BP6B8GGG\",\"side\":\"BUY\",\"shares\":5,\"price\":130,\"at\":\"2026-11-09T16:25:10.259Z\"}}]"
   },
   {
     "id": "HLD-57",
@@ -813,7 +813,7 @@
     "id": "SCN-09",
     "name": "discover (BSE) with no stored scan responds JSON (no crash)",
     "ok": true,
-    "detail": "200 {\"generated_at\":\"2026-11-09T15:53:45.128Z\",\"market_trend\":{\"state\":\"UP\",\"index_state\":\"UP\",\"headline"
+    "detail": "200 {\"generated_at\":\"2026-11-09T16:25:15.485Z\",\"market_trend\":{\"state\":\"UP\",\"index_state\":\"UP\",\"headline"
   },
   {
     "id": "DEL-01",
