@@ -218,11 +218,11 @@ const find = (open, sym) => open.find(x => x.symbol === sym);
   let L = await list();
   const act = s => find(L.open, s)?.action;
   check("HLD-22", "decision HOLD when trend up & strong", act("AAPL") === "HOLD", act("AAPL"));
-  check("HLD-23", "decision EXIT when price < protective level", act("EXITP") === "EXIT", act("EXITP"));
-  check("HLD-24", "decision EXIT when 4H trend turns down", act("EXITT") === "EXIT", act("EXITT"));
-  check("HLD-25", "decision TAKE_PROFIT at/above target", act("TAKEP") === "TAKE_PROFIT", act("TAKEP"));
+  check("HLD-23", "US: price under protective level only WATCHes (exit is the daily Supertrend close)", act("EXITP") === "WATCH", act("EXITP"));
+  check("HLD-24", "US: 4H turning down only WATCHes", act("EXITT") === "WATCH", act("EXITT"));
+  check("HLD-25", "US: target reached stays HOLD (selling early lowered returns)", act("TAKEP") === "HOLD", act("TAKEP"));
   check("HLD-26", "decision WATCH when daily ADX < 20", act("WEAKADX") === "WATCH", act("WEAKADX"));
-  check("HLD-27", "decision WATCH when daily trend down", act("WEAKDAILY") === "WATCH", act("WEAKDAILY"));
+  check("HLD-27", "US: daily trend down is the EXIT", act("WEAKDAILY") === "EXIT", act("WEAKDAILY"));
   const aapl = find(L.open, "AAPL");
   check("HLD-28", "levels ordered: stop < buy < target1 < target2", aapl.stop_level < aapl.buy_price && aapl.buy_price < aapl.target_1 && aapl.target_1 < aapl.target_2, JSON.stringify([aapl.stop_level, aapl.buy_price, aapl.target_1, aapl.target_2]));
   const nvda = find(L.open, "NVDA");
@@ -230,7 +230,7 @@ const find = (open, sym) => open.find(x => x.symbol === sym);
   const usTot = L.totals.find(t => t.market === "US");
   check("HLD-30", "portfolio totals = sum of open costs/values", usTot && Math.abs(usTot.cost - L.open.reduce((s, x) => s + x.cost, 0)) < 0.01 && Math.abs(usTot.value - L.open.reduce((s, x) => s + x.value, 0)) < 0.01);
   check("HLD-31", "portfolio concentration object present", L.portfolio && typeof L.portfolio === "object");
-  check("HLD-32", "refresh_after_seconds 300 or 600", [300, 600].includes(L.refresh_after_seconds));
+  check("HLD-32", "refresh_after_seconds 900 or 1800", [900, 1800].includes(L.refresh_after_seconds));
 
   // increase
   const inc = await H("/increase", { id: ids.AAPL, shares: 10, price: 120 });
