@@ -254,7 +254,7 @@ function renderChart(d){
   const c=d.chart||{},s=c.series||[],host=document.getElementById('price-chart');
   if(s.length<2){host.textContent='Price history is unavailable.';return}
   const W=1100,H=500,PL=56,PR=132,PT=104,PB=55,plotRight=W-PR,levels=c.levels||{},
-    all=s.flatMap(v=>[Number(v.high),Number(v.low),Number(v.supertrend)].filter(Number.isFinite)).concat(Object.values(levels).map(Number)),
+    all=s.flatMap(v=>[Number(v.high),Number(v.low),Number(v.supertrend)].filter(Number.isFinite)).concat(Object.values(levels).map(Number).filter(Number.isFinite)),
     lo=Math.min(...all),hi=Math.max(...all),margin=Math.max((hi-lo)*.08,hi*.02),min=lo-margin,max=hi+margin,
     x=i=>PL+i*(plotRight-PL)/(s.length-1),y=v=>H-PB-(v-min)*(H-PT-PB)/(max-min),
     step=(plotRight-PL)/(s.length-1),candleWidth=Math.max(2,Math.min(6,step*.58)),

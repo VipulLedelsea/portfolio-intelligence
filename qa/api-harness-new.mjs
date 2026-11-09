@@ -201,6 +201,12 @@ const cookie2 = (await worker.fetch(new Request(ORIGIN + "/auth/dev"), baseEnv, 
 const hl = await call("/api/holdings", { cookie: cookie2, body: {} });
 check("MON-14", "/api/holdings exposes alerts block", hl.status === 200 && hl.data.alerts && typeof hl.data.alerts.unseen === "number", JSON.stringify(hl.data.alerts)?.slice(0, 150));
 
+// ---------- NEW-9 dashboard chart scale must ignore non-numeric level fields (live bug: levels.exit_kind is a string -> NaN axis, blank chart) ----------
+const dash = await readFile(resolve(root, "engine/portfolio_intel/dashboard.html"), "utf8");
+check("UI-01", "renderChart filters non-finite values out of chart.levels before computing the price scale", /Object\.values\(levels\)\.map\(Number\)\.filter\(Number\.isFinite\)/.test(dash));
+const built = await readFile(resolve(root, "dist/server/index.js"), "utf8");
+check("UI-02", "built worker bundle contains the same fix", /Object\.values\(levels\)\.map\(Number\)\.filter\(Number\.isFinite\)/.test(built.replace(/\\\\/g, "\\")), "run build-site.mjs first");
+
 const failed = results.filter(r => !r.ok);
 console.log(`New-feature harness: ${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);

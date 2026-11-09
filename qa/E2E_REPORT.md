@@ -32,3 +32,19 @@ node scripts/build-site.mjs && npm run validate
 node qa/api-harness.mjs && node qa/api-harness-extended.mjs && node qa/api-harness-new.mjs
 (cd engine && python3 -m unittest discover -s tests)
 ```
+
+
+# Phase 3 (live web, anonymous) findings, 2026-11-09
+
+Checked on the live site in the built-in browser as an anonymous visitor. Signed-in flows (holdings, alerts, pairing, learning admin) were not exercised because they need a Google sign-in.
+
+| ID | Sev | Finding | Status |
+|---|---|---|---|
+| **W1** | **Medium** | The Interactive trade desk signal chart is blank on every research run: price axis shows `$NaN` five times and the console logs about 185 SVG errors. Cause: `chart.levels` now includes the string field `exit_kind` (`"SUPERTREND_LINE"`), and `renderChart` maps every level through `Number()`, so the price scale becomes NaN. Verified with real AAPL data: scale was `NaN..NaN`, with the fix it is `327.99..370.87`. | **Fixed in source** (`dashboard.html`, `.filter(Number.isFinite)`), regression cases UI-01 and UI-02 added. **Not deployed.** |
+| W2 | Low (copy) | Top ideas banner says "Ranked by an AI model" while every row says "not scored by the model". | Open: confirm which is true, then fix the copy. |
+| W3 | Low | Every one of the 11 Top ideas shows "High confidence" although the dips show R:R 0.5 to target 1. Confidence appears driven by backtest, not the setup; may mislead. | Open: product call. |
+| W4 | Low | Research desk shows "LONG · PASS" with "risk veto active" and heading "Why this is not currently a cleared idea". PASS reads as approval. | Open: wording. |
+| W5 | Low | Scanner track record shows "WORST LOSS +31.29%" when there are no losses. | Open: show a dash when there are no losses. |
+| W6 | Low (carried) | Anonymous load logs a 401 console error; "Refresh grades" shows while signed out. | Open, known. |
+
+Passed: market switch US to India to Forex and back restores the US scan (B4 fix holds); invalid ticker shows "Enter a valid ticker symbol"; lowercase ticker accepted; CSP blocks `eval`; briefing card renders three markets with timestamps; learning panel shows the expected empty states.
