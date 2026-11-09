@@ -72,3 +72,18 @@ Not exercised live: alert creation (needs a real change of read on a held stock;
 - S2 verified live (label now follows the 900/1800 s interval).
 - S1 verified live on the real account: add KO 4 shares, partial sell 1 (history 2 rows, 1 closed lot, realized 232.07 over 3 trades), remove, and everything returned exactly to baseline (0 KO rows, 0 closed lots, realized 212.07 over 2 trades). EBAY 15 and CBOE 7 unchanged throughout.
 - The earlier ghost row from the pre-fix test was already gone when checked, so no manual cleanup was needed; cause not determined.
+
+# Phase 4: iPhone pass on the iOS simulator (2026-11-09, iPhone 18 Pro simulator, build from main @ ccd4c80)
+
+Run by driving the simulator against the live site, paired to the real account. Not covered here (needs the physical phone): Keychain across reboot, real flaky networks, desk display motion detection, VoiceOver, revoke-while-open, offline.
+
+Passed: unpaired Holdings shows a clear "Connect an account" prompt; pairing from the app (one-time code shown, approved on web, app connected on its own within seconds); a wrong code on the web is refused; Today briefing matches the web (same ideas, same holdings summary); Holdings label fix works on iOS (after the close it reads "auto-updates every 30 minutes, markets closed", matching the Market closed pill); Scanner shows ranking, buy-range bar and "In buy range" badge consistent with web; Memory tab renders the track record and learning text.
+
+| ID | Sev | Finding | Status |
+|---|---|---|---|
+| I1 | Low | Scanner track record on iOS also shows "WORST LOSS +31.29%" with no losses (same as web W5, "AVG LOSS" already shows a dash). | Open, same fix as W5. |
+| I2 | Low (wording) | A wrong pairing code on the web says "That pairing code expired", same text as a truly expired one. Probably deliberate (no code oracle) but misleading. | Open: product call. |
+| I3 | Low (to confirm) | Right after first launch, unpaired, the Today tab showed "Loading today's briefing" for over a minute and did not change before pairing. The briefing is readable without an account, so unpaired users may see an endless spinner. Could also be slow simulator rendering (UI repaints took several seconds). | Open: retest on the physical phone. |
+| I4 | Low | iOS Top ideas header says "Ranked by AI" while rows are "not scored by the model" (same as web W2). | Open with W2. |
+
+Note: the account now has 5 open holdings (CBOE, EBAY, CME, NUE, CVX), so 3 were added after the earlier signed-in test. Not touched by the tests.
