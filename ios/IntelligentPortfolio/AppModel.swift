@@ -195,7 +195,7 @@ final class AppModel: ObservableObject {
         }
         pairing = nil
         connectionState = .disconnected
-        errorMessage = "The pairing code expired. Generate a new one and try again."
+        errorMessage = "That pairing code is not valid or has expired. Generate a new one and try again."
     }
 
     func refreshAll() async {

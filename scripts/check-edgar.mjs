@@ -1,0 +1,47 @@
+// Checks the SEC EDGAR filing parser (edgarFlagsFrom) on hand-built filing lists: earnings dates, severe and caution 8-K items, late-filing
+// notices, ageing, malformed rows and a hostile filing field. Extracts the real code from worker/runtime.js.
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+const source = readFileSync(fileURLToPath(new URL("../worker/runtime.js", import.meta.url)), "utf8");
+const start = source.indexOf("const EDGAR_SEVERE_ITEMS"), mid = source.indexOf("function edgarHeaders"), a = source.indexOf("const dayNumber"), end = source.indexOf("// The next report date from Robinhood");
+assert.ok(start > 0 && mid > start && a > mid && end > a, "EDGAR code block must exist");
+const code = `${source.slice(start, mid)}\n${source.slice(a, end)}\nexport { edgarFlagsFrom, dayNumber };`;
+const { edgarFlagsFrom, dayNumber } = await import("data:text/javascript;base64," + Buffer.from(code).toString("base64"));
+const today = dayNumber("2026-11-09");
+const iso = offset => new Date((today + offset) * 86400000).toISOString().slice(0, 10);
+const rec = rows => ({ form: rows.map(r => r[0]), filingDate: rows.map(r => r[1]), items: rows.map(r => r[2] ?? "") });
+let n = 0; const ok = (name, cond) => { assert.ok(cond, name); n++; };
+
+let f = edgarFlagsFrom(rec([]), today);
+ok("empty filings: no flags", f.earnings_in_days === null && f.severe.length === 0 && f.cautions.length === 0);
+f = edgarFlagsFrom(undefined, today);
+ok("missing block does not throw", f.earnings_in_days === null);
+f = edgarFlagsFrom(rec([["8-K", iso(-30), "2.02,9.01"]]), today);
+ok("one earnings 8-K 30 days ago estimates the next about 61 days out", f.earnings_in_days === 61 && f.last_reported_days_ago === 30);
+f = edgarFlagsFrom(rec([["8-K", iso(-200), "2.02"]]), today);
+ok("earnings estimate far in the past (beyond -7 days) is dropped", f.earnings_in_days === null && f.earnings_estimate === null);
+f = edgarFlagsFrom(rec([["8-K", iso(-5), "4.02"]]), today);
+ok("non-reliance 8-K within 30 days is severe", f.severe.length === 1 && /no longer be relied on/.test(f.severe[0]));
+f = edgarFlagsFrom(rec([["8-K", iso(-45), "1.03"]]), today);
+ok("severe 8-K older than 30 days is ignored", f.severe.length === 0);
+f = edgarFlagsFrom(rec([["8-K", iso(-3), "5.02"]]), today);
+ok("executive change is a caution, not severe", f.cautions.length === 1 && f.severe.length === 0);
+f = edgarFlagsFrom(rec([["NT 10-K", iso(-60), ""]]), today);
+ok("late-filing notice within 90 days is severe", f.severe.length === 1);
+f = edgarFlagsFrom(rec([["NT 10-Q", iso(-120), ""]]), today);
+ok("late-filing notice older than 90 days is ignored", f.severe.length === 0);
+f = edgarFlagsFrom(rec([["10-Q", iso(-2), "2.02"]]), today);
+ok("only 8-K forms count as earnings releases", f.earnings_in_days === null);
+f = edgarFlagsFrom(rec([["8-K", iso(-2), "5.02"], ["8-K", iso(-2), "5.02"], ["8-K", iso(-2), "5.02,5.02"]]), today);
+ok("same-day duplicate cautions are collapsed", f.cautions.length === 1);
+f = edgarFlagsFrom(rec([["8-K", iso(-1), "1.03"], ["8-K", iso(-2), "4.02"], ["8-K", iso(-3), "2.04"], ["NT 10-K", iso(-4), ""]]), today);
+ok("severe list is capped at 3", f.severe.length === 3);
+f = edgarFlagsFrom({ form: ["8-K"], filingDate: ["not-a-date"], items: [null] }, today);
+ok("malformed date and null items do not throw or flag", f.severe.length === 0);
+f = edgarFlagsFrom(rec([["8-K", iso(-3), "<script>alert(1)</script>,5.02"]]), today);
+ok("hostile items text never appears in output", !JSON.stringify(f).includes("script") && f.cautions.length === 1);
+const four = [0, 91, 182, 273].map(d => ["8-K", iso(-(d + 20)), "2.02"]);
+f = edgarFlagsFrom(rec(four), today);
+ok("four quarters of history yields a finite estimate", Number.isFinite(f.earnings_in_days));
+console.log(`EDGAR parser checks passed (${n})`);

@@ -103,3 +103,19 @@ Harnesses after fixes: new 93/93, round 1 139/139, extended 66/66, `npm run vali
 | W3 | Not changed: "High confidence" comes from the AI ranking; whether to cap it by R:R is a product call. |
 | S3 | Not changed: needs worker logs ("Debate failed for") to tell lag from failure. |
 | S4 | Not changed: duplicate symbol adds are a product call (warn, merge, or allow). |
+
+# Fix round 2 and remaining phases (2026-11-09), committed, not yet deployed
+After: new harness 96/96, round 1 139/139, extended 66/66, `npm run validate` pass (now includes `check-edgar`), Python 11/11, iOS builds.
+
+| ID | Resolution |
+|---|---|
+| S3 | Closed, not a bug. Live Top ideas ranks 1 to 5 all have debates. Debates are generated for the top 5 at most every 50 minutes, so an idea that jumps to #1 waits for the next run. |
+| S4 | Fixed. Adding a symbol already held (open) returns 409 "Use Add shares" unless `allow_duplicate: true`. DUP-01, DUP-02. Harness HLD-68 adjusted (it relied on repeated adds of one symbol). |
+| W3 | Fixed. "High" confidence is capped to "Med" when reward-to-risk to target 1 is under 1. CONF-01. |
+| Billing | `/api/billing/checkout` returned 502 when the paywall is off; now 404 with the same message. |
+| I2 (iOS) | iOS pairing-expired message reworded to match the web. |
+| Phase 1 gaps | New `scripts/check-edgar.mjs` (15 cases on the EDGAR filing parser) added to `npm run validate`. Debate internals and post-mortems were already covered by `check-debate` and `check-postmortem`. Position sizing is client-side and was verified by hand on the live site; it has no automated test. Python `clients.py` has no dedicated tests. |
+| Phase 2 | Live holdings cross-check on the real account: for all 5 open rows value, cost, P&L value and P&L percent agree with price x shares; totals (cost 8099.44, value 8109.37, P&L 9.93) equal the row sums and match the iPhone app. NUE and CVX show EXIT while price is above the stop because the exit is the daily trend turning down, as designed. |
+| Phase 6 (live, unauthenticated) | All 12 holdings routes, account delete, session revoke and memory return 401 with no credentials and with a bogus bearer; learning/decide returns 403; foreign-origin POST returns 401. Secret scan of the tree and git history found no keys. `npm audit`: 4 moderate, all esbuild inside the dev-only drizzle-kit toolchain (a dev-server issue, not shipped). Rendering: user-controlled strings go through `esc()` or `textContent`. Not exercised live: IDOR with a second account, mobile bearer on web-only routes (covered offline by the harnesses). |
+| Phase 7 | Legal pages `/terms`, `/privacy`, `/support` return 200; `/health` reports read-only. Added the missing root `README.md`; `docs/CLOUDFLARE_SETUP.md` now mentions the 15 minute US and BSE triggers. App version is still 1.0 (1), fine until a TestFlight upload. |
+| Phase 5 | Not done: needs a full trading day of cron history, a log tail during runs, and a load test of the live site. |

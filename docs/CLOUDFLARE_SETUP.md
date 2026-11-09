@@ -39,6 +39,6 @@ Sign-in is Google OAuth with server-side sessions stored in D1. Nothing here nee
 ## Notes
 
 - Existing Stripe subscribers are matched to their new Google sign-in by verified email.
-- The BSE and forex scans refresh at most once an hour while their markets are open (a cron trigger runs at five past each hour). After a provider error the Worker waits 15 minutes before trying again.
+- The BSE and forex scans refresh at most once an hour while their markets are open (a cron trigger runs at five past each hour). After a provider error the Worker waits 15 minutes before trying again. US and BSE also refresh every 15 minutes during their trading hours (the `*/15` triggers in `wrangler.toml`), and the position monitor and learning refresh run from the same triggers.
 - Data comes from Yahoo's chart endpoint by default. Set `TWELVE_DATA_API_KEY` to use Twelve Data instead.
 - `AUTH_MODE=oai` re-enables the OpenAI Sites identity headers. Never set it on Cloudflare: those headers can be forged there.

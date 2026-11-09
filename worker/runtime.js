@@ -356,7 +356,7 @@ async function requireSubscription(request, env) {
 }
 
 async function createCheckout(request, env) {
-  if (env.PAYWALL_ENABLED !== "true") throw new Error("The subscription paywall is not enabled yet");
+  if (env.PAYWALL_ENABLED !== "true") throw Object.assign(new Error("The subscription paywall is not enabled yet"), { status: 404 });
   const user = await authenticatedUser(request, env);
   if (!user) throw Object.assign(new Error("Sign in before subscribing"), { status: 401 });
   const current = await subscriptionAccess(request, env, { force: true });
@@ -1773,6 +1773,11 @@ function rankHardFilter(item) {
 // Rules score, 0-100, with the weights of the ranking brief: expected value 35, reward to risk 20, trend and market alignment 15,
 // entry quality 15, liquidity 10, freshness 5. Used to order the list when no AI key is set, and handed to the model as a reference.
 // Points off for earnings inside the next two weeks and for cautionary filings. Applied to the rules score and, after the model scores, to the AI score.
+// A setup whose first target pays less than the risk (reward to risk under 1) is never shown as High confidence, whatever the model said.
+function capConfidence(confidence, item) {
+  return confidence === "High" && typeof item?.rr_t1 === "number" && item.rr_t1 < 1 ? "Med" : confidence;
+}
+
 function filingScorePenalty(item) {
   const f = item.filing;
   return (f?.earnings_in_days != null && f.earnings_in_days >= 0 && f.earnings_in_days <= EDGAR_EARNINGS_WINDOW_DAYS ? 10 : 0) + (f?.cautions?.length ? 3 : 0);
@@ -2125,7 +2130,7 @@ function mergeAiRanking(ranking, stored) {
   for (const row of ai.ranked) {
     const item = byId.get(row.id);
     if (!item) continue;
-    ordered.push({ ...item, score: clamp(row.score - filingScorePenalty(item) - (item.learned_penalty || 0), 0, 100), confidence: row.confidence, reason: row.reason || item.reason, sources: ["ai"] });
+    ordered.push({ ...item, score: clamp(row.score - filingScorePenalty(item) - (item.learned_penalty || 0), 0, 100), confidence: capConfidence(row.confidence, item), reason: row.reason || item.reason, sources: ["ai"] });
     byId.delete(row.id);
   }
   const rejectedIds = new Map(ai.rejected.map(row => [row.id, row.reason]));
@@ -3627,6 +3632,10 @@ async function addHolding(request, env) {
   const today = new Date().toISOString().slice(0, 10);
   const boughtAt = body.bought_at === undefined || body.bought_at === null || body.bought_at === "" ? today : body.bought_at;
   if (!validPastDay(boughtAt, today)) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
+  if (body.allow_duplicate !== true) {
+    const dup = await env.DB.prepare("SELECT id FROM holdings WHERE user_id = ? AND symbol = ? AND market = ? AND closed_at IS NULL LIMIT 1").bind(user.id, symbol, marketId).first();
+    if (dup) throw Object.assign(new Error(`You already hold ${symbol}. Use "Add shares" on that position so it keeps one average price.`), { status: 409 });
+  }
   const open = await env.DB.prepare("SELECT COUNT(*) AS n FROM holdings WHERE user_id = ? AND closed_at IS NULL").bind(user.id).first();
   if (Number(open?.n || 0) >= MAX_OPEN_HOLDINGS) throw Object.assign(new Error(`You can track up to ${MAX_OPEN_HOLDINGS} open holdings. Remove or close one first.`), { status: 400 });
   const { snapshots, errors } = await holdingSnapshotsFor(env, market, [symbol]);

@@ -239,6 +239,17 @@ check("FIX-04", "pairing error no longer claims every bad code expired", /not va
 check("FIX-05", "signed-out visitors never call /api/memory and never see the Refresh grades panel", /memorySignedIn=Boolean\(access\.signed_in\)/.test(dash) && /if\(!memorySignedIn\)\{memorySection\.classList\.add\('hidden'\);return\}/.test(dash));
 check("FIX-06", "research desk shows NOT A TRADE instead of PASS", /actionLabel=value=>value==='PASS'\?'NOT A TRADE'/.test(dash));
 
+{
+  const dupCookie = cookie2;
+  const first = await call("/api/holdings/add", { cookie: dupCookie, body: { symbol: "RMV", shares: 1, price: 50 } });
+  const again = await call("/api/holdings/add", { cookie: dupCookie, body: { symbol: "rmv", shares: 1, price: 51 } });
+  check("DUP-01", "adding a symbol already held (open) is refused with guidance", first.status === 200 && again.status === 409 && /Add shares/.test(again.data.error), JSON.stringify(again.data));
+  const forced = await call("/api/holdings/add", { cookie: dupCookie, body: { symbol: "RMV", shares: 1, price: 51, allow_duplicate: true } });
+  check("DUP-02", "allow_duplicate:true still permits a second lot", forced.status === 200, JSON.stringify(forced.data));
+}
+
+check("CONF-01", "High confidence is capped to Med when reward to risk to target 1 is under 1", /function capConfidence[\s\S]{0,200}rr_t1 < 1 \? "Med"/.test(await readFile(resolve(root, "worker/runtime.js"), "utf8")) && /confidence: capConfidence\(row\.confidence, item\)/.test(await readFile(resolve(root, "worker/runtime.js"), "utf8")));
+
 const failed = results.filter(r => !r.ok);
 console.log(`New-feature harness: ${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);

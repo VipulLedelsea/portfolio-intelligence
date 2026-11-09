@@ -320,7 +320,7 @@ const find = (open, sym) => open.find(x => x.symbol === sym);
   for (let i = 0; i < 25; i++) await H("/add", { symbol: `FILL${i % 22}`, shares: 1, price: 50 }, c2);
   const open2 = (await list(c2)).open.length;
   check("HLD-67", "max 20 open holdings enforced", open2 === 20, String(open2));
-  const over = await H("/add", { symbol: "FILL1", shares: 1, price: 50 }, c2);
+  const over = await H("/add", { symbol: "FILL99", shares: 1, price: 50 }, c2);
   check("HLD-68", "21st add -> 400 with clear message", over.status === 400 && /20 open holdings/.test(over.data.error), JSON.stringify(over.data));
 
   // BSE flow
