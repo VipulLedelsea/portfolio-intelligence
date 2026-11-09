@@ -1,5 +1,6 @@
 // Does an earnings report inside the holding window hurt? Same data and 0.1% per side cost as backtest6-10. Research only.
-// Earnings dates come from Robinhood (fetch_earnings.mjs), which only holds the last ~17 months, so signals are from 2025-03-12 on.
+// Earnings dates come from Robinhood (fetch_earnings.mjs), which only holds about the last five quarters and starts at a different date for each stock
+// (median 2025-04-30). A stock is only tested from its own first listed report onward, so no earlier report is missing from its record.
 // Entry at the next open after the signal close, exit at the close of day H. A trade is "flagged" when the market reaction to a report falls inside the
 // hold: the report day for before-open ("am") reports, the next session for after-close ("pm") ones.
 // Run: node backtest11.mjs
@@ -42,9 +43,9 @@ for (const H of [5, 10]) {
       if (sym === "SPY" || !earn[sym]) continue;
       const S = prep(bars), react = new Set();
       for (const [e, timing] of earn[sym]) { let i = S.idx.get(e); if (i === undefined) { i = S.d.findIndex(x => x >= e); if (i < 0) continue; } react.add(timing === "pm" ? i + 1 : i); }
-      let nextFree = 0;
+      let nextFree = 0; const firstReport = earn[sym][0][0];
       for (let t = 260; t + H + 1 < S.n; t++) {
-        if (S.d[t] < FROM || t < nextFree || !rule(S, t)) continue;
+        if (S.d[t] < FROM || S.d[t] < firstReport || t < nextFree || !rule(S, t)) continue;
         if (gate && !(spy5(S.d[t]) <= -0.015)) continue;
         const ret = S.c[t + 1 + H - 1] / S.o[t + 1] - 1 - 2 * COST; nextFree = t + H + 1;
         let flag = false; for (let k = t + 1; k <= t + H; k++) if (react.has(k)) flag = true;

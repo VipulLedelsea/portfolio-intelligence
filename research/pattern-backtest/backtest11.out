@@ -2,53 +2,53 @@
 === Hold 5 days ===
 
 Dip (RSI2<10, above 200d)
-  clear     n=  5092  mean   0.38%  win 53%  sd 4.91%  worst5% -6.8%
-  earnings  n=   393  mean   0.66%  win 48%  sd 8.31%  worst5% -10.8%
-  flagged minus clear: 0.28%  (date-clustered 95% interval -0.72% to 1.25%)
+  clear     n=  4818  mean   0.41%  win 53%  sd 4.81%  worst5% -6.4%
+  earnings  n=   378  mean   0.61%  win 48%  sd 8.33%  worst5% -10.8%
+  flagged minus clear: 0.20%  (date-clustered 95% interval -0.83% to 1.24%)
 
 Dip (RSI2<10, above 200d) + SPY down 1.5% gate
-  clear     n=  1504  mean   1.05%  win 61%  sd 4.98%  worst5% -6.5%
-  earnings  n=   124  mean   1.62%  win 54%  sd 9.81%  worst5% -10.4%
-  flagged minus clear: 0.57%  (date-clustered 95% interval -1.61% to 2.81%)
+  clear     n=  1305  mean   1.05%  win 59%  sd 4.78%  worst5% -6.0%
+  earnings  n=   116  mean   1.51%  win 53%  sd 10.05%  worst5% -10.8%
+  flagged minus clear: 0.46%  (date-clustered 95% interval -1.84% to 2.92%)
 
 Sharp dip (RSI2<5, -5% in 3d)
-  clear     n=  1088  mean   0.74%  win 55%  sd 6.05%  worst5% -8.4%
+  clear     n=   994  mean   0.56%  win 53%  sd 5.76%  worst5% -8.1%
   earnings  n=    71  mean   0.07%  win 44%  sd 11.39%  worst5% -19.8%
-  flagged minus clear: -0.67%  (date-clustered 95% interval -3.93% to 2.23%)
+  flagged minus clear: -0.49%  (date-clustered 95% interval -3.56% to 2.53%)
 
 Sharp dip (RSI2<5, -5% in 3d) + SPY down 1.5% gate
-  clear     n=   438  mean   1.61%  win 61%  sd 6.37%  worst5% -9.1%
+  clear     n=   356  mean   1.23%  win 56%  sd 5.88%  worst5% -8.7%
   earnings  n=    31  mean  -0.04%  win 42%  sd 10.79%  worst5% -17.3%
-  flagged minus clear: -1.66%  (date-clustered 95% interval -7.46% to 3.30%)
+  flagged minus clear: -1.27%  (date-clustered 95% interval -6.67% to 3.40%)
 
 Any stock-day (control)
-  clear     n= 35150  mean  -0.07%  win 49%  sd 4.69%  worst5% -7.2%
-  earnings  n=  3007  mean  -0.02%  win 49%  sd 8.72%  worst5% -13.6%
-  flagged minus clear: 0.05%  (date-clustered 95% interval -0.67% to 0.73%)
+  clear     n= 31768  mean  -0.00%  win 48%  sd 4.67%  worst5% -6.9%
+  earnings  n=  2609  mean   0.03%  win 50%  sd 8.72%  worst5% -13.3%
+  flagged minus clear: 0.03%  (date-clustered 95% interval -0.49% to 0.60%)
 
 === Hold 10 days ===
 
 Dip (RSI2<10, above 200d)
-  clear     n=  3895  mean   0.88%  win 54%  sd 7.34%  worst5% -9.2%
-  earnings  n=   603  mean   0.46%  win 50%  sd 9.33%  worst5% -14.1%
-  flagged minus clear: -0.43%  (date-clustered 95% interval -1.42% to 0.56%)
+  clear     n=  3677  mean   0.92%  win 53%  sd 7.39%  worst5% -9.2%
+  earnings  n=   577  mean   0.37%  win 50%  sd 9.35%  worst5% -14.8%
+  flagged minus clear: -0.55%  (date-clustered 95% interval -1.58% to 0.51%)
 
 Dip (RSI2<10, above 200d) + SPY down 1.5% gate
-  clear     n=  1284  mean   1.97%  win 62%  sd 7.63%  worst5% -8.8%
-  earnings  n=   230  mean   1.32%  win 58%  sd 10.43%  worst5% -14.2%
-  flagged minus clear: -0.65%  (date-clustered 95% interval -3.55% to 1.52%)
+  clear     n=  1111  mean   1.94%  win 60%  sd 7.93%  worst5% -8.9%
+  earnings  n=   216  mean   1.28%  win 58%  sd 10.66%  worst5% -15.3%
+  flagged minus clear: -0.66%  (date-clustered 95% interval -3.79% to 1.74%)
 
 Sharp dip (RSI2<5, -5% in 3d)
-  clear     n=   960  mean   1.30%  win 55%  sd 8.43%  worst5% -11.0%
-  earnings  n=   148  mean   0.75%  win 54%  sd 11.54%  worst5% -17.8%
-  flagged minus clear: -0.55%  (date-clustered 95% interval -2.81% to 1.53%)
+  clear     n=   875  mean   1.21%  win 53%  sd 8.42%  worst5% -11.0%
+  earnings  n=   142  mean   0.44%  win 53%  sd 11.51%  worst5% -17.8%
+  flagged minus clear: -0.78%  (date-clustered 95% interval -3.15% to 1.37%)
 
 Sharp dip (RSI2<5, -5% in 3d) + SPY down 1.5% gate
-  clear     n=   386  mean   2.70%  win 62%  sd 9.27%  worst5% -10.1%
-  earnings  n=    70  mean   1.49%  win 63%  sd 12.94%  worst5% -17.9%
-  flagged minus clear: -1.22%  (date-clustered 95% interval -7.19% to 3.17%)
+  clear     n=   311  mean   2.56%  win 59%  sd 9.76%  worst5% -11.0%
+  earnings  n=    65  mean   1.17%  win 62%  sd 13.17%  worst5% -17.9%
+  flagged minus clear: -1.39%  (date-clustered 95% interval -7.48% to 3.46%)
 
 Any stock-day (control)
-  clear     n= 16040  mean   0.25%  win 50%  sd 6.87%  worst5% -10.3%
-  earnings  n=  2762  mean   0.69%  win 53%  sd 10.28%  worst5% -15.4%
-  flagged minus clear: 0.44%  (date-clustered 95% interval -0.78% to 1.73%)
+  clear     n= 14688  mean   0.48%  win 52%  sd 6.81%  worst5% -9.5%
+  earnings  n=  2465  mean   0.39%  win 52%  sd 10.21%  worst5% -15.5%
+  flagged minus clear: -0.09%  (date-clustered 95% interval -0.80% to 0.61%)

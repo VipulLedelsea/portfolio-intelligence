@@ -1416,8 +1416,8 @@ function buildPatternScan(snapshots, metadata) {
 // are quarterly and seasonal, so the next one is estimated from the same quarter a year ago. It is an estimate, labelled as such. EDGAR also
 // shows serious events (non-reliance on financials, bankruptcy, delisting notice, late filings) which skip an idea outright.
 const EDGAR_STALE_MS = 20 * 3600 * 1000, EDGAR_EARNINGS_WINDOW_DAYS = 14, EDGAR_EARNINGS_SKIP_DAYS = 3;
-const EDGAR_SEVERE_ITEMS = { "4.02": "the company said past financial statements can no longer be relied on", "1.03": "bankruptcy or receivership", "3.01": "a stock-exchange delisting notice", "2.04": "a debt acceleration event" };
-const EDGAR_CAUTION_ITEMS = { "4.01": "an auditor change", "5.02": "an executive or director change", "2.05": "a restructuring" };
+const EDGAR_SEVERE_ITEMS = { "4.02": "the company said past financial statements can no longer be relied on", "1.03": "bankruptcy or receivership", "2.04": "a debt acceleration event" };
+const EDGAR_CAUTION_ITEMS = { "3.01": "a stock-exchange listing notice (it can be a routine transfer or a delisting warning)", "4.01": "an auditor change", "5.02": "an executive or director change", "2.05": "a restructuring" };
 
 function edgarHeaders(env) {
   return { accept: "application/json", "user-agent": env?.SEC_CONTACT ? `IntelligentPortfolio/1.0 ${env.SEC_CONTACT}` : "IntelligentPortfolio/1.0 research tool" };
@@ -1441,6 +1441,7 @@ async function edgarCacheWrite(env, id, value) {
 async function edgarCikMap(env) {
   const cached = await edgarCacheRead(env, "EDGAR:CIK");
   if (cached?.at && Date.now() - cached.at < 7 * 86400000 && cached.map) return cached.map;
+  if (cached?.failed_at && Date.now() - cached.failed_at < 30 * 60000) return cached.map || null; // SEC refused recently: do not spend a request on it every run
   try {
     const response = await fetch("https://www.sec.gov/files/company_tickers.json", { headers: edgarHeaders(env), signal: AbortSignal.timeout(20000) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1449,7 +1450,10 @@ async function edgarCikMap(env) {
     for (const row of rows) if (row?.ticker && row.cik_str) map[String(row.ticker).toUpperCase()] = Number(row.cik_str);
     await edgarCacheWrite(env, "EDGAR:CIK", { at: Date.now(), map });
     return map;
-  } catch { return cached?.map || null; }
+  } catch {
+    await edgarCacheWrite(env, "EDGAR:CIK", { at: cached?.at || 0, map: cached?.map || null, failed_at: Date.now() });
+    return cached?.map || null;
+  }
 }
 
 const dayNumber = iso => Math.floor(Date.parse(`${String(iso).slice(0, 10)}T00:00:00Z`) / 86400000);
@@ -1529,6 +1533,8 @@ async function loadFilingFlags(env, symbols, maxFetch = 6) {
         changed = true;
         await new Promise(resolve => setTimeout(resolve, 120)); // stay well under the SEC's 10 requests per second
       }
+      // Symbols past the cap keep their older cached value instead of losing their data for a run.
+      for (const symbol of due.slice(maxFetch)) if (cache[symbol]) out.set(symbol, { ...cache[symbol].flags, source: "SEC EDGAR and Robinhood earnings", checked_at: new Date(cache[symbol].at).toISOString(), stale: true });
       if (changed) await edgarCacheWrite(env, "EDGAR:FLAGS", cache);
     }
   } catch (error) { console.error(`SEC filing check failed: ${cleanError(error)}`); }
@@ -1591,6 +1597,12 @@ function rankHardFilter(item) {
 
 // Rules score, 0-100, with the weights of the ranking brief: expected value 35, reward to risk 20, trend and market alignment 15,
 // entry quality 15, liquidity 10, freshness 5. Used to order the list when no AI key is set, and handed to the model as a reference.
+// Points off for earnings inside the next two weeks and for cautionary filings. Applied to the rules score and, after the model scores, to the AI score.
+function filingScorePenalty(item) {
+  const f = item.filing;
+  return (f?.earnings_in_days != null && f.earnings_in_days >= 0 && f.earnings_in_days <= EDGAR_EARNINGS_WINDOW_DAYS ? 10 : 0) + (f?.cautions?.length ? 3 : 0);
+}
+
 function rankRulesScore(item) {
   const ev = item.evidence.ev_pct, known = ev !== null;
   const evPart = known ? clamp((ev + 1) / 3 * 100, 0, 100) : 40; // no backtest in this market: a below-average, not a negative, score
@@ -1605,8 +1617,7 @@ function rankRulesScore(item) {
   if (item.evidence.experimental) score -= 12;
   if (item.evidence.n < RANK_MIN_PROVEN_TRADES) score -= 10;
   if (known && ev <= 0) score = Math.min(score, 40);
-  if (item.filing?.earnings_in_days != null && item.filing.earnings_in_days >= 0 && item.filing.earnings_in_days <= EDGAR_EARNINGS_WINDOW_DAYS) score -= 10; // earnings inside the next two weeks
-  if (item.filing?.cautions?.length) score -= 3;
+  score -= filingScorePenalty(item);
   return round(clamp(score, 0, 100), 1);
 }
 
@@ -1681,7 +1692,10 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
   for (const strategy of ["SUPERTREND", "DIP", "PATTERN"]) raw.filter(r => r.strategy === strategy).sort((a, b) => b.scanner_score - a.scanner_score).forEach((r, i) => byListPosition.set(r, i + 1));
   const items = [], rejected = [];
   for (const r of raw) {
-    const item = rankItem({ ...r, id: `${r.strategy}:${r.symbol}:${r.direction}`, evidence: RANK_EVIDENCE[r.evidence_key], scanner_rank_in_list: byListPosition.get(r), filing: filings.get(r.symbol) || null });
+    // A serious filing skips a long idea. For a short idea the same event supports the trade, so it is shown as a note instead.
+    const f0 = filings.get(r.symbol) || null;
+    const filing = f0 && r.direction === "SHORT" && f0.severe?.length ? { ...f0, severe: [], cautions: [...(f0.cautions || []), ...f0.severe].slice(0, 3) } : f0;
+    const item = rankItem({ ...r, id: `${r.strategy}:${r.symbol}:${r.direction}`, evidence: RANK_EVIDENCE[r.evidence_key], scanner_rank_in_list: byListPosition.get(r), filing });
     const reason = rankHardFilter(item);
     if (reason) rejected.push({ id: item.id, symbol: item.symbol, strategy: item.strategy, tag: item.tag, reason });
     else items.push(item);
@@ -1745,6 +1759,7 @@ Penalize experimental strategies, small backtest samples, strategies whose backt
 RULES
 - Prefer fewer, higher-conviction picks over a long list. Be explicit when the honest answer is "nothing here is compelling today".
 - Do not recommend position sizes or say "buy"; present ranked research.
+- The code subtracts points after your score for earnings inside two weeks and for cautionary SEC filings (the sec_filings field), so do not adjust your scores for them; you may still mention them in a reason.
 - Show numbers from the input in your reasons (for example "backtest +1.6% per trade, 45% wins, 503 trades").
 - Write plain, short sentences. No markdown.
 
@@ -1762,7 +1777,7 @@ Reply with ONE JSON object and nothing else, with exactly these keys:
 
 function rankInputHash(items) {
   let h = 2166136261;
-  for (const text of items.map(item => `${item.id}|${item.stop}|${item.target_1}`).sort().join(";")) { h ^= text.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
+  for (const text of items.map(item => `${item.id}|${item.stop}|${item.target_1}|${item.filing?.earnings_estimate ?? ""}|${(item.filing?.cautions || []).length}`).sort().join(";")) { h ^= text.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
   return h.toString(36);
 }
 
@@ -1924,7 +1939,7 @@ function mergeAiRanking(ranking, stored) {
   for (const row of ai.ranked) {
     const item = byId.get(row.id);
     if (!item) continue;
-    ordered.push({ ...item, score: row.score, confidence: row.confidence, reason: row.reason || item.reason, sources: ["ai"] });
+    ordered.push({ ...item, score: clamp(row.score - filingScorePenalty(item), 0, 100), confidence: row.confidence, reason: row.reason || item.reason, sources: ["ai"] });
     byId.delete(row.id);
   }
   const rejectedIds = new Map(ai.rejected.map(row => [row.id, row.reason]));
@@ -1933,7 +1948,8 @@ function mergeAiRanking(ranking, stored) {
     if (rejectedIds.has(id)) extraRejected.push({ id, symbol: item.symbol, strategy: item.strategy, tag: item.tag, reason: rejectedIds.get(id) });
   }
   const unranked = [...byId.values()].filter(item => !rejectedIds.has(item.id)).map(item => ({ ...item, sources: ["rules"], reason: `${item.reason} · not scored by the model` }));
-  const items = [...ordered, ...unranked].map((item, index) => ({ ...item, rank: index + 1 }));
+  // The earnings and filing penalty comes off after the model's score, so a penalised idea can drop below ones the model placed under it.
+  const items = [...ordered].sort((a, b) => b.score - a.score).concat(unranked).map((item, index) => ({ ...item, rank: index + 1 }));
   const dives = new Map(ai.deep_dives.map(row => [row.id, row]));
   return {
     ...ranking, source: "ai", model: stored.model, ai_generated_at: stored.generated_at,
@@ -2635,7 +2651,7 @@ async function refreshScan(env, market, ctx) {
 // the other, and a judge weighs what is left. Every claim cites facts by key, and CODE checks each cited value and each number in the text
 // against the idea's real figures; a claim that does not check out is dropped and counted. The verdict is shown and logged but never changes
 // the score: there is no evidence yet that a model's lean predicts returns.
-const DEBATE_TOP_N = 5, DEBATE_MIN_GAP_SECONDS = 50 * 60, DEBATE_MAX_AGE_SECONDS = 24 * 3600;
+const DEBATE_TOP_N = 5, DEBATE_MIN_GAP_SECONDS = 50 * 60, DEBATE_MAX_AGE_SECONDS = 24 * 3600, DEBATE_LEASE_SECONDS = 10 * 60, DEBATE_BUDGET_SECONDS = 4 * 60;
 const DEBATE_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast";
 const FACT_DEFS = {
   backtest_ev_pct: { label: "Backtest average return per trade", unit: "%", signed: true },
@@ -2707,13 +2723,13 @@ function verifyDebateClaims(rawClaims, allFacts, allowedKeys, max = 3) {
       const n = Number(match[0]);
       if (!DEBATE_FREE_NUMBERS.has(n) && !numbers.some(real => near(n, real))) { ok = false; break; }
     }
-    if (ok) kept.push({ text, facts }); else dropped++;
+    if (ok) kept.push({ text, facts, ...(typeof raw?.to === "string" ? { to: raw.to } : {}) }); else dropped++;
   }
   return { kept, dropped };
 }
 
 async function debateCall(env, model, system, user, maxTokens = 700) {
-  const run = params => Promise.race([env.AI.run(model, params), new Promise((_, reject) => setTimeout(() => reject(new Error("The AI model took too long")), 60000))]);
+  const run = params => Promise.race([env.AI.run(model, params), new Promise((_, reject) => setTimeout(() => reject(new Error("The AI model took too long")), 40000))]);
   const result = await run({ messages: [{ role: "system", content: system }, { role: "user", content: user }], max_tokens: maxTokens, temperature: 0.3 });
   const out = result?.response ?? result;
   return typeof out === "string" ? parseModelJson(out) : out;
@@ -2747,7 +2763,7 @@ async function runDebate(env, item, marketState) {
       const rows = (Array.isArray(raw?.rebuttals) ? raw.rebuttals : []).filter(r => validTargets.has(String(r?.to)));
       const { kept, dropped: d } = verifyDebateClaims(rows, facts, keys, 2);
       dropped += d + (Array.isArray(raw?.rebuttals) ? raw.rebuttals.length : 0) - rows.length;
-      return kept.map((claim, i) => ({ to: String(rows[i]?.to), ...claim }));
+      return kept;
     };
     result.rebuttals.bull = clean(bullRe, new Set(bearClaims.map(c => c.id)), bullKeys);
     result.rebuttals.bear = clean(bearRe, new Set(bullClaims.map(c => c.id)), bearKeys);
@@ -2775,19 +2791,37 @@ const debateKey = item => `${item.stop}|${item.target_1}|${item.filing?.earnings
 // Runs in the hourly ranking job, never in a visitor's request. Reuses a stored debate while the idea's levels have not changed.
 async function ensureDebate(env, payload) {
   if (!env.AI || !env.DB || !payload?.ranking?.items?.length) return;
-  const marketId = payload.market || "US";
-  const stored = (await edgarCacheRead(env, debateRowId(marketId))) || { items: {}, at: 0 };
+  const marketId = payload.market || "US", rowId = debateRowId(marketId);
+  const stored = (await edgarCacheRead(env, rowId)) || { items: {}, at: 0 };
   if (Date.now() - (stored.at || 0) < DEBATE_MIN_GAP_SECONDS * 1000) return;
-  let ranking = payload.ranking;
-  try { ranking = mergeAiRanking(ranking, await readAiRanking(env, marketId)); } catch { /* the rules order serves */ }
-  const top = ranking.items.slice(0, DEBATE_TOP_N), items = {};
-  for (const item of top) {
-    const key = debateKey(item), old = stored.items?.[item.id];
-    if (old && old.key === key && Date.now() - old.at < DEBATE_MAX_AGE_SECONDS * 1000) { items[item.id] = old; continue; }
-    try { items[item.id] = { key, at: Date.now(), result: await runDebate(env, item, ranking.market_state) }; }
-    catch (error) { console.error(`Debate failed for ${item.id}: ${cleanError(error)}`); if (old) items[item.id] = old; }
+  // One run at a time per market: a lease on the row, so a retried or overlapping job cannot repeat the model calls.
+  try {
+    await env.DB.prepare("INSERT OR IGNORE INTO scan_cache (market, payload, generated_at, refreshing_until) VALUES (?, NULL, ?, NULL)").bind(rowId, new Date(0).toISOString()).run();
+    const now = new Date();
+    const claimed = await env.DB.prepare("UPDATE scan_cache SET refreshing_until = ? WHERE market = ? AND (refreshing_until IS NULL OR refreshing_until <= ?)")
+      .bind(new Date(now.getTime() + DEBATE_LEASE_SECONDS * 1000).toISOString(), rowId, now.toISOString()).run();
+    if (!(Number(claimed?.meta?.changes ?? 0) > 0)) return;
+  } catch { return; }
+  try {
+    let ranking = payload.ranking;
+    try { ranking = mergeAiRanking(ranking, await readAiRanking(env, marketId)); } catch { /* the rules order serves */ }
+    const top = ranking.items.slice(0, DEBATE_TOP_N), items = {}, deadline = Date.now() + DEBATE_BUDGET_SECONDS * 1000, todo = [];
+    for (const item of top) {
+      const key = debateKey(item), old = stored.items?.[item.id];
+      if (old && old.key === key && Date.now() - old.at < DEBATE_MAX_AGE_SECONDS * 1000) items[item.id] = old; else todo.push({ item, key, old });
+    }
+    // Two ideas at a time, and no new idea starts once the time budget is used; the rest wait for the next run.
+    for (let i = 0; i < todo.length; i += 2) {
+      if (Date.now() > deadline) { for (const { item, old } of todo.slice(i)) if (old) items[item.id] = old; break; }
+      await Promise.all(todo.slice(i, i + 2).map(async ({ item, key, old }) => {
+        try { items[item.id] = { key, at: Date.now(), result: await runDebate(env, item, ranking.market_state) }; }
+        catch (error) { console.error(`Debate failed for ${item.id}: ${cleanError(error)}`); if (old) items[item.id] = old; }
+      }));
+    }
+    await edgarCacheWrite(env, rowId, { at: Date.now(), items });
+  } finally {
+    await env.DB.prepare("UPDATE scan_cache SET refreshing_until = NULL WHERE market = ?").bind(rowId).run().catch(() => {});
   }
-  await edgarCacheWrite(env, debateRowId(marketId), { at: Date.now(), items });
 }
 
 // Lays stored debates over the ranking items they were made for.
@@ -2826,8 +2860,9 @@ async function refreshScanIfDue(env, market, ctx, { wait = false } = {}) {
   return await readStoredScan(env, market);
 }
 
-async function autoScanResponse(env, market, ctx, { wait = false } = {}) {
-  const stored = await refreshScanIfDue(env, market, ctx, { wait });
+async function autoScanResponse(env, market, ctx, { wait = false, readOnly = false } = {}) {
+  // readOnly: only read what is stored. A visitor request that must not start a scan (the briefing covers three markets) uses this.
+  const stored = readOnly ? await readStoredScan(env, market) : await refreshScanIfDue(env, market, ctx, { wait });
   if (!stored) {
     return { market: market.id, market_label: market.label, auto_refresh: market.auto, warming_up: true, candidates: [], long_candidates: [], short_candidates: [], late_candidates: [], direction_counts: { LONG: 0, SHORT: 0 }, errors: [], successful: 0, universe_size: market.universe?.length ?? 0, fresh_entry_count: 0, method: "", next_step: "", message: "The first scan for this market is being prepared automatically. It will appear shortly.", read_only: true, order_submission_supported: false };
   }
@@ -2915,6 +2950,8 @@ async function deleteMobileAccountData(request, env) {
     env.DB.prepare("DELETE FROM recommendations WHERE user_id = ?").bind(user.id),
     env.DB.prepare("DELETE FROM holdings WHERE user_id = ?").bind(user.id),
     env.DB.prepare("DELETE FROM holding_trades WHERE user_id = ?").bind(user.id),
+    env.DB.prepare("DELETE FROM holding_alerts WHERE user_id = ?").bind(user.id),
+    env.DB.prepare("DELETE FROM holding_level_events WHERE user_id = ?").bind(user.id),
     env.DB.prepare("DELETE FROM mobile_pairings WHERE user_id = ?").bind(user.id),
     env.DB.prepare("DELETE FROM mobile_sessions WHERE user_id = ?").bind(user.id),
     env.DB.prepare("DELETE FROM web_sessions WHERE user_id = ?").bind(user.id),
@@ -3500,14 +3537,14 @@ function computeHoldingStats(closed) {
 }
 
 // One read of everything worth seeing first: each market's trend and best ideas, and (when signed in) how the holdings stand and what changed.
-// It reads the stored scans the same way the scanner does (a scan that is due is refreshed on the shared schedule, never by hand) and never marks alerts as seen.
+// It only reads stored scans: it never starts one (three markets in one request would pass the outgoing-request limit) and never marks alerts as seen.
 async function buildBriefing(request, env, ctx) {
   await requireSubscription(request, env);
   const markets = [];
   for (const id of ["US", "IN", "FX"]) {
     const market = MARKETS[id];
     try {
-      const scan = await autoScanResponse(env, market, ctx);
+      const scan = await autoScanResponse(env, market, ctx, { readOnly: true });
       if (scan.warming_up) { markets.push({ id, label: market.label, warming_up: true, top: [] }); continue; }
       const ranking = scan.ranking, trend = scan.market_trend;
       markets.push({
@@ -3540,11 +3577,15 @@ async function buildBriefing(request, env, ctx) {
     disclaimer: "Automated research from public price data, not personal financial advice. Nothing is ever sent to a broker." };
 }
 
-// Marks every alert as seen (the user opened the list). Only this user's rows.
+// Marks the alerts the client showed as seen. Only this user's rows.
 async function markAlertsSeen(request, env) {
   const user = await holdingsUser(request, env);
-  await readBody(request);
-  await env.DB.prepare("UPDATE holding_alerts SET seen_at = ? WHERE user_id = ? AND seen_at IS NULL").bind(new Date().toISOString(), user.id).run();
+  const body = await readBody(request);
+  const now = new Date().toISOString();
+  // The client names the alerts it actually showed; an older client that names none marks everything, as before.
+  const ids = Array.isArray(body.ids) ? body.ids.filter(id => typeof id === "string" && /^[A-Za-z0-9-]{8,64}$/.test(id)).slice(0, 50) : null;
+  if (ids === null) await env.DB.prepare("UPDATE holding_alerts SET seen_at = ? WHERE user_id = ? AND seen_at IS NULL").bind(now, user.id).run();
+  else if (ids.length) await env.DB.prepare(`UPDATE holding_alerts SET seen_at = ? WHERE user_id = ? AND seen_at IS NULL AND id IN (${ids.map(() => "?").join(",")})`).bind(now, user.id, ...ids).run();
   return { seen: true };
 }
 
@@ -3689,6 +3730,8 @@ async function removeHolding(request, env) {
   await env.DB.batch([
     env.DB.prepare("DELETE FROM holdings WHERE id = ? AND user_id = ?").bind(id, user.id),
     env.DB.prepare("DELETE FROM holding_trades WHERE holding_id = ? AND user_id = ?").bind(id, user.id),
+    env.DB.prepare("DELETE FROM holding_alerts WHERE holding_id = ? AND user_id = ?").bind(id, user.id),
+    env.DB.prepare("DELETE FROM holding_level_events WHERE holding_id = ? AND user_id = ?").bind(id, user.id),
   ]);
   return { removed: true };
 }
