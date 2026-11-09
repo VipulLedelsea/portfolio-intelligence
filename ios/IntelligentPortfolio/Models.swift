@@ -225,6 +225,8 @@ struct RankedIdea: Decodable, Identifiable, Hashable, Sendable {
     let bear: String?
     let invalidation: String?
     let filing: FilingCheck?
+    let buyRange: BuyRange?
+    let market: String?
     let debate: Debate?
     let bars: [DailyBar]?
 }

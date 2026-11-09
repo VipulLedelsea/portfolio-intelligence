@@ -107,6 +107,11 @@ function debateHtml(d){
    +`<span><small>${d.dropped_claims>0?d.dropped_claims+' claim'+(d.dropped_claims===1?'':'s')+' dropped because a figure did not match the data. ':'Every claim was checked against the data. '}The verdict does not change the score.</small></span>`;
 }
 const sizeStore={get(k){try{return localStorage.getItem(k)||''}catch{return ''}},set(k,v){try{localStorage.setItem(k,v)}catch{}}};
+function sharesFor(i){
+  const acct=parseFloat(sizeStore.get('sz-acct')),risk=parseFloat(sizeStore.get('sz-risk')||'1'),per=Math.abs(i.entry-i.stop);
+  if(!(acct>0)||!(risk>0)||!(per>0)||!(i.price>0))return 0;
+  return Math.max(0,Math.min(Math.floor(acct*risk/100/per),Math.floor(acct*0.25/i.price)));
+}
 function sizingHtml(i){
   const acct=parseFloat(sizeStore.get('sz-acct')),risk=parseFloat(sizeStore.get('sz-risk')||'1'),sym=i.currency_symbol||'',per=Math.abs(i.entry-i.stop);
   if(!sym||!(per>0)||!(i.entry>0))return '';
@@ -123,13 +128,21 @@ function renderTopIdeas(r){
   wrap.classList.remove('hidden');
   document.getElementById('top-ideas-sub').textContent=(r.headline||'')+(r.source==='ai'?' Ranked by an AI model; prices come from the scanners.':' Ranked by rules only.')+' Research, not advice.';
   const num=v=>v==null||!Number.isFinite(Number(v))?'—':fmtP(v);
-  document.getElementById('top-ideas').innerHTML=r.items.length?r.items.map(i=>`<article class="candidate crow"><button type="button" class="crow-head" aria-expanded="false"><div class="crow-main"><div class="crow-top"><span class="ticker">#${esc(i.rank)} ${esc(i.symbol)}</span><span class="dirtag ${i.direction==='SHORT'?'short':''}">${esc(i.direction)}</span><span class="h-mkt">${esc(i.tag||i.strategy)}</span></div><div class="company">${esc(i.reason||'')}</div></div><div class="crow-side"><div class="price">${esc(i.score)}/100</div><div class="crow-status">${esc(i.confidence||'')} confidence</div></div></button><div class="crow-more hidden"><div class="why"><span>Entry ${num(i.entry)} · Stop ${num(i.stop)} · Target 1 ${num(i.target_1)} · Target 2 ${num(i.target_2)}</span>${i.debate?debateHtml(i.debate):`${i.bull?`<span>+ ${esc(i.bull)}</span>`:''}${i.bear?`<span class="caution">! ${esc(i.bear)}</span>`:''}`}${i.invalidation?`<span>Invalidation: ${esc(i.invalidation)}</span>`:''}${sizingHtml(i)}${i.filing&&i.filing.earnings_estimate&&i.filing.earnings_in_days>=0&&i.filing.earnings_in_days<=45?`<span>${i.filing.earnings_confirmed?'Earnings confirmed for ':'Earnings expected about '}${esc(i.filing.earnings_estimate)}${i.filing.earnings_timing==='pm'?' after the close':i.filing.earnings_timing==='am'?' before the open':''}${i.filing.earnings_confirmed?'':' (not yet confirmed)'}</span>`:''}${i.filing&&i.filing.cautions&&i.filing.cautions.length?`<span class="caution">! Recent SEC filing: ${esc(i.filing.cautions.join('; '))}</span>`:''}</div></div></article>`).join(''):'<article class="empty-results">Nothing compelling today.</article>';
+  document.getElementById('top-ideas').innerHTML=r.items.length?r.items.map(i=>`<article class="candidate crow"><button type="button" class="crow-head" aria-expanded="false"><div class="crow-main"><div class="crow-top"><span class="ticker">#${esc(i.rank)} ${esc(i.symbol)}</span><span class="dirtag ${i.direction==='SHORT'?'short':''}">${esc(i.direction)}</span><span class="h-mkt">${esc(i.tag||i.strategy)}</span></div><div class="company">${esc(i.reason||'')}</div>${slimBar(i)}</div><div class="crow-side"><div class="price">${esc(i.score)}/100</div><div class="crow-status">${esc(i.confidence||'')} confidence</div></div></button><div class="crow-more hidden"><div class="why">${buyRangeHtml(i)}<span>Entry ${num(i.entry)} · Stop ${num(i.stop)} · Target 1 ${num(i.target_1)} · Target 2 ${num(i.target_2)}</span>${i.debate?debateHtml(i.debate):`${i.bull?`<span>+ ${esc(i.bull)}</span>`:''}${i.bear?`<span class="caution">! ${esc(i.bear)}</span>`:''}`}${i.invalidation?`<span>Invalidation: ${esc(i.invalidation)}</span>`:''}${sizingHtml(i)}${i.market!=='FX'&&i.currency_symbol?`<span><button type="button" class="secondary" data-log="${esc(i.id)}">Log my buy</button> <small>Records a purchase you made yourself in My holdings. Nothing is sent to a broker.</small></span>`:''}${i.filing&&i.filing.earnings_estimate&&i.filing.earnings_in_days>=0&&i.filing.earnings_in_days<=45?`<span>${i.filing.earnings_confirmed?'Earnings confirmed for ':'Earnings expected about '}${esc(i.filing.earnings_estimate)}${i.filing.earnings_timing==='pm'?' after the close':i.filing.earnings_timing==='am'?' before the open':''}${i.filing.earnings_confirmed?'':' (not yet confirmed)'}</span>`:''}${i.filing&&i.filing.cautions&&i.filing.cautions.length?`<span class="caution">! Recent SEC filing: ${esc(i.filing.cautions.join('; '))}</span>`:''}</div></div></article>`).join(''):'<article class="empty-results">Nothing compelling today.</article>';
   const rej=(r.rejected||[]).map(x=>`<li>${esc(x.symbol||x.id)} (${esc(x.tag||x.strategy||'')}): ${esc(x.reason)}</li>`).join('');
   const gaps=(r.data_gaps||[]).map(x=>`<li>${esc(x)}</li>`).join('');
   document.getElementById('top-ideas-more').innerHTML=`<summary>Skipped (${(r.rejected||[]).length}) and what this ranking can't see</summary>${rej?`<ul>${rej}</ul>`:''}${gaps?`<p>What this ranking can't see:</p><ul>${gaps}</ul>`:''}`;
 }
 for(const [id,key] of [['sz-acct','sz-acct'],['sz-risk','sz-risk']]){const e=document.getElementById(id);e.value=sizeStore.get(key);e.addEventListener('input',()=>{sizeStore.set(key,e.value);if(window.__lastRanking)renderTopIdeas(window.__lastRanking)})}
-document.getElementById('top-ideas').addEventListener('click',e=>{const b=e.target.closest('.crow-head');if(!b)return;const m=b.parentElement.querySelector('.crow-more');m.classList.toggle('hidden');b.setAttribute('aria-expanded',String(!m.classList.contains('hidden')))});
+document.getElementById('top-ideas').addEventListener('click',e=>{
+  const log=e.target.closest('[data-log]');
+  if(log){const i=(window.__lastRanking?.items||[]).find(x=>x.id===log.dataset.log);if(!i)return;
+    const form=document.getElementById('holding-form');
+    if(form.classList.contains('hidden')){alert('Sign in to track your holdings.');return}
+    document.getElementById('h-market').value=i.market==='IN'?'IN':'US';document.getElementById('h-symbol').value=i.symbol;document.getElementById('h-price').value=i.price;
+    const n=sharesFor(i);document.getElementById('h-shares').value=n>0?n:'';
+    form.scrollIntoView({behavior:'smooth',block:'center'});document.getElementById('h-shares').focus();return}
+  const b=e.target.closest('.crow-head');if(!b)return;const m=b.parentElement.querySelector('.crow-more');m.classList.toggle('hidden');b.setAttribute('aria-expanded',String(!m.classList.contains('hidden')))});
 async function scan(manual=false){
   const requested=market,auto=MARKETS[market].auto;
   scanButton.disabled=true;
