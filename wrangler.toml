@@ -20,4 +20,5 @@ crons = ["5 * * * *", "10 * * * *", "*/15 13-21 * * 1-5", "*/15 3-10 * * 1-5"]
 # Secrets (never commit these); set each with `npx wrangler secret put NAME`:
 #   STRIPE_SECRET_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, PAYWALL_ENABLED ("true" to enable the paywall)
 # AI ranking: runs on Workers AI through the AI binding above (no key). To use Claude instead, set the secret ANTHROPIC_API_KEY and the variable RANKING_PROVIDER=anthropic.
+# Learned rules: set LEARNING_ADMIN_EMAILS (comma separated Google sign-in emails) so only those people can approve or reject rules the learning loop proposes.
 # Optional: TWELVE_DATA_API_KEY to use Twelve Data instead of Yahoo for BSE and forex.

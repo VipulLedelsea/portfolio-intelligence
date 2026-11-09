@@ -61,6 +61,10 @@ actor APIClient {
         try await request(path: "/api/holdings", token: token, body: HoldingsBody(refresh: refresh))
     }
 
+    func learning(token: String) async throws -> LearningResponse {
+        try await request(path: "/api/learning", token: token, body: [:] as [String: String])
+    }
+
     func briefing(token: String) async throws -> Briefing {
         try await request(path: "/api/briefing", token: token, body: [:] as [String: String])
     }

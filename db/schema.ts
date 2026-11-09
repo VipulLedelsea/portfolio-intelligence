@@ -35,6 +35,8 @@ export const recommendations = sqliteTable("recommendations", {
   debateAt: text("debate_at"),
   // JSON from the post-mortem step: tags such as STOPPED_OUT or EARNINGS_IN_HOLD worked out by code once the pick settles.
   postMortem: text("post_mortem"),
+  // JSON snapshot of what was known when the pick was logged (score, distance from entry, stop size, alignment, earnings, market state), used to test rules on results.
+  features: text("features"),
 }, table => [
   uniqueIndex("recommendations_user_signal_unique").on(table.userId, table.symbol, table.signalConfirmedAt, table.action),
   index("recommendations_user_status_idx").on(table.userId, table.status, table.generatedAt),
@@ -141,6 +143,17 @@ export const holdingAlerts = sqliteTable("holding_alerts", {
   index("holding_alerts_user_idx").on(table.userId, table.at),
   uniqueIndex("holding_alerts_dedupe_idx").on(table.dedupeKey),
 ]);
+
+// Rules the learning loop found in graded results. PROPOSED rules do nothing until an admin approves them; ACTIVE rules take points off matching ideas.
+export const learningRules = sqliteTable("learning_rules", {
+  ruleKey: text("rule_key").primaryKey(), // for example WIDE_STOP|DIP
+  status: text("status").notNull().default("PROPOSED"), // PROPOSED, ACTIVE, REJECTED, RETIRED
+  penalty: real("penalty").notNull().default(10),
+  proposedAt: text("proposed_at").notNull(),
+  decidedAt: text("decided_at"),
+  decidedBy: text("decided_by"),
+  evidence: text("evidence"),
+});
 
 export const holdingTrades = sqliteTable("holding_trades", {
   id: text("id").primaryKey(),

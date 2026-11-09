@@ -64,6 +64,7 @@ final class AppModel: ObservableObject {
     @Published var fold: AdaptiveLayout.FoldState = .unknown
     @Published var holdings: HoldingsResponse?
     @Published var briefing: Briefing?
+    @Published var learning: LearningResponse?
     @Published var isLoadingHoldings = false
     @Published var holdingStats: HoldingStatsResponse?
     @Published var disclaimerAccepted = UserDefaults.standard.bool(forKey: AppModel.disclaimerKey)
@@ -139,6 +140,7 @@ final class AppModel: ObservableObject {
         memory = nil
         holdings = nil
         briefing = nil
+        learning = nil
         holdingStats = nil
         connectionState = .disconnected
     }
@@ -210,6 +212,12 @@ final class AppModel: ObservableObject {
         defer { isLoadingHoldings = false }
         do { holdings = try await api.holdings(token: token) }
         catch { report(error) }
+    }
+
+    /// What the learning loop has found in graded picks. Read-only here: rules are approved on the website.
+    func refreshLearning() async {
+        guard let token else { learning = nil; return }
+        if let result = try? await api.learning(token: token) { learning = result }
     }
 
     /// Reads the briefing: stored results only, so it is cheap and never starts a scan.
@@ -370,6 +378,7 @@ final class AppModel: ObservableObject {
         memory = nil
         holdings = nil
         briefing = nil
+        learning = nil
         holdingStats = nil
         connectionState = .disconnected
     }
@@ -388,6 +397,7 @@ final class AppModel: ObservableObject {
             memory = nil
         holdings = nil
         briefing = nil
+        learning = nil
         holdingStats = nil
             connectionState = .disconnected
         } catch { report(error) }

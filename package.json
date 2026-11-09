@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build-site.mjs",
-    "validate": "node scripts/validate-site.mjs && node scripts/check-debate.mjs && node scripts/check-postmortem.mjs",
+    "validate": "node scripts/validate-site.mjs && node scripts/check-debate.mjs && node scripts/check-postmortem.mjs && node scripts/check-learning.mjs",
     "db:generate": "drizzle-kit generate",
     "dev": "npm run build && wrangler dev",
     "deploy": "npm run build && npm run validate && wrangler deploy",

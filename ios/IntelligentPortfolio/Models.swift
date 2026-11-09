@@ -180,6 +180,62 @@ struct Debate: Decodable, Hashable, Sendable {
     let droppedClaims: Int
 }
 
+// MARK: - Learning
+
+struct LearningBand: Decodable, Identifiable, Sendable {
+    var id: String { label }
+    let label: String
+    let n: Int
+    let meanReturnPct: Double?
+    let winRatePct: Double?
+}
+
+struct LearningFilter: Decodable, Identifiable, Sendable {
+    var id: String { code }
+    let code: String
+    let label: String
+    let n: Int
+    let meanReturnPct: Double?
+    let winRatePct: Double?
+    let verdict: String
+}
+
+struct LearningReport: Decodable, Sendable {
+    let gradedReal: Int
+    let gradedShadow: Int
+    let keptMeanReturnPct: Double?
+    let calibration: [LearningBand]
+    let calibrationNote: String
+    let filters: [LearningFilter]
+    let note: String?
+    let updatedAt: String?
+}
+
+struct LearningEvidence: Decodable, Sendable {
+    let nFlagged: Int
+    let nClear: Int
+    let meanFlagged: Double?
+    let meanClear: Double?
+    let diff: Double?
+}
+
+struct LearningRule: Decodable, Identifiable, Sendable {
+    var id: String { key }
+    let key: String
+    let label: String
+    let status: String
+    let penalty: Double
+    let evidence: LearningEvidence?
+}
+
+struct LearningResponse: Decodable, Sendable {
+    let available: Bool
+    let report: LearningReport?
+    let rules: [LearningRule]
+    let canDecide: Bool
+    let howItWorks: String
+}
+
 /// Earnings date (Robinhood feed, exact once confirmed; else an SEC-filing estimate) and SEC red flags for US ideas.
 struct FilingCheck: Decodable, Hashable, Sendable {
     let earningsInDays: Int?

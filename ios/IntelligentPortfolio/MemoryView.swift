@@ -10,6 +10,7 @@ struct MemoryView: View {
                     Text("US Supertrend ideas are followed until the daily Supertrend breaks and graded at the next open, with no time limit. Other calls are graded when they hit a level or after ten completed market sessions.")
                         .foregroundStyle(AppTheme.muted)
                     TrackRecordPanel(record: model.trackRecord)
+                    LearningPanel(learning: model.learning)
                     if model.isGuest {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Connect an account to see your learning history.")
@@ -43,7 +44,7 @@ struct MemoryView: View {
             }
             .background(AppTheme.background)
             .navigationTitle("Learning memory")
-            .task { await model.refreshTrackRecord() }
+            .task { await model.refreshTrackRecord(); await model.refreshLearning() }
             .refreshable { await Task { await model.refreshMemory(); await model.refreshTrackRecord() }.value }
         }
     }
@@ -180,5 +181,53 @@ struct TrackRecordPanel: View {
     private func percent(_ value: Double?, signed: Bool) -> String {
         guard let value else { return "-" }
         return String(format: signed ? "%+.2f%%" : "%.1f%%", value)
+    }
+}
+
+
+/// What the learning loop has found in graded picks: whether scores meant anything, whether each filter removed worse ideas, and any rule proposed or in force.
+/// Rules are proposed by code from strict tests and only take effect when an administrator approves them on the website.
+struct LearningPanel: View {
+    let learning: LearningResponse?
+
+    private func pct(_ value: Double?) -> String { value.map { String(format: "%+.2f%%", $0) } ?? "n/a" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionLabel(text: "What we have learned")
+            if let report = learning?.report {
+                Text("\(report.gradedReal) graded picks measured, plus \(report.gradedShadow) that our filters skipped.").font(.footnote).foregroundStyle(AppTheme.muted)
+                if let note = report.note { Text(note).font(.footnote).foregroundStyle(AppTheme.amber) }
+                Text("Did a higher score mean a better result?").font(.subheadline.weight(.semibold))
+                Text(report.calibrationNote).font(.footnote)
+                ForEach(report.calibration.filter { $0.n > 0 }) { band in
+                    Text("Score \(band.label): \(band.n) picks, \(pct(band.meanReturnPct)) average").font(.caption).foregroundStyle(AppTheme.muted)
+                }
+                if report.filters.contains(where: { $0.n > 0 }) {
+                    Text("Did our filters remove worse ideas?").font(.subheadline.weight(.semibold))
+                    ForEach(report.filters.filter { $0.n > 0 }) { filter in
+                        Text("Skipped, \(filter.label): \(filter.n) picks, \(pct(filter.meanReturnPct)) average. \(filter.verdict)").font(.caption).foregroundStyle(AppTheme.muted)
+                    }
+                }
+                let rules = learning?.rules ?? []
+                if !rules.isEmpty {
+                    Text("Learned rules").font(.subheadline.weight(.semibold))
+                    ForEach(rules) { rule in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(rule.status.capitalized): \(rule.label)").font(.footnote.weight(.semibold))
+                            if let e = rule.evidence { Text("Flagged picks \(pct(e.meanFlagged)) vs \(pct(e.meanClear)) on \(e.nFlagged) and \(e.nClear) picks.").font(.caption2).foregroundStyle(AppTheme.muted) }
+                        }
+                    }
+                    Text("A proposed rule does nothing until an administrator approves it on the website.").font(.caption2).foregroundStyle(AppTheme.muted)
+                } else {
+                    Text("No rule has cleared the test yet. A rule needs at least 30 graded picks on each side and the same result in both halves of the history.").font(.caption2).foregroundStyle(AppTheme.muted)
+                }
+            } else {
+                Text("The first learning report is written after picks are graded. Nothing is changed automatically.").font(.footnote).foregroundStyle(AppTheme.muted)
+            }
+            if let how = learning?.howItWorks { Text(how).font(.caption2).foregroundStyle(AppTheme.muted) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
     }
 }
