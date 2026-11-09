@@ -788,6 +788,7 @@ private struct RankedDetailSheet: View {
                         if let rr = idea.rrT1 { tile("Reward to risk", String(format: "%.1f to target 1", rr)) }
                         if let ext = idea.fromEntryAtr { tile("From entry", String(format: "%+.1f ATR", ext)) }
                     }
+                    SizingBlock(idea: idea)
                     block("Exit", idea.exitRule)
                     if let note = idea.alignmentNote { block("Trend and market", note) }
                     block("Backtest behind the score", evidenceText)
@@ -1236,5 +1237,48 @@ private struct DebateSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .panel()
+    }
+}
+
+
+/// How many shares keep the loss at your stop within your risk limit, from the account size and risk percent set on the Account tab (stored on this device only).
+/// Plain arithmetic on the idea's entry and stop; no position is capped below 25% of the account.
+private struct SizingBlock: View {
+    let idea: RankedIdea
+    @AppStorage("sizing.account") private var account = 0.0
+    @AppStorage("sizing.riskPct") private var riskPct = 1.0
+    @EnvironmentObject private var model: AppModel
+
+    private var held: Bool { model.holdings?.open.contains { $0.symbol == idea.symbol } ?? false }
+
+    var body: some View {
+        let symbol = idea.currencySymbol ?? ""
+        let perShare = abs(idea.entry - idea.stop)
+        if !symbol.isEmpty, perShare > 0, idea.entry > 0 {
+            VStack(alignment: .leading, spacing: 4) {
+                SectionLabel(text: "Position size")
+                if account > 0, riskPct > 0 {
+                    let riskAmount = account * riskPct / 100
+                    let byRisk = Int((riskAmount / perShare).rounded(.down))
+                    let byCap = Int((account * 0.25 / idea.entry).rounded(.down))
+                    let shares = max(0, min(byRisk, byCap))
+                    let value = Double(shares) * idea.entry
+                    if shares == 0 {
+                        Text("One share already risks more than your \(String(format: "%.1f", riskPct))% limit (\(symbol)\(String(format: "%.0f", riskAmount))), so this idea is too small to size for your account.")
+                            .font(.callout)
+                    } else {
+                        Text("\(shares) shares: about \(symbol)\(String(format: "%.0f", value)) (\(String(format: "%.0f", value / account * 100))% of your account). If the stop is hit you lose about \(symbol)\(String(format: "%.0f", Double(shares) * perShare)).")
+                            .font(.callout)
+                        if byRisk > byCap { Text("Capped at 25% of your account; your risk limit alone would allow \(byRisk) shares.").font(.caption).foregroundStyle(AppTheme.amber) }
+                    }
+                    if held { Text("You already hold \(idea.symbol); this would add to the position.").font(.caption).foregroundStyle(AppTheme.amber) }
+                    Text("Arithmetic from your own limits, not advice. Gaps can take the loss past the stop.").font(.caption2).foregroundStyle(AppTheme.muted)
+                } else {
+                    Text("Set your account size and risk per trade on the Account tab to see a share count.").font(.footnote).foregroundStyle(AppTheme.muted)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .panel()
+        }
     }
 }

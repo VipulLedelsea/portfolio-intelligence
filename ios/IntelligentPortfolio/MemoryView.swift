@@ -102,6 +102,31 @@ struct TrackRecordPanel: View {
     private var shownSummary: TrackRecordSummary? { chosen?.summary ?? record?.summary }
     private func shortName(_ id: String) -> String { id == "SUPERTREND" ? "Supertrend" : id == "DIP" ? "Dip scan" : id == "PATTERN" ? "Pattern" : "Dip, gate closed" }
 
+    /// Graded picks grouped by what the bull-versus-bear debate leaned. Shown once any pick with a logged lean has been graded.
+    @ViewBuilder private var debateResults: some View {
+        let rows = (record?.debate ?? []).filter { $0.summary.settledPicks > 0 }
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                SectionLabel(text: "Results by the debate's lean")
+                ForEach(rows) { row in
+                    Text("\(row.label): \(row.summary.settledPicks) graded, \(percent(row.summary.averageReturnPct, signed: true)) average, \(percent(row.summary.winRatePct, signed: false)) wins")
+                        .font(.footnote)
+                }
+                Text("This checks whether the debate's lean means anything. It does not change any score.").font(.caption2).foregroundStyle(AppTheme.muted)
+            }
+        }
+    }
+
+    /// What graded picks have in common (hit the stop, earnings in the hold, the market moved against them). Counts only; small samples are flagged.
+    @ViewBuilder private var lessonsBlock: some View {
+        if let lessons = record?.lessons, lessons.graded > 0 {
+            VStack(alignment: .leading, spacing: 6) {
+                SectionLabel(text: "What graded picks have in common")
+                ForEach(lessons.notes, id: \.self) { Text($0).font(.footnote).foregroundStyle(AppTheme.muted) }
+            }
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionLabel(text: "Scanner track record")
@@ -133,6 +158,8 @@ struct TrackRecordPanel: View {
                             .font(.footnote).foregroundStyle(AppTheme.amber)
                     }
                 }
+                debateResults
+                lessonsBlock
                 Text(record?.methodology ?? "")
                     .font(.footnote).foregroundStyle(AppTheme.muted)
             } else {

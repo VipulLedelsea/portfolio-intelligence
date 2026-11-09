@@ -30,6 +30,11 @@ export const recommendations = sqliteTable("recommendations", {
   stopHit: integer("stop_hit", { mode: "boolean" }),
   // SUPERTREND (4-hour Supertrend scan), DIP (dip scan, market gate open) or DIP_WAIT (dip scan while the gate was closed; logged to test the gate, never shown as an idea).
   strategy: text("strategy").notNull().default("SUPERTREND"),
+  // The bull-versus-bear debate's lean (bull, bear or even) when it was logged within two days of the pick, so results can be compared by lean.
+  debateLeaning: text("debate_leaning"),
+  debateAt: text("debate_at"),
+  // JSON from the post-mortem step: tags such as STOPPED_OUT or EARNINGS_IN_HOLD worked out by code once the pick settles.
+  postMortem: text("post_mortem"),
 }, table => [
   uniqueIndex("recommendations_user_signal_unique").on(table.userId, table.symbol, table.signalConfirmedAt, table.action),
   index("recommendations_user_status_idx").on(table.userId, table.status, table.generatedAt),

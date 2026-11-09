@@ -4,6 +4,8 @@ struct AccountView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.openURL) private var openURL
     @State private var confirmDelete = false
+    @AppStorage("sizing.account") private var sizingAccount = 0.0
+    @AppStorage("sizing.riskPct") private var sizingRisk = 1.0
     private let webURL = APIClient.productionOrigin
 
     var body: some View {
@@ -24,6 +26,19 @@ struct AccountView: View {
                         }
                         .pickerStyle(.segmented)
                         Text("A full-screen ticker for a phone standing on a desk: markets with a price line, and setups with their buy ranges, changing together every 5 seconds. Auto starts it like StandBy does, when the phone is on its side and still (no charger needed), and ends it when you turn it upright or pick it up. On keeps it up all the time. Touch and hold to leave.")
+                            .font(.footnote)
+                            .foregroundStyle(AppTheme.muted)
+                    }
+                    .panel()
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Position sizing").font(.headline)
+                        TextField("Account size", value: $sizingAccount, format: .number)
+                            .keyboardType(.decimalPad)
+                            .textFieldStyle(.roundedBorder)
+                        TextField("Risk per trade, %", value: $sizingRisk, format: .number)
+                            .keyboardType(.decimalPad)
+                            .textFieldStyle(.roundedBorder)
+                        Text("Used to show how many shares keep the loss at an idea's stop within your limit. Saved on this device only and never sent anywhere.")
                             .font(.footnote)
                             .foregroundStyle(AppTheme.muted)
                     }

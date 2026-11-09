@@ -71,6 +71,13 @@
       "when": 1794157452314,
       "tag": "0009_fantastic_baron_strucker",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1794237215576,
+      "tag": "0010_nervous_rocket_racer",
+      "breakpoints": true
     }
   ]
 }
