@@ -78,6 +78,13 @@
       "when": 1794237215576,
       "tag": "0010_nervous_rocket_racer",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1794238240375,
+      "tag": "0011_redundant_stick",
+      "breakpoints": true
     }
   ]
 }

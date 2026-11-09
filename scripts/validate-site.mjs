@@ -824,4 +824,11 @@ assert.equal(briefingResponse.status, 200, "The briefing must load without an ac
 const briefing = await briefingResponse.json();
 assert.equal(briefing.markets.length, 3, "The briefing must cover US, India and forex");
 assert.equal(briefing.holdings, null, "Holdings stay out of the briefing when nobody is signed in");
+const learningResponse = await workerModule.default.fetch(new Request("https://example.test/api/learning", { method: "POST", body: "{}" }), {}, { waitUntil() {} });
+assert.equal(learningResponse.status, 200, "The learning report must load");
+const learning = await learningResponse.json();
+assert.equal(learning.can_decide, false, "Nobody can decide learned rules unless an administrator is configured");
+assert.ok(Array.isArray(learning.rules));
+const decideResponse = await workerModule.default.fetch(new Request("https://example.test/api/learning/decide", { method: "POST", body: JSON.stringify({ rule_key: "WIDE_STOP|DIP", decision: "approve" }) }), { LEARNING_ADMIN_EMAILS: "someone@example.com" }, { waitUntil() {} });
+assert.equal(decideResponse.status, 403, "A request that is not from the administrator must be refused");
 console.log("Artifact is valid ESM; read-only, subscription, persistent-memory, and iPhone pairing gates passed");

@@ -1541,6 +1541,170 @@ async function loadFilingFlags(env, symbols, maxFetch = 6) {
   return out;
 }
 
+// ---- Continuous learning ----
+// The loop: every pick is logged with what was known at the time (features), the ideas our filters skip are tagged with the filter that removed them, and
+// once picks are graded code measures (1) whether a higher score really meant a better result, (2) whether each filter removed worse ideas, and
+// (3) whether any simple rule separates losers from winners. A rule is only PROPOSED when it clears a strict test (enough picks, the 99% interval
+// entirely on the losing side, and the same sign in both halves of the history). Nothing changes the ranking until an admin approves it, and approved
+// rules are monitored. No model is retrained and no weight moves by itself: with a few hundred picks that would just fit noise.
+const LEARN_MIN_EACH = 30, LEARN_PENALTY = 10;
+const LEARNING_RULES = {
+  WIDE_STOP: { label: "stop more than 8% from entry", test: f => f.stop_pct != null && f.stop_pct > 8 },
+  EXTENDED_ENTRY: { label: "price more than 1 ATR past the signal price", test: f => f.from_entry_atr != null && f.from_entry_atr > 1 },
+  WEAK_ALIGNMENT: { label: "trend and market alignment under 60", test: f => f.alignment != null && f.alignment < 60 },
+  AGAINST_MARKET: { label: "market trend against the idea's direction", test: f => (f.direction === "LONG" && f.market_state === "DOWN") || (f.direction === "SHORT" && f.market_state === "UP") },
+  CROWDED: { label: "same sector and direction already ranked higher", test: f => f.crowded === true },
+  OLD_SIGNAL: { label: "signal four or more days old", test: f => f.age_days != null && f.age_days >= 4 },
+};
+const LEARNING_STRATEGY_LABELS = { SUPERTREND: "Supertrend", DIP: "Dip", PATTERN: "Pattern" };
+
+// What was known about an idea when it was logged. Used both to store with a pick and to test rules on a live idea, so the two always agree.
+function pickFeatures(item, marketState) {
+  const f = item.filing;
+  return {
+    score: item.score ?? item.rules_score ?? null, strategy: item.strategy, direction: item.direction, sector: item.sector || null,
+    from_entry_atr: item.from_entry_atr ?? null, stop_pct: item.stop_pct ?? null, rr_t1: item.rr_t1 ?? null, alignment: item.alignment_score ?? null, age_days: item.age_days ?? null,
+    volume_ratio: item.volume_ratio ?? null, atr_pct: item.atr_pct ?? null, crowded: item.crowded === true, market_state: marketState || null,
+    earnings_in_days: f?.earnings_in_days ?? null, cautions: (f?.cautions || []).length,
+  };
+}
+
+function learnedPenalty(item, marketState, rules) {
+  if (!rules?.length) return { points: 0, labels: [] };
+  const f = pickFeatures(item, marketState), labels = [];
+  for (const rule of rules) {
+    const [id, strategy] = String(rule.rule_key).split("|");
+    if (strategy === item.strategy && LEARNING_RULES[id]?.test(f)) labels.push({ key: rule.rule_key, label: `${LEARNING_RULES[id].label} (learned rule)`, points: rule.penalty });
+  }
+  return { points: labels.reduce((sum, l) => sum + l.points, 0), labels };
+}
+
+// Date-clustered bootstrap of (flagged mean - clear mean): picks logged on the same day move together, so whole days are resampled.
+function learnBootstrap(rows, iters = 1500) {
+  const byDate = new Map();
+  for (const r of rows) (byDate.get(r.date) || byDate.set(r.date, []).get(r.date)).push(r);
+  const dates = [...byDate.keys()], diffs = [];
+  let seed = 11; const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+  for (let k = 0; k < iters; k++) {
+    let fs = 0, fn = 0, us = 0, un = 0;
+    for (let j = 0; j < dates.length; j++) for (const r of byDate.get(dates[Math.floor(rnd() * dates.length)])) { if (r.flag) { fs += r.ret; fn++; } else { us += r.ret; un++; } }
+    if (fn && un) diffs.push(fs / fn - us / un);
+  }
+  diffs.sort((a, b) => a - b);
+  return diffs.length ? [diffs[Math.floor(0.005 * diffs.length)], diffs[Math.min(diffs.length - 1, Math.floor(0.995 * diffs.length))]] : [null, null];
+}
+
+// rows: [{ ret, date, features }] for ONE strategy. Returns the evidence for one rule on those picks.
+function evaluateLearningRule(id, rows) {
+  const test = LEARNING_RULES[id].test;
+  const tagged = rows.map(r => ({ ret: r.ret, date: r.date, flag: test(r.features) }));
+  const flagged = tagged.filter(r => r.flag), clear = tagged.filter(r => !r.flag);
+  const mean = a => a.length ? a.reduce((s, r) => s + r.ret, 0) / a.length : null;
+  const ev = { rule: id, label: LEARNING_RULES[id].label, n_flagged: flagged.length, n_clear: clear.length, mean_flagged: mean(flagged) === null ? null : round(mean(flagged), 2), mean_clear: mean(clear) === null ? null : round(mean(clear), 2) };
+  ev.diff = ev.mean_flagged !== null && ev.mean_clear !== null ? round(ev.mean_flagged - ev.mean_clear, 2) : null;
+  if (flagged.length >= LEARN_MIN_EACH && clear.length >= LEARN_MIN_EACH) {
+    const [lo, hi] = learnBootstrap(tagged);
+    ev.ci = [lo === null ? null : round(lo, 2), hi === null ? null : round(hi, 2)];
+    const dates = [...new Set(tagged.map(r => r.date))].sort(), cut = dates[Math.floor(dates.length / 2)];
+    const half = part => { const f = part.filter(r => r.flag), c = part.filter(r => !r.flag); return f.length >= 8 && c.length >= 8 ? round(mean(f) - mean(c), 2) : null; };
+    ev.halves = [half(tagged.filter(r => r.date < cut)), half(tagged.filter(r => r.date >= cut))];
+    ev.proposable = hi !== null && hi < 0 && ev.halves.every(h => h !== null && h < 0);
+  } else { ev.ci = null; ev.halves = null; ev.proposable = false; }
+  return ev;
+}
+
+// Pure: settled picks in, report out. rows: [{ strategy, ret, date, features }]. Picks a filter removed carry features.skip_code.
+function buildLearningReport(rows) {
+  const real = rows.filter(r => LEARNING_STRATEGY_LABELS[r.strategy] && r.features && !r.features.skip_code);
+  const shadow = rows.filter(r => LEARNING_STRATEGY_LABELS[r.strategy] && r.features?.skip_code);
+  const mean = a => a.length ? a.reduce((s, r) => s + r.ret, 0) / a.length : null;
+  const win = a => a.length ? round(a.filter(r => r.ret > 0).length / a.length * 100, 0) : null;
+  const cell = a => ({ n: a.length, mean_return_pct: a.length ? round(mean(a), 2) : null, win_rate_pct: win(a) });
+  const bands = [["under 40", 0, 40], ["40 to 55", 40, 55], ["55 to 70", 55, 70], ["70 and over", 70, 101]];
+  const calibration = bands.map(([label, lo, hi]) => ({ label, ...cell(real.filter(r => r.features.score != null && r.features.score >= lo && r.features.score < hi)) }));
+  const enough = calibration.filter(c => c.n >= 10);
+  const calibrationNote = enough.length < 3 ? "Too few graded picks to say whether a higher score meant a better result."
+    : enough.every((c, i) => i === 0 || c.mean_return_pct >= enough[i - 1].mean_return_pct) ? "Higher scores did better on average, as intended."
+    : "Higher scores did NOT reliably do better. The score may be rewarding the wrong things.";
+  const keptMean = real.length ? round(mean(real), 2) : null;
+  const filters = Object.entries(RANK_FILTER_LABELS).map(([code, label]) => {
+    const own = shadow.filter(r => r.features.skip_code === code);
+    const c = cell(own);
+    return { code, label, ...c, verdict: c.n < 20 ? "Too early to judge." : c.mean_return_pct < (keptMean ?? 0) ? "Skipped ideas did worse than the ones we kept: the filter looks right." : "Skipped ideas did as well as the ones we kept: this filter may be costing good ideas." };
+  });
+  const rules = [];
+  for (const strategy of Object.keys(LEARNING_STRATEGY_LABELS)) {
+    const own = real.filter(r => r.strategy === strategy);
+    for (const id of Object.keys(LEARNING_RULES)) rules.push({ key: `${id}|${strategy}`, strategy, strategy_label: LEARNING_STRATEGY_LABELS[strategy], ...evaluateLearningRule(id, own) });
+  }
+  return { graded_real: real.length, graded_shadow: shadow.length, kept_mean_return_pct: keptMean, calibration, calibration_note: calibrationNote, filters, rules,
+    note: real.length < 100 ? "Early days: results from fewer than 100 graded picks are hints to test, not findings. Rules are only proposed from at least 30 picks on each side." : null };
+}
+
+let learnedRulesCache = { at: 0, rules: [] };
+async function loadActiveLearnedRules(env) {
+  if (!env?.DB) return [];
+  if (Date.now() - learnedRulesCache.at < 5 * 60000) return learnedRulesCache.rules;
+  try {
+    const rows = (await env.DB.prepare("SELECT rule_key, penalty FROM learning_rules WHERE status = 'ACTIVE'").all()).results || [];
+    learnedRulesCache = { at: Date.now(), rules: rows.map(r => ({ rule_key: r.rule_key, penalty: Number(r.penalty) || LEARN_PENALTY })) };
+  } catch { /* no learned rules this run */ }
+  return learnedRulesCache.rules;
+}
+
+// Hourly: re-measure everything from graded picks, store the report, and propose any rule that clears the test. Never changes the ranking itself.
+async function refreshLearning(env) {
+  if (!env.DB) return null;
+  const rows = ((await env.DB.prepare(`SELECT strategy, action, strategy_return_pct, generated_at, features FROM recommendations
+    WHERE user_id = ? AND status = 'SETTLED' AND features IS NOT NULL ORDER BY generated_at ASC LIMIT 5000`).bind(SCANNER_USER_ID).all()).results || [])
+    .map(r => { try { return { strategy: r.strategy, action: r.action, ret: numeric(r.strategy_return_pct), date: String(r.generated_at).slice(0, 10), features: JSON.parse(r.features) }; } catch { return null; } }).filter(Boolean);
+  const report = { ...buildLearningReport(rows), updated_at: new Date().toISOString() };
+  const now = new Date().toISOString(), statements = [];
+  for (const rule of report.rules) {
+    const evidence = JSON.stringify({ n_flagged: rule.n_flagged, n_clear: rule.n_clear, mean_flagged: rule.mean_flagged, mean_clear: rule.mean_clear, diff: rule.diff, ci: rule.ci, halves: rule.halves, at: now });
+    if (rule.proposable) statements.push(env.DB.prepare("INSERT OR IGNORE INTO learning_rules (rule_key, status, penalty, proposed_at, evidence) VALUES (?, 'PROPOSED', ?, ?, ?)").bind(rule.key, LEARN_PENALTY, now, evidence));
+    statements.push(env.DB.prepare("UPDATE learning_rules SET evidence = ? WHERE rule_key = ? AND status IN ('PROPOSED', 'ACTIVE')").bind(evidence, rule.key));
+  }
+  if (statements.length) await env.DB.batch(statements);
+  await edgarCacheWrite(env, "LEARNING", report);
+  return report;
+}
+
+function learningAdmin(user, env) {
+  const email = String(user?.email || "").toLowerCase();
+  return Boolean(email) && String(env.LEARNING_ADMIN_EMAILS || "").toLowerCase().split(",").map(v => v.trim()).filter(Boolean).includes(email);
+}
+
+async function learningReport(request, env) {
+  await requireSubscription(request, env);
+  const report = (await edgarCacheRead(env, "LEARNING")) || null;
+  const rules = env.DB ? ((await env.DB.prepare("SELECT rule_key, status, penalty, proposed_at, decided_at, evidence FROM learning_rules ORDER BY proposed_at DESC LIMIT 100").all().catch(() => ({ results: [] }))).results || []) : [];
+  const user = await requestUser(request, env).catch(() => null);
+  const labelFor = key => { const [id, strategy] = key.split("|"); return `${LEARNING_STRATEGY_LABELS[strategy] || strategy}: penalise ideas with ${LEARNING_RULES[id]?.label || id}`; };
+  return {
+    available: Boolean(report), report,
+    rules: rules.map(r => ({ key: r.rule_key, label: labelFor(r.rule_key), status: r.status, penalty: r.penalty, proposed_at: r.proposed_at, decided_at: r.decided_at, evidence: r.evidence ? JSON.parse(r.evidence) : null })),
+    can_decide: learningAdmin(user, env),
+    how_it_works: "Every pick is logged with what was known at the time, and ideas our filters skipped are tracked too. When picks are graded, code checks whether scores meant anything, whether each filter removed worse ideas, and whether a simple rule separates losers from winners. A rule is only proposed when at least 30 picks sit on each side, the 99% interval is entirely on the losing side and both halves of the history agree. Nothing changes until an administrator approves it.",
+  };
+}
+
+async function decideLearningRule(request, env) {
+  await requireSubscription(request, env);
+  const user = await requestUser(request, env);
+  if (!learningAdmin(user, env)) throw Object.assign(new Error("Only an administrator can decide learned rules"), { status: 403 });
+  const body = await readBody(request);
+  const key = String(body.rule_key || ""), decision = String(body.decision || "");
+  const next = { approve: "ACTIVE", reject: "REJECTED", retire: "RETIRED" }[decision];
+  if (!next || !/^[A-Z_]+\|[A-Z]+$/.test(key)) throw Object.assign(new Error("Unknown decision"), { status: 400 });
+  const allowed = { approve: ["PROPOSED", "REJECTED", "RETIRED"], reject: ["PROPOSED"], retire: ["ACTIVE"] }[decision];
+  const row = await env.DB.prepare("SELECT status FROM learning_rules WHERE rule_key = ?").bind(key).first();
+  if (!row || !allowed.includes(row.status)) throw Object.assign(new Error("That rule cannot take this decision now"), { status: 409 });
+  await env.DB.prepare("UPDATE learning_rules SET status = ?, decided_at = ?, decided_by = ? WHERE rule_key = ?").bind(next, new Date().toISOString(), user.email, key).run();
+  learnedRulesCache = { at: 0, rules: [] };
+  return { decided: true, status: next };
+}
+
 // ---- Unified ranking: one list for every idea from every scanner ----
 // The scanners (Supertrend, dip, pattern) feed one ranked "Top ideas" list, each row tagged with the scanner that found it. Code does the
 // arithmetic (levels, risk, distance, hard filters, a rules score); when an Anthropic key is configured, a Claude model then ranks the
@@ -1581,6 +1745,17 @@ function rankItem(base) {
     from_entry_atr: base.atr > 0 ? round((long ? price - entry : entry - price) / base.atr, 2) : null,
     stop_hit: long ? price <= stop : price >= stop,
   };
+}
+
+// A stable code for each hard filter, so results of the ideas it removed can be grouped.
+const RANK_FILTER_LABELS = { STOP_HIT: "stop already hit", STOP_TOO_WIDE: "stop wider than 12%", CHASED: "price already ran past the entry", STALE: "signal too old", SEC_RED_FLAG: "serious SEC filing", EARNINGS_SOON: "earnings inside the hold" };
+function rankFilterCode(reason) {
+  if (/^The stop is already hit/.test(reason)) return "STOP_HIT";
+  if (/^The stop is /.test(reason)) return "STOP_TOO_WIDE";
+  if (/^Price has already run/.test(reason)) return "CHASED";
+  if (/^The signal is /.test(reason)) return "STALE";
+  if (/^SEC filing red flag/.test(reason)) return "SEC_RED_FLAG";
+  return "EARNINGS_SOON";
 }
 
 function rankHardFilter(item) {
@@ -1639,10 +1814,11 @@ function rankRulesReason(item) {
   const f = item.filing;
   if (f?.earnings_in_days != null && f.earnings_in_days >= 0 && f.earnings_in_days <= EDGAR_EARNINGS_WINDOW_DAYS) parts.push(f.earnings_confirmed ? `earnings ${f.earnings_estimate}${f.earnings_timing === "pm" ? " after close" : f.earnings_timing === "am" ? " before open" : ""}` : `earnings expected about ${f.earnings_estimate} (estimate)`);
   if (f?.cautions?.length) parts.push(`recent filing: ${f.cautions[0]}`);
+  if (item.learned?.length) parts.push(item.learned[0]);
   return parts.join(" · ");
 }
 
-function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, marketId = "US", filings = new Map() }) {
+function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, marketId = "US", filings = new Map(), learnedRules = [] }) {
   const marketState = trend?.state || "UNKNOWN";
   const agrees = direction => marketState === "UP" ? (direction === "LONG" ? 100 : 25) : marketState === "DOWN" ? (direction === "SHORT" ? 100 : 25) : 55;
   const raw = [];
@@ -1656,7 +1832,7 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
     raw.push({
       strategy: "SUPERTREND", evidence_key: us ? "SUPERTREND" : marketId === "FX" ? "SUPERTREND_FX" : "SUPERTREND_IN", symbol: c.symbol, company: c.company, sector: c.sector, direction: c.direction, price: c.price,
       entry: round(entry, 4), stop: round(levels.stop, 4), target_1: us ? null : round(levels.target1, 6), target_2: us ? null : round(levels.target2, 6), atr, atr_pct: atr > 0 ? round(atr / entry * 100, 2) : null,
-      volume_ratio: null, age_days: rankDaysOld(c.signal_confirmed_at), scanner_score: c.score, tag: "Supertrend", detail: c.label, buy_range: c.buy_range || null,
+      volume_ratio: null, age_days: rankDaysOld(c.signal_confirmed_at), scanner_score: c.score, tag: "Supertrend", detail: c.label, buy_range: c.buy_range || null, signal_at: c.signal_confirmed_at || null,
       exit_rule: us ? "Leave when a day closes " + (c.direction === "SHORT" ? "over" : "under") + " the daily Supertrend line, at the next open. No fixed target and no time limit."
         : "Leave at the stop, at target 1 or 2, or at the close of day 10, whichever comes first.",
       alignment_score: Math.round((agrees(c.direction) + (c.daily_aligned && c.daily_adx >= 20 ? 100 : 40)) / 2),
@@ -1669,7 +1845,7 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
       raw.push({
         strategy: "DIP", evidence_key: d.sharp ? "DIP_SHARP" : "DIP", symbol: d.symbol, company: d.company, sector: d.sector, direction: "LONG", price: d.price,
         entry: d.signal_close, stop: d.stop_price, target_1: d.target_1, target_2: d.target_2, atr: d.atr_14, atr_pct: d.atr_14_pct,
-        volume_ratio: null, age_days: rankDaysOld(d.signal_as_of), scanner_score: d.score, tag: d.sharp ? "Sharp dip" : "Dip", detail: d.label, buy_range: buyRange("LONG", d.signal_close, d.atr_14, d.price),
+        volume_ratio: null, age_days: rankDaysOld(d.signal_as_of), scanner_score: d.score, tag: d.sharp ? "Sharp dip" : "Dip", detail: d.label, signal_at: d.signal_as_of || null, buy_range: buyRange("LONG", d.signal_close, d.atr_14, d.price),
         exit_rule: "Leave at the stop, at target 1, or at the close of day 10, whichever comes first.",
         alignment_score: 70, alignment_note: `Stock above its 200-day average; the market-stress gate is open (SPY ${dipScan.gate.spy_5d_pct ?? "n/a"}% over 5 days).`,
         currency_symbol: d.currency_symbol, price_decimals: d.price_decimals,
@@ -1681,7 +1857,7 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
       raw.push({
         strategy: "PATTERN", evidence_key: p.direction === "LONG" ? "PATTERN_LONG" : "PATTERN_SHORT", symbol: p.symbol, company: p.company, sector: p.sector, direction: p.direction, price: p.price,
         entry: p.signal_close, stop: p.stop_price, target_1: p.target_1, target_2: p.target_2, atr: p.atr_14, atr_pct: p.atr_14_pct,
-        volume_ratio: p.volume_ratio, age_days: rankDaysOld(p.signal_as_of), scanner_score: p.score, tag: "Pattern", detail: p.label, buy_range: buyRange(p.direction, p.signal_close, p.atr_14, p.price),
+        volume_ratio: p.volume_ratio, age_days: rankDaysOld(p.signal_as_of), scanner_score: p.score, tag: "Pattern", detail: p.label, signal_at: p.signal_as_of || null, buy_range: buyRange(p.direction, p.signal_close, p.atr_14, p.price),
         exit_rule: `Leave at the stop, at target 1 or 2, when a day closes back ${p.direction === "LONG" ? "under" : "over"} ${p.failure_level}, or at the close of day 10.`,
         alignment_score: agrees(p.direction), alignment_note: `Close beyond the 20-day ${p.direction === "LONG" ? "high" : "low"} on ${p.volume_ratio}x volume; market ${marketState.toLowerCase()}.`,
         currency_symbol: p.currency_symbol, price_decimals: p.price_decimals,
@@ -1690,15 +1866,19 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
   }
   const byListPosition = new Map();
   for (const strategy of ["SUPERTREND", "DIP", "PATTERN"]) raw.filter(r => r.strategy === strategy).sort((a, b) => b.scanner_score - a.scanner_score).forEach((r, i) => byListPosition.set(r, i + 1));
-  const items = [], rejected = [];
+  const items = [], rejected = [], shadow = [];
   for (const r of raw) {
     // A serious filing skips a long idea. For a short idea the same event supports the trade, so it is shown as a note instead.
     const f0 = filings.get(r.symbol) || null;
     const filing = f0 && r.direction === "SHORT" && f0.severe?.length ? { ...f0, severe: [], cautions: [...(f0.cautions || []), ...f0.severe].slice(0, 3) } : f0;
     const item = rankItem({ ...r, market: marketId, id: `${r.strategy}:${r.symbol}:${r.direction}`, evidence: RANK_EVIDENCE[r.evidence_key], scanner_rank_in_list: byListPosition.get(r), filing });
     const reason = rankHardFilter(item);
-    if (reason) rejected.push({ id: item.id, symbol: item.symbol, strategy: item.strategy, tag: item.tag, reason });
-    else items.push(item);
+    if (reason) {
+      rejected.push({ id: item.id, symbol: item.symbol, strategy: item.strategy, tag: item.tag, reason });
+      // Kept for the learning loop only (stripped before clients see it). The scanners already log every idea they surface, so a skipped idea is
+      // tagged with the filter that removed it and its result is compared with the ideas that were kept.
+      shadow.push({ id: item.id, features: { ...pickFeatures(item, marketState), skip_code: rankFilterCode(reason) } });
+    } else items.push(item);
   }
   for (const item of items) item.rules_score = rankRulesScore(item);
   items.sort((a, b) => b.rules_score - a.rules_score || a.symbol.localeCompare(b.symbol));
@@ -1709,6 +1889,12 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
     seen.set(key, count + 1);
     if (count >= 2) item.rules_score = round(Math.max(0, item.rules_score - 8 * (count - 1)), 1);
     item.crowded = count >= 2;
+  }
+  // Rules the learning loop proposed and an administrator approved take points off matching ideas.
+  for (const item of items) {
+    const learned = learnedPenalty(item, marketState, learnedRules);
+    item.learned = learned.labels.map(l => l.label); item.learned_penalty = learned.points;
+    if (learned.points) item.rules_score = round(Math.max(0, item.rules_score - learned.points), 1);
   }
   items.sort((a, b) => b.rules_score - a.rules_score || a.symbol.localeCompare(b.symbol));
   const kept = items.slice(0, RANK_MAX_ITEMS);
@@ -1730,7 +1916,7 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
     headline,
     nothing_compelling: !positive.length && !unknown.length,
     market_state: marketState,
-    items: kept, rejected: rejected.slice(0, 40),
+    items: kept, rejected: rejected.slice(0, 40), shadow: shadow.slice(0, 40),
     data_gaps: [
       marketId === "US" ? "Earnings dates come from Robinhood's earnings feed (exact when the company has confirmed, otherwise projected, with an SEC-filing estimate as backup), and no news feed is connected, so news and events inside the holding window are not checked." : "No earnings calendar or news feed is connected for this market, so earnings or events inside the holding window are not checked.",
       marketId === "FX" ? "Forex has no volume data, so liquidity is not assessed." : "Dollar volume is not in the data feed; liquidity is judged from the volume ratio only.",
@@ -1939,7 +2125,7 @@ function mergeAiRanking(ranking, stored) {
   for (const row of ai.ranked) {
     const item = byId.get(row.id);
     if (!item) continue;
-    ordered.push({ ...item, score: clamp(row.score - filingScorePenalty(item), 0, 100), confidence: row.confidence, reason: row.reason || item.reason, sources: ["ai"] });
+    ordered.push({ ...item, score: clamp(row.score - filingScorePenalty(item) - (item.learned_penalty || 0), 0, 100), confidence: row.confidence, reason: row.reason || item.reason, sources: ["ai"] });
     byId.delete(row.id);
   }
   const rejectedIds = new Map(ai.rejected.map(row => [row.id, row.reason]));
@@ -1977,11 +2163,12 @@ async function discover(market = MARKETS.US, env = {}, previous = null) {
   const dipScan = market.id === "US" ? buildDipScan(snapshots, indexSnapshots.get("SPY"), metadata) : null;
   const patternScan = market.id === "US" ? buildPatternScan(snapshots, metadata) : null;
   const candidates = allCandidates.filter(candidate => candidate.entry_eligible);
-  let ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id });
+  const learnedRules = await loadActiveLearnedRules(env);
+  let ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id, learnedRules });
   if (market.id === "US" && ranking.items.length) {
     // Second pass with the SEC filing flags for the ideas that survived the first one.
     const filings = await loadFilingFlags(env, [...new Set(ranking.items.map(item => item.symbol))]);
-    if (filings.size) ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id, filings });
+    if (filings.size) ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id, filings, learnedRules });
   }
   const lateCandidates = allCandidates.filter(candidate => !candidate.entry_eligible);
   // When each fresh setup was first seen. There is no closing time: a setup leaves the list when its price runs away or the trend fails, not when time runs out.
@@ -2239,6 +2426,10 @@ function scenarioLevels(direction, entry, atr, marketId = "US", dailyAtr = 0) {
 async function recordScannerPicks(env, payload) {
   if (!env.DB || payload?.market !== "US") return 0;
   const statements = [];
+  // What was known about each idea at this moment, kept with the pick so rules can be tested on its result later. Skipped ideas carry the filter that removed them.
+  const featuresById = new Map();
+  for (const item of payload.ranking?.items || []) featuresById.set(item.id, JSON.stringify(pickFeatures(item, payload.ranking.market_state)));
+  for (const skipped of payload.ranking?.shadow || []) featuresById.set(skipped.id, JSON.stringify(skipped.features));
   for (const candidate of payload.candidates || []) {
     const entry = numeric(candidate.signal_entry_price);
     const atr = numeric(candidate.signal_atr);
@@ -2246,10 +2437,11 @@ async function recordScannerPicks(env, payload) {
     const { stop, target1, target2 } = pickLevels(candidate.direction, entry, atr, "US", numeric(candidate.daily_atr), candidate.daily_supertrend_value);
     statements.push(env.DB.prepare(`INSERT OR IGNORE INTO recommendations (id, user_id, symbol, action, direction, generated_at,
       signal_confirmed_at, entry_price, current_price, stop_price, target_1, target_2, confidence, entry_status, daily_adx,
-      horizon_trading_days, status) VALUES (?, ?, ?, 'IDEA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${TREND_EXIT_DAYS}, 'PENDING')`).bind(
+      horizon_trading_days, status, features) VALUES (?, ?, ?, 'IDEA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${TREND_EXIT_DAYS}, 'PENDING', ?)`).bind(
       crypto.randomUUID(), SCANNER_USER_ID, candidate.symbol, candidate.direction, payload.generated_at,
       candidate.signal_confirmed_at, round(entry, 4), round(numeric(candidate.price), 4), round(stop, 4), round(target1, 4), round(target2, 4),
       round(clamp(numeric(candidate.score) / 100, 0, 1), 3), candidate.entry_status, numeric(candidate.daily_adx),
+      featuresById.get(`SUPERTREND:${candidate.symbol}:${candidate.direction}`) ?? null,
     ));
   }
   // Dip scan picks, each under its own strategy so the two scanners can be compared on live results. Dips seen while the
@@ -2261,10 +2453,11 @@ async function recordScannerPicks(env, payload) {
         if (!pick.symbol || !(pick.signal_close > 0) || !pick.signal_as_of) continue;
         statements.push(env.DB.prepare(`INSERT OR IGNORE INTO recommendations (id, user_id, symbol, action, direction, generated_at,
           signal_confirmed_at, entry_price, current_price, stop_price, target_1, target_2, confidence, entry_status, daily_adx,
-          horizon_trading_days, status, strategy) VALUES (?, ?, ?, ?, 'LONG', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 10, 'PENDING', ?)`).bind(
+          horizon_trading_days, status, strategy, features) VALUES (?, ?, ?, ?, 'LONG', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 10, 'PENDING', ?, ?)`).bind(
           crypto.randomUUID(), SCANNER_USER_ID, pick.symbol, action, payload.generated_at, pick.signal_as_of,
           round(pick.signal_close, 4), round(numeric(pick.price), 4), pick.stop_price, pick.target_1, pick.target_2,
           round(clamp(numeric(pick.score) / 100, 0, 1), 3), strategy === "DIP" ? "DIP_GATE_OPEN" : "DIP_GATE_CLOSED", strategy,
+          strategy === "DIP" ? (featuresById.get(`DIP:${pick.symbol}:LONG`) ?? null) : null,
         ));
       }
     }
@@ -2276,10 +2469,11 @@ async function recordScannerPicks(env, payload) {
       if (!pick.symbol || !(pick.signal_close > 0) || !pick.signal_as_of || !["LONG", "SHORT"].includes(pick.direction)) continue;
       statements.push(env.DB.prepare(`INSERT OR IGNORE INTO recommendations (id, user_id, symbol, action, direction, generated_at,
         signal_confirmed_at, entry_price, current_price, stop_price, target_1, target_2, confidence, entry_status, daily_adx,
-        horizon_trading_days, status, strategy) VALUES (?, ?, ?, 'IDEA', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PATTERN_BREAKOUT', 0, 10, 'PENDING', 'PATTERN')`).bind(
+        horizon_trading_days, status, strategy, features) VALUES (?, ?, ?, 'IDEA', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PATTERN_BREAKOUT', 0, 10, 'PENDING', 'PATTERN', ?)`).bind(
         crypto.randomUUID(), SCANNER_USER_ID, pick.symbol, pick.direction, payload.generated_at, pick.signal_as_of,
         round(pick.signal_close, 4), round(numeric(pick.price), 4), pick.stop_price, pick.target_1, pick.target_2,
         round(clamp(numeric(pick.score) / 100, 0, 1), 3),
+        featuresById.get(`PATTERN:${pick.symbol}:${pick.direction}`) ?? null,
       ));
     }
   }
@@ -2966,6 +3160,7 @@ async function autoScanResponse(env, market, ctx, { wait = false, readOnly = fal
     // Reading only: the AI ranking is produced by its own scheduled job, never by a visitor's request.
     try { payload = { ...payload, ranking: mergeAiRanking(payload.ranking, await readAiRanking(env, market.id)) }; } catch { /* the rules ranking still serves */ }
     try { payload = { ...payload, ranking: mergeDebate(payload.ranking, await edgarCacheRead(env, debateRowId(market.id))) }; } catch { /* no debate shown */ }
+    payload = { ...payload, ranking: { ...payload.ranking, shadow: undefined } }; // learning-loop bookkeeping, not for clients
   }
   return withRefreshInfo(payload, stored.generatedAt, market);
 }
@@ -3924,6 +4119,8 @@ async function handle(request, env, ctx) {
       return json({ url: session.url });
     }
     if (url.pathname === "/api/briefing") return json(await buildBriefing(request, env, ctx));
+    if (url.pathname === "/api/learning") return json(await learningReport(request, env));
+    if (url.pathname === "/api/learning/decide") return json(await decideLearningRule(request, env));
     if (url.pathname === "/api/discover") {
       await requireSubscription(request, env);
       const body = await readBody(request);
@@ -3989,6 +4186,7 @@ export default {
       if (market.id === "US" && env.DB && new Date(event.scheduledTime).getUTCMinutes() < 5) {
         await settlePendingRecommendations(env.DB, SCANNER_USER_ID, env).catch(() => {});
         await tagPostMortems(env).catch(error => console.error(`Post-mortem tagging failed: ${cleanError(error)}`));
+        await refreshLearning(env).catch(error => console.error(`Learning refresh failed: ${cleanError(error)}`));
       }
     })());
   },
