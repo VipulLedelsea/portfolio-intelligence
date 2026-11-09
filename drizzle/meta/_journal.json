@@ -85,6 +85,13 @@
       "when": 1794238240375,
       "tag": "0011_redundant_stick",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1794300000000,
+      "tag": "0012_holding_exit_mode",
+      "breakpoints": true
     }
   ]
 }

@@ -104,6 +104,9 @@ export const holdings = sqliteTable("holdings", {
   target2: real("target_2"),
   peakHigh: real("peak_high"),
   monitorAt: text("monitor_at"),
+  // How the position is exited. null/TREND: leave when a daily close is under the daily Supertrend line (Supertrend entries).
+  // LEVELS: a dip, pattern or counter-trend buy, where the daily trend is down by design, so it uses a fixed protective level and target.
+  exitMode: text("exit_mode"),
 }, table => [
   index("holdings_user_idx").on(table.userId, table.closedAt),
 ]);

@@ -3347,7 +3347,7 @@ function monitorLevels(row, snapshot) {
   const price = numeric(snapshot.price);
   const peak = Math.max(numeric(row.peak_high), buy, price, ...bars.map(bar => numeric(bar.h)));
   const trendUp = snapshot.daily_supertrend?.direction === "LONG";
-  const line = trendUp ? numeric(snapshot.daily_supertrend?.value) : 0;
+  const line = trendUp && row.exit_mode !== "LEVELS" ? numeric(snapshot.daily_supertrend?.value) : 0;
   const fallbackStop = Math.max(0.01, buy - Math.max(2 * atr, buy * 0.01));
   const persisted = numeric(row.stop_level);
   const firstRun = row.stop_level == null;
@@ -3450,7 +3450,26 @@ function evaluateHolding(holding, snapshot, levels = null) {
   const reasons = [];
   let action, headline;
   const sma20 = numeric(snapshot.sma_20);
-  if (levels) {
+  if (levels && holding.exit_mode === "LEVELS") {
+    // Dip, pattern or counter-trend buys: the daily trend is down by design, so it is not an exit. Leave at the protective level or take profit at target 1.
+    if (price <= stopLevel) {
+      action = "EXIT";
+      headline = "Price is below the protective level for this position";
+      reasons.push(`Price ${fmt(price)} is under the protective level ${fmt(stopLevel)} (two daily ranges under your buy price).`);
+    } else if (price >= target1) {
+      action = "TAKE_PROFIT";
+      headline = price >= target2 ? "Target 2 has been reached" : "Target 1 has been reached";
+      reasons.push(`Price ${fmt(price)} is above ${price >= target2 ? `target 2 at ${fmt(target2)}` : `target 1 at ${fmt(target1)}`}. Dip and pattern ideas are graded at their first target.`);
+    } else if ((price - stopLevel) < 0.5 * atr) {
+      action = "WATCH";
+      headline = "Close to the protective level";
+      reasons.push(`Price is within half a daily range of the protective level ${fmt(stopLevel)}.`);
+    } else {
+      action = "HOLD";
+      headline = "Within plan";
+      reasons.push(`Bought on a dip or pattern idea, so a down daily trend is expected and is not an exit. Protective level ${fmt(stopLevel)}, first target ${fmt(target1)}.`);
+    }
+  } else if (levels) {
     // US positions: exit only when the daily Supertrend turns down (a completed daily close under the line). Anything else that suggests the
     // trend may fade is a warning, because exits on those signals lowered returns in tests (ml_st_exits.py).
     const warnings = [];
@@ -3512,6 +3531,7 @@ function evaluateHolding(holding, snapshot, levels = null) {
     pnl_pct: round(pnlPct, 2),
     stop_level: round(stopLevel, 4),
     reference_lines: referenceLines(snapshot.chart_refs),
+    exit_mode: holding.exit_mode || "TREND",
     stop_basis: levels ? levels.basis : "INITIAL",
     stop_note: levels ? levels.stopText : stopText,
     trailing_level: round(trailing, 4),
@@ -3617,6 +3637,19 @@ function validPastDay(text, today) {
 }
 const MIN_AMOUNT = 1e-4;
 
+// A position bought from a dip or pattern idea (or bought while the daily trend is already down) must not be judged by the Supertrend exit:
+// its daily trend is down by design, so "exit when the daily trend turns down" would fire on day one. Those use a fixed protective level and target.
+async function entryExitMode(env, marketId, symbol, boughtAt, snapshot) {
+  if (marketId !== "US") return null;
+  try {
+    const since = new Date(Date.parse(`${boughtAt}T00:00:00Z`) - 10 * 86400000).toISOString().slice(0, 10);
+    const idea = await env.DB.prepare(`SELECT 1 AS hit FROM recommendations WHERE symbol = ? AND strategy IN ('DIP', 'PATTERN') AND action = 'IDEA'
+      AND substr(generated_at, 1, 10) >= ? AND substr(generated_at, 1, 10) <= ? LIMIT 1`).bind(symbol, since, boughtAt).first();
+    if (idea) return "LEVELS";
+  } catch { /* fall through to the trend check */ }
+  return snapshot?.daily_supertrend?.direction === "LONG" ? "TREND" : "LEVELS";
+}
+
 async function addHolding(request, env) {
   const user = await holdingsUser(request, env);
   const body = await readBody(request);
@@ -3641,9 +3674,10 @@ async function addHolding(request, env) {
   const { snapshots, errors } = await holdingSnapshotsFor(env, market, [symbol]);
   if (!snapshots.get(symbol)) throw Object.assign(new Error(`No market data found for ${symbol}${errors?.[0]?.error ? ` (${errors[0].error})` : ""}`), { status: 400 });
   const id = randomBase64Url(12);
+  const exitMode = await entryExitMode(env, marketId, symbol, boughtAt, snapshots.get(symbol));
   await env.DB.batch([
-    env.DB.prepare("INSERT INTO holdings (id, user_id, symbol, market, shares, buy_price, bought_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(id, user.id, symbol, marketId, shares, price, boughtAt, new Date().toISOString()),
+    env.DB.prepare("INSERT INTO holdings (id, user_id, symbol, market, shares, buy_price, bought_at, created_at, exit_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(id, user.id, symbol, marketId, shares, price, boughtAt, new Date().toISOString(), exitMode),
     tradeStatement(env, user.id, id, { symbol, market: marketId }, "BUY", shares, price, `${boughtAt}T00:00:00.000Z`),
   ]);
   return { added: true, id };
