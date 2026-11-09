@@ -183,7 +183,8 @@ await usCron();
 check("MON-05", "second run with same state creates no duplicate alert", alertsFor("FLIP").length === 1);
 check("MON-06", "one bad row (NaN price) does not stop others being processed", alertsFor("FLIP").length === 1);
 check("MON-07", "NaN/zero price snapshot does not raise a false EXIT alert", !alertsFor("BADD").includes("EXIT") && !alertsFor("ZEROP").includes("EXIT"), `BADD ${JSON.stringify(alertsFor("BADD"))} ZEROP ${JSON.stringify(alertsFor("ZEROP"))}`);
-console.log(`  observation (hardening, not counted): snapshot missing daily Supertrend -> alerts ${JSON.stringify(alertsFor("NODAILY"))}; data_complete=false -> alerts ${JSON.stringify(alertsFor("INCOMP"))}. snapshotFromPayload throws on thin history, so live data cannot hit this today.`);
+check("MON-08", "snapshot missing the daily Supertrend does not raise a false EXIT alert", !alertsFor("NODAILY").includes("EXIT"), JSON.stringify(alertsFor("NODAILY")));
+check("MON-09", "snapshot flagged data_complete=false does not raise a false EXIT alert", !alertsFor("INCOMP").includes("EXIT"), JSON.stringify(alertsFor("INCOMP")));
 const stopOf = id => sqlite.prepare("SELECT stop_level FROM holdings WHERE id=?").get(id).stop_level;
 const s1 = stopOf("m-ok");
 seedHold([mkSnap("OKAY", 108, { line: 80 })]); await usCron();
@@ -229,6 +230,14 @@ check("UI-02", "built worker bundle contains the same fix", /Object\.values\(lev
 check("UI-03", "holdings status label threshold matches the 900/1800 s intervals (was >=600, always 'markets closed')", /refresh_after_seconds>=1500\?'30 minutes \(markets closed\)'/.test(dash));
 const swift = await readFile(resolve(root, "ios/IntelligentPortfolio/HoldingsView.swift"), "utf8");
 check("UI-04", "iOS holdings status label matches the 15/30 minute intervals", />= 1500 \? "every 30 minutes, markets closed" : "every 15 minutes, market open"/.test(swift));
+
+check("FIX-01", "worst loss counts only losing picks (shows a dash when there are none)", /worst_loss_pct: losses\.length \? round\(Math\.min\(\.\.\.losses\), 3\) : null/.test(await readFile(resolve(root, "worker/runtime.js"), "utf8")));
+check("FIX-02", "Top ideas copy explains rule-ordered ideas", /Ideas marked "not scored by the model" were ordered by rules/.test(dash));
+check("FIX-03", "iOS Today shows a connect prompt instead of an endless spinner for guests", /else if model\.isGuest \{[\s\S]{0,200}Connect an account to see today's briefing/.test(await readFile(resolve(root, "ios/IntelligentPortfolio/ScannerView.swift"), "utf8")));
+check("FIX-04", "pairing error no longer claims every bad code expired", /not valid or has expired/.test(await readFile(resolve(root, "worker/runtime.js"), "utf8")));
+
+check("FIX-05", "signed-out visitors never call /api/memory and never see the Refresh grades panel", /memorySignedIn=Boolean\(access\.signed_in\)/.test(dash) && /if\(!memorySignedIn\)\{memorySection\.classList\.add\('hidden'\);return\}/.test(dash));
+check("FIX-06", "research desk shows NOT A TRADE instead of PASS", /actionLabel=value=>value==='PASS'\?'NOT A TRADE'/.test(dash));
 
 const failed = results.filter(r => !r.ok);
 console.log(`New-feature harness: ${results.length - failed.length}/${results.length} passed`);

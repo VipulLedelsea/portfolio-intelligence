@@ -1105,6 +1105,16 @@ struct TodayView: View {
                         ForEach(briefing.markets) { market in TodayMarketBlock(market: market) }
                         if let holdings = briefing.holdings { TodayHoldingsBlock(holdings: holdings) }
                         Text(briefing.disclaimer).font(.caption2).foregroundStyle(AppTheme.muted)
+                    } else if model.isGuest {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Connect an account to see today's briefing.").font(.headline)
+                            Text("The briefing summarises each market, the top ideas and what changed on your holdings.")
+                                .foregroundStyle(AppTheme.muted)
+                            Button("Connect an account") { model.leaveGuest() }
+                                .buttonStyle(.borderedProminent)
+                                .tint(AppTheme.amber)
+                        }
+                        .panel()
                     } else {
                         ProgressView("Loading today's briefing…").tint(AppTheme.amber).frame(maxWidth: .infinity)
                     }

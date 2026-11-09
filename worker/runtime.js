@@ -425,7 +425,7 @@ async function approveMobilePairing(request, env, body) {
   const codeHash = await sha256(code);
   const pairing = await env.DB.prepare(`SELECT expires_at, user_id, claimed_at FROM mobile_pairings
     WHERE code_hash = ? LIMIT 1`).bind(codeHash).first();
-  if (!pairing || Date.parse(pairing.expires_at) <= Date.now()) throw Object.assign(new Error("That pairing code expired. Start again from the iPhone app."), { status: 410 });
+  if (!pairing || Date.parse(pairing.expires_at) <= Date.now()) throw Object.assign(new Error("That pairing code is not valid or has expired. Start again from the iPhone app."), { status: 410 });
   if (pairing.claimed_at) throw Object.assign(new Error("That pairing code has already been used"), { status: 409 });
   if (pairing.user_id && pairing.user_id !== user.id) throw Object.assign(new Error("That pairing code belongs to another account"), { status: 409 });
   await env.DB.prepare(`UPDATE mobile_pairings SET user_id = ?, approved_at = ?
@@ -2503,7 +2503,7 @@ function summarizeTrackRecord(rows, pendingCount) {
     average_return_pct: returns.length ? round(mean(returns), 3) : null,
     average_win_pct: wins.length ? round(mean(wins), 3) : null,
     average_loss_pct: losses.length ? round(mean(losses), 3) : null,
-    worst_loss_pct: returns.length ? round(Math.min(...returns), 3) : null,
+    worst_loss_pct: losses.length ? round(Math.min(...losses), 3) : null,
     profit_factor: grossLosses > 0 ? round(grossWins / grossLosses, 3) : null,
     stop_hit_rate_pct: share(row => Boolean(row.stop_hit)),
     target_hit_rate_pct: share(row => Boolean(row.target_hit)),
@@ -3453,7 +3453,7 @@ function evaluateHolding(holding, snapshot, levels = null) {
     if (adx < 20) warnings.push(`Daily ADX is ${adx.toFixed(1)}, below 20, so the trend is losing strength.`);
     if (sma20 && price < sma20) warnings.push(`Price is under its 20-day average (${fmt(sma20)}).`);
     if (price <= stopLevel && dailyTrend !== "SHORT") warnings.push(`Price is at or under the protective level ${fmt(stopLevel)}. The exit is a day CLOSING under it, so a close under it today means exit at the next open.`);
-    if (dailyTrend === "SHORT") {
+    if (snapshot.daily_supertrend?.direction && snapshot.data_complete !== false && dailyTrend === "SHORT") {
       action = "EXIT";
       headline = "The daily trend has turned down";
       reasons.push("A completed daily close is under the daily Supertrend line, which is the exit that tested best for Supertrend trades. Exit at the next open.");

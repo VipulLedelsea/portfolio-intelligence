@@ -87,3 +87,19 @@ Passed: unpaired Holdings shows a clear "Connect an account" prompt; pairing fro
 | I4 | Low | iOS Top ideas header says "Ranked by AI" while rows are "not scored by the model" (same as web W2). | Open with W2. |
 
 Note: the account now has 5 open holdings (CBOE, EBAY, CME, NUE, CVX), so 3 were added after the earlier signed-in test. Not touched by the tests.
+
+# Fix round (2026-11-09), not yet deployed
+Harnesses after fixes: new 93/93, round 1 139/139, extended 66/66, `npm run validate` pass, iOS app builds.
+
+| ID | Resolution |
+|---|---|
+| W5, I1 | Fixed. `worst_loss_pct` now counts only losing picks, so it is a dash when there are none (web and iOS both read this field). FIX-01. |
+| W2, I4 | Fixed (web copy). When some ideas were not scored by the model, the Top ideas line now says those were ordered by rules. FIX-02. iOS chip text unchanged ("Ranked by AI" with per-row notes). |
+| W4 | Fixed. Research desk shows "NOT A TRADE" instead of "PASS". FIX-06. |
+| W6 | Fixed. Signed-out visitors no longer call `/api/memory` (no 401 console error) and no longer see the Refresh grades panel. FIX-05. |
+| I2 | Fixed. Pairing error now reads "not valid or has expired". FIX-04. (The iOS copy of the expired message is unchanged.) |
+| I3 | Fixed (cause confirmed in code: guests have no token, so the briefing never loaded). Today now shows a Connect an account prompt for guests. FIX-03. |
+| F2 | Fixed. The monitor no longer raises EXIT when the daily trend is missing or the snapshot is flagged incomplete. MON-08 and MON-09 are now counted cases. |
+| W3 | Not changed: "High confidence" comes from the AI ranking; whether to cap it by R:R is a product call. |
+| S3 | Not changed: needs worker logs ("Debate failed for") to tell lag from failure. |
+| S4 | Not changed: duplicate symbol adds are a product call (warn, merge, or allow). |
