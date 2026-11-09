@@ -48,3 +48,7 @@ Checked on the live site in the built-in browser as an anonymous visitor. Signed
 | W6 | Low (carried) | Anonymous load logs a 401 console error; "Refresh grades" shows while signed out. | Open, known. |
 
 Passed: market switch US to India to Forex and back restores the US scan (B4 fix holds); invalid ticker shows "Enter a valid ticker symbol"; lowercase ticker accepted; CSP blocks `eval`; briefing card renders three markets with timestamps; learning panel shows the expected empty states.
+
+## Update after deploy (16:14 UTC)
+- W1 deployed (worker version affa1061) and verified live: axis labels `$378 to $321`, 46 candles, no NaN, annotations and levels drawn. The edge kept serving the old page for about 8 minutes after the deploy, so allow time before verifying a web deploy.
+- F3 resolved: `/api/learning` now returns a stored report (0 graded picks so far, as expected). The hourly job works.
