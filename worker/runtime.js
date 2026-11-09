@@ -1714,11 +1714,11 @@ const RANK_EVIDENCE = {
   SUPERTREND: { label: "Supertrend", n: 503, win_rate_pct: 45, avg_win_pct: 11.3, avg_loss_pct: -6.2, ev_pct: 1.61, experimental: false,
     note: "Daily Supertrend flip with the ADX gate, held until a daily close under the Supertrend line (about 34 days on average); no target. About 500 trades over four years in a mostly rising market; the edge was larger in the first half." },
   DIP: { label: "Dip", n: 4754, win_rate_pct: 69, avg_win_pct: null, avg_loss_pct: null, ev_pct: 0.66, experimental: false,
-    note: "Dip above the 200-day average while SPY was down 1.5% or more over 5 days, 5-day hold. The gate was chosen after seeing the data, and the trades cluster in a few selloff weeks; calm-market dips lost money." },
+    note: "Dip above the 200-day average while SPY was down 1.5% or more over 5 days, measured with a 3 ATR stop, 1 ATR target and 5-day hold. The levels shown here are 2 ATR stop, 1 ATR target and a 10-day limit, which averaged +0.55% on stressed dips in a separate test (7,270 trades). The gate was chosen after seeing the data, and the trades cluster in a few selloff weeks; calm-market dips lost money." },
   DIP_SHARP: { label: "Dip", n: 1010, win_rate_pct: 72, avg_win_pct: null, avg_loss_pct: null, ev_pct: 1.14, experimental: false,
-    note: "Sharper dip (RSI(2) under 5, down 5% or more in 3 days) while SPY was down 1.5% or more over 5 days. Fewer trades, more clustered in a few selloff weeks." },
+    note: "Sharper dip (RSI(2) under 5, down 5% or more in 3 days) while SPY was down 1.5% or more over 5 days, measured with a 3 ATR stop, 1 ATR target and 5-day hold (the app now uses a 2 ATR stop and a 10-day limit). Fewer trades, more clustered in a few selloff weeks." },
   PATTERN_LONG: { label: "Pattern", n: 347, win_rate_pct: 55, avg_win_pct: null, avg_loss_pct: null, ev_pct: -0.37, experimental: true,
-    note: "Bullish candlestick pattern on a 20-day-high breakout with volume 1.4x average, 5-day hold with 2 ATR stop and 1 ATR target. It did worse than breakouts without a pattern (-0.2% to -0.5% per trade) and lost money in absolute terms." },
+    note: "Bullish candlestick pattern on a 20-day-high breakout with volume 1.4x average, 5-day hold with 2 ATR stop and 1 ATR target (the app shows the pattern's own stop, 1R and 2R targets and a 10-day limit, which were not backtested as a set). It did worse than breakouts without a pattern (-0.2% to -0.5% per trade) and lost money in absolute terms." },
   PATTERN_SHORT: { label: "Pattern", n: 379, win_rate_pct: 57, avg_win_pct: null, avg_loss_pct: null, ev_pct: -0.61, experimental: true,
     note: "Bearish candlestick pattern on a 20-day-low breakdown with volume 1.4x average, 5-day hold. Beat breakdowns without a pattern by about +0.6% but still lost money in absolute terms, and the edge sat mostly in the first half." },
 };
@@ -1838,7 +1838,7 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
       strategy: "SUPERTREND", evidence_key: us ? "SUPERTREND" : marketId === "FX" ? "SUPERTREND_FX" : "SUPERTREND_IN", symbol: c.symbol, company: c.company, sector: c.sector, direction: c.direction, price: c.price,
       entry: round(entry, 4), stop: round(levels.stop, 4), target_1: us ? null : round(levels.target1, 6), target_2: us ? null : round(levels.target2, 6), atr, atr_pct: atr > 0 ? round(atr / entry * 100, 2) : null,
       volume_ratio: null, age_days: rankDaysOld(c.signal_confirmed_at), scanner_score: c.score, tag: "Supertrend", detail: c.label, buy_range: c.buy_range || null, signal_at: c.signal_confirmed_at || null,
-      exit_rule: us ? "Leave when a day closes " + (c.direction === "SHORT" ? "over" : "under") + " the daily Supertrend line, at the next open. No fixed target and no time limit."
+      exit_rule: us ? (levels.stop_kind === "SUPERTREND_LINE" ? "" : `The protective level shown is two daily ranges from the entry, because the daily Supertrend line is not yet on the safe side of it. `) + "Leave when a day closes " + (c.direction === "SHORT" ? "over" : "under") + " the daily Supertrend line, at the next open. No fixed target and no time limit."
         : "Leave at the stop, at target 1 or 2, or at the close of day 10, whichever comes first.",
       alignment_score: Math.round((agrees(c.direction) + (c.daily_aligned && c.daily_adx >= 20 ? 100 : 40)) / 2),
       alignment_note: `Daily Supertrend ${c.daily_supertrend_direction}, daily ADX ${c.daily_adx}${c.daily_adx_rising ? " and rising" : ""}; market ${marketState.toLowerCase()}.`,
@@ -3353,7 +3353,7 @@ function monitorLevels(row, snapshot) {
   const firstRun = row.stop_level == null;
   let stop = Math.max(persisted, line > 0 && line < price ? line : 0, firstRun ? fallbackStop : 0);
   stop = Math.max(stop, persisted);
-  const ownLevels = row.idea_strategy === "PATTERN" && numeric(row.target_1) > 0;   // a pattern buy keeps its idea's own 1R and 2R targets
+  const ownLevels = (row.idea_strategy === "PATTERN" || row.idea_strategy === "DIP") && numeric(row.target_1) > 0;   // a pattern or dip buy keeps its idea's own targets
   const target1 = ownLevels ? numeric(row.target_1) : Math.max(numeric(row.target_1), buy + TARGET_1_ATR * atr), target2 = ownLevels ? numeric(row.target_2) : Math.max(numeric(row.target_2), buy + TARGET_2_ATR * atr);
   const events = [];
   if (firstRun) events.push({ kind: "INITIAL", reason: `Protective level set at ${fmt(stop)} (${line > 0 && stop === line ? "the daily Supertrend line" : "two daily ranges under your buy price, because the daily Supertrend line is not available"}). It rises with the trend and you exit if a day closes under it.` });
@@ -3461,8 +3461,27 @@ function evaluateHolding(holding, snapshot, levels = null) {
     const failure = pattern ? numeric(holding.failure_level) : 0;
     const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
     const failedClose = failure > 0 && dailyBars.some(bar => bar.d > boughtDay && bar.d < today && numeric(bar.c) < failure);
-    const ownText = pattern ? "the pattern's own protective level" : "two daily ranges under your buy price";
-    if (price <= stopLevel) {
+    const ownText = pattern ? "the pattern's own protective level" : "two daily ranges under the entry";
+    // The idea is graded on whichever level price touches first, so a level touched on an earlier day still counts even if price has since come back.
+    // Completed daily bars give the day; the stored peak covers today's highs seen by the monitor. Both levels are fixed in this mode, so this is stable.
+    const sinceBuy = dailyBars.filter(bar => bar.d > boughtDay);
+    const stopBar = sinceBuy.find(bar => numeric(bar.l) > 0 && numeric(bar.l) <= stopLevel);
+    const targetBar = sinceBuy.find(bar => numeric(bar.h) >= target1);
+    const peak = levels.peak || price;
+    const targetFirst = Boolean(targetBar) && (!stopBar || targetBar.d < stopBar.d);
+    const targetSeen = targetFirst || (!stopBar && (price >= target1 || peak >= target1));
+    if (stopBar && !targetFirst) {
+      action = "EXIT";
+      headline = "Price traded under the protective level after you bought";
+      reasons.push(`On ${stopBar.d} the low (${fmt(numeric(stopBar.l))}) went under the protective level ${fmt(stopLevel)} (${ownText}), which is the exit for this idea. Price now ${fmt(price)}.`);
+    } else if (targetSeen) {
+      action = "TAKE_PROFIT";
+      const top2 = peak >= target2 || (targetBar && numeric(targetBar.h) >= target2);
+      headline = price >= target1 ? (price >= target2 ? "Target 2 has been reached" : "Target 1 has been reached") : `${top2 ? "Target 2" : "Target 1"} was reached earlier and price has since pulled back`;
+      reasons.push(price >= target1
+        ? `Price ${fmt(price)} is above ${price >= target2 ? `target 2 at ${fmt(target2)}` : `target 1 at ${fmt(target1)}`}. Dip and pattern ideas are graded at their first target.`
+        : `Price reached target 1 (${fmt(target1)})${targetBar ? ` on ${targetBar.d}` : " earlier"} and is now ${fmt(price)}. Dip and pattern ideas are graded at their first target, so the plan was to take profit there.`);
+    } else if (price <= stopLevel) {
       action = "EXIT";
       headline = "Price is below the protective level for this position";
       reasons.push(`Price ${fmt(price)} is under the protective level ${fmt(stopLevel)} (${ownText}).`);
@@ -3474,10 +3493,6 @@ function evaluateHolding(holding, snapshot, levels = null) {
       action = "EXIT";
       headline = "Time limit reached: this kind of idea is closed by day 10";
       reasons.push(`Dip and pattern ideas are tested with a 10-day limit and did not reach target 1 (${fmt(target1)}) in that time. The edge being tracked is a short bounce, so holding longer is outside the tested plan.`);
-    } else if (price >= target1) {
-      action = "TAKE_PROFIT";
-      headline = price >= target2 ? "Target 2 has been reached" : "Target 1 has been reached";
-      reasons.push(`Price ${fmt(price)} is above ${price >= target2 ? `target 2 at ${fmt(target2)}` : `target 1 at ${fmt(target1)}`}. Dip and pattern ideas are graded at their first target.`);
     } else if ((price - stopLevel) < 0.5 * atr || (failure > 0 && price < failure)) {
       action = "WATCH";
       headline = failure > 0 && price < failure ? "Under the breakout level: it only counts if the day closes there" : "Close to the protective level";
@@ -3695,7 +3710,8 @@ async function addHolding(request, env) {
   const id = randomBase64Url(12);
   const entry = await entryExitMode(env, marketId, symbol, boughtAt, snapshots.get(symbol));
   // A pattern buy follows the pattern's own stop, targets and failure level (its idea was tested with those), so they are stored with the holding.
-  const own = entry.strategy === "PATTERN" && numeric(entry.idea?.stop_price) > 0 && numeric(entry.idea?.stop_price) < price ? entry.idea : null;
+  // A dip buy does the same with the dip idea's stop and targets (2 and 1 to 2 daily ranges from the signal close), so the position is judged against what the scanner saw.
+  const own = (entry.strategy === "PATTERN" || entry.strategy === "DIP") && numeric(entry.idea?.stop_price) > 0 && numeric(entry.idea?.stop_price) < price ? entry.idea : null;
   await env.DB.batch([
     env.DB.prepare("INSERT INTO holdings (id, user_id, symbol, market, shares, buy_price, bought_at, created_at, exit_mode, idea_strategy, failure_level, stop_level, target_1, target_2, monitor_atr) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .bind(id, user.id, symbol, marketId, shares, price, boughtAt, new Date().toISOString(), entry.mode, entry.strategy, own && numeric(own.failure_level) > 0 ? own.failure_level : null,
