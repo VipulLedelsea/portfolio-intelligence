@@ -15,6 +15,9 @@ const item = { symbol: "MPC", direction: "LONG", tag: "Sharp dip", alignment_sco
 const facts = debateFacts(item, "DOWN");
 assert.equal(facts.volume_ratio, undefined, "A missing figure must not become a fact");
 assert.equal(facts.earnings_in_days, 5);
+const far = debateFacts({ ...item, filing: { earnings_in_days: 87, earnings_confirmed: false, cautions: [] } }, "DOWN");
+assert.equal(far.earnings_in_days, undefined, "An earnings date months away is not a fact for the debate");
+assert.equal(far.earnings_confirmed, undefined);
 const keys = Object.keys(facts);
 const ok = { text: "The scanner averaged 1.14% per trade over 1010 backtested trades.", facts: [{ key: "backtest_ev_pct", value: 1.14 }, { key: "backtest_trades", value: 1010 }] };
 const cases = [

@@ -527,15 +527,23 @@ private struct HoldingCard: View {
     }
 }
 
-private struct AddHoldingSheet: View {
+/// Records a purchase you made yourself, for research tracking only. Opened empty from Holdings, or prefilled from a ranked idea.
+struct AddHoldingSheet: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    @State private var market = "US"
-    @State private var symbol = ""
-    @State private var shares = ""
-    @State private var price = ""
+    @State private var market: String
+    @State private var symbol: String
+    @State private var shares: String
+    @State private var price: String
     @State private var date = Date()
     @State private var saving = false
+
+    init(market: String = "US", symbol: String = "", shares: String = "", price: String = "") {
+        _market = State(initialValue: market)
+        _symbol = State(initialValue: symbol)
+        _shares = State(initialValue: shares)
+        _price = State(initialValue: price)
+    }
 
     private var parsedShares: Double? { Double(shares.replacingOccurrences(of: ",", with: ".")) }
     private var parsedPrice: Double? { Double(price.replacingOccurrences(of: ",", with: ".")) }

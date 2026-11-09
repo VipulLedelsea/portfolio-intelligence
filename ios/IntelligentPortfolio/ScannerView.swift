@@ -613,7 +613,9 @@ private struct DipScanSection: View {
 /// Top ideas: every scanner's setups in one ranked list. Each row says which scanner found it, and the numbers come from the scanner.
 private struct RankedIdeasSection: View {
     let ranking: RankedIdeas
+    @EnvironmentObject private var model: AppModel
     @State private var selected: RankedIdea?
+    @State private var logging: RankedIdea?
     @State private var showingSkipped = false
 
     private var sourceChip: (String, Color) {
@@ -647,7 +649,15 @@ private struct RankedIdeasSection: View {
                 ListFrame {
                     ForEach(Array(ranking.items.enumerated()), id: \.element.id) { index, idea in
                         if index > 0 { RowDivider() }
-                        Button { selected = idea } label: { RankedRow(idea: idea) }.buttonStyle(.plain)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Button { selected = idea } label: { RankedRow(idea: idea) }.buttonStyle(.plain)
+                            // Records a purchase you made yourself (nothing is sent to a broker). Forex has no holdings, so it gets no button.
+                            if idea.market != "FX", (idea.currencySymbol ?? "") != "" {
+                                Button { logging = idea } label: { Label("Log my buy", systemImage: "plus.circle") }
+                                    .font(.caption.weight(.semibold)).buttonStyle(.bordered).controlSize(.small).tint(AppTheme.amber)
+                                    .padding(.horizontal, 16).padding(.bottom, 10).padding(.leading, 36)
+                            }
+                        }
                     }
                 }
             }
@@ -688,6 +698,9 @@ private struct RankedIdeasSection: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .sheet(item: $selected) { idea in RankedDetailSheet(idea: idea, method: ranking.method) }
+        .sheet(item: $logging) { idea in
+            AddHoldingSheet(market: idea.market == "IN" ? "IN" : "US", symbol: idea.symbol, shares: SizingMath.shareText(idea), price: String(idea.price)).environmentObject(model)
+        }
     }
 }
 
@@ -716,6 +729,7 @@ private struct RankedRow: View {
                 }
                 Text(idea.reason).font(.caption).foregroundStyle(AppTheme.muted).fixedSize(horizontal: false, vertical: true)
                 Text("Score \(Int(idea.score)) · \(idea.confidence) confidence").font(.caption2.weight(.semibold)).foregroundStyle(idea.confidence == "High" ? AppTheme.mint : AppTheme.muted)
+                if let range = idea.buyRange { BuyRangeBar(range: range, currency: idea.currencySymbol, decimals: idea.priceDecimals) }
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 3) {
@@ -788,6 +802,16 @@ private struct RankedDetailSheet: View {
                         if let rr = idea.rrT1 { tile("Reward to risk", String(format: "%.1f to target 1", rr)) }
                         if let ext = idea.fromEntryAtr { tile("From entry", String(format: "%+.1f ATR", ext)) }
                     }
+                    if let range = idea.buyRange {
+                        VStack(alignment: .leading, spacing: 6) {
+                            SectionLabel(text: "Near the buy point?")
+                            BuyRangeBar(range: range, currency: idea.currencySymbol, decimals: idea.priceDecimals)
+                            Text("Distance from the signal price in typical daily ranges. Guidance from the entry-timing test, not a promise.").font(.caption2).foregroundStyle(AppTheme.muted)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .panel()
+                    }
+                    SizingBlock(idea: idea)
                     block("Exit", idea.exitRule)
                     if let note = idea.alignmentNote { block("Trend and market", note) }
                     block("Backtest behind the score", evidenceText)
@@ -1236,5 +1260,63 @@ private struct DebateSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .panel()
+    }
+}
+
+
+/// Shares that keep the loss at the stop within the user's risk limit, capped at 25% of the account. Settings live on this device only.
+enum SizingMath {
+    static func shares(_ idea: RankedIdea) -> Int? {
+        let account = UserDefaults.standard.double(forKey: "sizing.account")
+        let riskPct = (UserDefaults.standard.object(forKey: "sizing.riskPct") as? Double) ?? 1.0
+        let perShare = abs(idea.entry - idea.stop)
+        guard account > 0, riskPct > 0, perShare > 0, idea.price > 0 else { return nil }
+        let byRisk = Int((account * riskPct / 100 / perShare).rounded(.down))
+        let byCap = Int((account * 0.25 / idea.price).rounded(.down))
+        let n = max(0, min(byRisk, byCap))
+        return n > 0 ? n : nil
+    }
+    static func shareText(_ idea: RankedIdea) -> String { shares(idea).map(String.init) ?? "" }
+}
+
+/// How many shares keep the loss at your stop within your risk limit, from the account size and risk percent set on the Account tab (stored on this device only).
+/// Plain arithmetic on the idea's entry and stop; no position is capped below 25% of the account.
+private struct SizingBlock: View {
+    let idea: RankedIdea
+    @AppStorage("sizing.account") private var account = 0.0
+    @AppStorage("sizing.riskPct") private var riskPct = 1.0
+    @EnvironmentObject private var model: AppModel
+
+    private var held: Bool { model.holdings?.open.contains { $0.symbol == idea.symbol } ?? false }
+
+    var body: some View {
+        let symbol = idea.currencySymbol ?? ""
+        let perShare = abs(idea.entry - idea.stop)
+        if !symbol.isEmpty, perShare > 0, idea.entry > 0 {
+            VStack(alignment: .leading, spacing: 4) {
+                SectionLabel(text: "Position size")
+                if account > 0, riskPct > 0 {
+                    let riskAmount = account * riskPct / 100
+                    let byRisk = Int((riskAmount / perShare).rounded(.down))
+                    let byCap = Int((account * 0.25 / idea.entry).rounded(.down))
+                    let shares = max(0, min(byRisk, byCap))
+                    let value = Double(shares) * idea.entry
+                    if shares == 0 {
+                        Text("One share already risks more than your \(String(format: "%.1f", riskPct))% limit (\(symbol)\(String(format: "%.0f", riskAmount))), so this idea is too small to size for your account.")
+                            .font(.callout)
+                    } else {
+                        Text("\(shares) shares: about \(symbol)\(String(format: "%.0f", value)) (\(String(format: "%.0f", value / account * 100))% of your account). If the stop is hit you lose about \(symbol)\(String(format: "%.0f", Double(shares) * perShare)).")
+                            .font(.callout)
+                        if byRisk > byCap { Text("Capped at 25% of your account; your risk limit alone would allow \(byRisk) shares.").font(.caption).foregroundStyle(AppTheme.amber) }
+                    }
+                    if held { Text("You already hold \(idea.symbol); this would add to the position.").font(.caption).foregroundStyle(AppTheme.amber) }
+                    Text("Arithmetic from your own limits, not advice. Gaps can take the loss past the stop.").font(.caption2).foregroundStyle(AppTheme.muted)
+                } else {
+                    Text("Set your account size and risk per trade on the Account tab to see a share count.").font(.footnote).foregroundStyle(AppTheme.muted)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .panel()
+        }
     }
 }

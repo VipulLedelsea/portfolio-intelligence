@@ -1656,7 +1656,7 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
     raw.push({
       strategy: "SUPERTREND", evidence_key: us ? "SUPERTREND" : marketId === "FX" ? "SUPERTREND_FX" : "SUPERTREND_IN", symbol: c.symbol, company: c.company, sector: c.sector, direction: c.direction, price: c.price,
       entry: round(entry, 4), stop: round(levels.stop, 4), target_1: us ? null : round(levels.target1, 6), target_2: us ? null : round(levels.target2, 6), atr, atr_pct: atr > 0 ? round(atr / entry * 100, 2) : null,
-      volume_ratio: null, age_days: rankDaysOld(c.signal_confirmed_at), scanner_score: c.score, tag: "Supertrend", detail: c.label,
+      volume_ratio: null, age_days: rankDaysOld(c.signal_confirmed_at), scanner_score: c.score, tag: "Supertrend", detail: c.label, buy_range: c.buy_range || null,
       exit_rule: us ? "Leave when a day closes " + (c.direction === "SHORT" ? "over" : "under") + " the daily Supertrend line, at the next open. No fixed target and no time limit."
         : "Leave at the stop, at target 1 or 2, or at the close of day 10, whichever comes first.",
       alignment_score: Math.round((agrees(c.direction) + (c.daily_aligned && c.daily_adx >= 20 ? 100 : 40)) / 2),
@@ -1669,7 +1669,7 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
       raw.push({
         strategy: "DIP", evidence_key: d.sharp ? "DIP_SHARP" : "DIP", symbol: d.symbol, company: d.company, sector: d.sector, direction: "LONG", price: d.price,
         entry: d.signal_close, stop: d.stop_price, target_1: d.target_1, target_2: d.target_2, atr: d.atr_14, atr_pct: d.atr_14_pct,
-        volume_ratio: null, age_days: rankDaysOld(d.signal_as_of), scanner_score: d.score, tag: d.sharp ? "Sharp dip" : "Dip", detail: d.label,
+        volume_ratio: null, age_days: rankDaysOld(d.signal_as_of), scanner_score: d.score, tag: d.sharp ? "Sharp dip" : "Dip", detail: d.label, buy_range: buyRange("LONG", d.signal_close, d.atr_14, d.price),
         exit_rule: "Leave at the stop, at target 1, or at the close of day 10, whichever comes first.",
         alignment_score: 70, alignment_note: `Stock above its 200-day average; the market-stress gate is open (SPY ${dipScan.gate.spy_5d_pct ?? "n/a"}% over 5 days).`,
         currency_symbol: d.currency_symbol, price_decimals: d.price_decimals,
@@ -1681,7 +1681,7 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
       raw.push({
         strategy: "PATTERN", evidence_key: p.direction === "LONG" ? "PATTERN_LONG" : "PATTERN_SHORT", symbol: p.symbol, company: p.company, sector: p.sector, direction: p.direction, price: p.price,
         entry: p.signal_close, stop: p.stop_price, target_1: p.target_1, target_2: p.target_2, atr: p.atr_14, atr_pct: p.atr_14_pct,
-        volume_ratio: p.volume_ratio, age_days: rankDaysOld(p.signal_as_of), scanner_score: p.score, tag: "Pattern", detail: p.label,
+        volume_ratio: p.volume_ratio, age_days: rankDaysOld(p.signal_as_of), scanner_score: p.score, tag: "Pattern", detail: p.label, buy_range: buyRange(p.direction, p.signal_close, p.atr_14, p.price),
         exit_rule: `Leave at the stop, at target 1 or 2, when a day closes back ${p.direction === "LONG" ? "under" : "over"} ${p.failure_level}, or at the close of day 10.`,
         alignment_score: agrees(p.direction), alignment_note: `Close beyond the 20-day ${p.direction === "LONG" ? "high" : "low"} on ${p.volume_ratio}x volume; market ${marketState.toLowerCase()}.`,
         currency_symbol: p.currency_symbol, price_decimals: p.price_decimals,
@@ -1695,7 +1695,7 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
     // A serious filing skips a long idea. For a short idea the same event supports the trade, so it is shown as a note instead.
     const f0 = filings.get(r.symbol) || null;
     const filing = f0 && r.direction === "SHORT" && f0.severe?.length ? { ...f0, severe: [], cautions: [...(f0.cautions || []), ...f0.severe].slice(0, 3) } : f0;
-    const item = rankItem({ ...r, id: `${r.strategy}:${r.symbol}:${r.direction}`, evidence: RANK_EVIDENCE[r.evidence_key], scanner_rank_in_list: byListPosition.get(r), filing });
+    const item = rankItem({ ...r, market: marketId, id: `${r.strategy}:${r.symbol}:${r.direction}`, evidence: RANK_EVIDENCE[r.evidence_key], scanner_rank_in_list: byListPosition.get(r), filing });
     const reason = rankHardFilter(item);
     if (reason) rejected.push({ id: item.id, symbol: item.symbol, strategy: item.strategy, tag: item.tag, reason });
     else items.push(item);
@@ -2318,6 +2318,77 @@ function summarizeTrackRecord(rows, pendingCount) {
   };
 }
 
+// ---- Post-mortem: what the settled picks have in common ----
+// Once a pick settles, code works out plain facts about it (hit its stop, an earnings report during the hold, the S&P 500 moved against it, exited
+// well past the stop, faded after a profit, lost within days). Counting those among losers and winners shows what to test next. No model is
+// involved: at this sample size the counts say everything a model could, and numbers a model writes cannot be trusted without a check.
+const POSTMORTEM_TAGS = {
+  STOPPED_OUT: "hit its stop",
+  EARNINGS_IN_HOLD: "had an earnings report during the hold",
+  MARKET_AGAINST: "had the S&P 500 move 2% or more against it",
+  GAP_THROUGH_STOP: "exited more than 1% past its stop (a gap)",
+  FADED_AFTER_PROFIT: "was up 3% or more at some point, then ended flat or down",
+  QUICK_LOSS: "lost within three days",
+};
+
+function postMortemTags(row, { earnings = null, spyBars = null } = {}) {
+  const tags = [], entry = numeric(row.entry_price), stop = numeric(row.stop_price), exit = numeric(row.exit_price), ret = numeric(row.strategy_return_pct);
+  const short = row.direction === "SHORT", from = String(row.generated_at).slice(0, 10), to = String(row.settled_at || "").slice(0, 10);
+  if (row.stop_hit) tags.push("STOPPED_OUT");
+  if (row.stop_hit && entry > 0 && exit > 0 && stop > 0 && (short ? exit > stop + 0.01 * entry : exit < stop - 0.01 * entry)) tags.push("GAP_THROUGH_STOP");
+  if (numeric(row.max_favorable_pct) >= 3 && ret <= 0) tags.push("FADED_AFTER_PROFIT");
+  if (ret < 0 && to && (Date.parse(to) - Date.parse(from)) / 86400000 <= 3) tags.push("QUICK_LOSS");
+  let earningsKnown = false;
+  if (Array.isArray(earnings) && to) {
+    earningsKnown = true;
+    if (earnings.some(([date]) => date > from && date <= to)) tags.push("EARNINGS_IN_HOLD");
+  }
+  let spyPct = null;
+  if (spyBars?.length && to) {
+    const close = date => { const bar = [...spyBars].reverse().find(b => b.date.slice(0, 10) <= date); return bar ? numeric(bar.close) : 0; };
+    const a = close(from), b = close(to);
+    if (a > 0 && b > 0) { spyPct = round((b / a - 1) * 100, 2); if (short ? spyPct >= 2 : spyPct <= -2) tags.push("MARKET_AGAINST"); }
+  }
+  return { tags, earnings_known: earningsKnown, spy_pct: spyPct };
+}
+
+// Tags a few newly settled scanner picks per run (each needs one earnings lookup, so the batch is small).
+async function tagPostMortems(env) {
+  if (!env.DB) return 0;
+  const rows = (await env.DB.prepare(`SELECT id, symbol, direction, generated_at, settled_at, entry_price, stop_price, exit_price, strategy_return_pct, max_favorable_pct, stop_hit
+    FROM recommendations WHERE user_id = ? AND status = 'SETTLED' AND post_mortem IS NULL AND action != 'PASS' ORDER BY settled_at DESC LIMIT 8`).bind(SCANNER_USER_ID).all()).results || [];
+  if (!rows.length) return 0;
+  let spyBars = null;
+  try { spyBars = (await fetchDailySettlementBars(["SPY"])).get("SPY") || null; } catch { /* the market tag is skipped this run */ }
+  const updates = [];
+  for (const row of rows) {
+    let earnings = null;
+    try {
+      const payload = await fetchJson(`${ROBINHOOD_EARNINGS}?symbol=${encodeURIComponent(row.symbol)}`);
+      earnings = (payload?.results || []).filter(r => r?.report?.date).map(r => [String(r.report.date).slice(0, 10), r.report.timing || null]);
+    } catch { /* the earnings tag is skipped for this one */ }
+    updates.push(env.DB.prepare("UPDATE recommendations SET post_mortem = ? WHERE id = ? AND post_mortem IS NULL").bind(JSON.stringify(postMortemTags(row, { earnings, spyBars })), row.id));
+  }
+  await env.DB.batch(updates);
+  return updates.length;
+}
+
+// Counts each tag among losing and winning picks and writes plain sentences for the clear differences. Needs a minimum sample before it says anything.
+function summarizeLessons(rows) {
+  const tagged = rows.map(row => { try { return { ret: numeric(row.strategy_return_pct), ...JSON.parse(row.post_mortem) }; } catch { return null; } }).filter(Boolean);
+  const losers = tagged.filter(row => row.ret < 0), winners = tagged.filter(row => row.ret > 0);
+  const share = (list, id) => list.length ? round(list.filter(row => row.tags.includes(id)).length / list.length * 100, 0) : null;
+  const tags = Object.entries(POSTMORTEM_TAGS).map(([id, label]) => ({ id, label, losers_with: losers.filter(r => r.tags.includes(id)).length, winners_with: winners.filter(r => r.tags.includes(id)).length,
+    loser_share_pct: share(losers, id), winner_share_pct: share(winners, id) }));
+  const notes = [];
+  if (tagged.length < 30) notes.push(`Only ${tagged.length} graded pick${tagged.length === 1 ? "" : "s"} so far. Treat any pattern as a hint to test, not a finding.`);
+  if (losers.length >= 8) for (const t of tags) {
+    if (t.loser_share_pct !== null && t.winner_share_pct !== null && t.loser_share_pct - t.winner_share_pct >= 20 && t.losers_with >= 3)
+      notes.push(`${t.losers_with} of ${losers.length} losing picks (${t.loser_share_pct}%) ${t.label}, against ${t.winner_share_pct}% of winning picks.`);
+  }
+  return { graded: tagged.length, losers: losers.length, winners: winners.length, tags, notes };
+}
+
 const TRACK_STRATEGIES = {
   SUPERTREND: "Supertrend scanner",
   DIP: "Dip scan (market gate open)",
@@ -2337,8 +2408,15 @@ async function publicTrackRecord(db) {
     strategies.push({ id, label, since: own[0]?.generated_at || null, summary: summarizeTrackRecord(own, await pendingFor(id)) });
   }
   const supertrend = rows.filter(row => row.strategy === "SUPERTREND");
+  // Results by the debate's lean, and what the settled picks have in common.
+  const extra = (await db.prepare(`SELECT direction, status, strategy_return_pct, stop_hit, target_hit, generated_at, debate_leaning, post_mortem
+    FROM recommendations WHERE user_id = ? AND status = 'SETTLED' AND action != 'PASS' AND (debate_leaning IS NOT NULL OR post_mortem IS NOT NULL) ORDER BY generated_at ASC LIMIT 5000`).bind(SCANNER_USER_ID).all().catch(() => ({ results: [] })))?.results || [];
+  const debate = [["bull", "Debate leaned for the idea"], ["bear", "Debate leaned against the idea"], ["even", "Debate was even"]]
+    .map(([id, label]) => ({ id, label, summary: summarizeTrackRecord(extra.filter(row => row.debate_leaning === id), 0) }));
   return {
     available: true,
+    debate,
+    lessons: summarizeLessons(extra.filter(row => row.post_mortem)),
     since: supertrend[0]?.generated_at || null,
     horizon_trading_days: 10,
     summary: strategies[0].summary,
@@ -2652,24 +2730,25 @@ async function refreshScan(env, market, ctx) {
 // against the idea's real figures; a claim that does not check out is dropped and counted. The verdict is shown and logged but never changes
 // the score: there is no evidence yet that a model's lean predicts returns.
 const DEBATE_TOP_N = 5, DEBATE_MIN_GAP_SECONDS = 50 * 60, DEBATE_MAX_AGE_SECONDS = 24 * 3600, DEBATE_LEASE_SECONDS = 10 * 60, DEBATE_BUDGET_SECONDS = 4 * 60;
-const DEBATE_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast";
+// The bigger model argues too: the small one passed the number check but made weak points (a long backtest called "overfitting", an earnings date 87 days away called a risk).
+const DEBATE_MODEL = WORKERS_AI_RANKING_MODEL, DEBATE_VERSION = "v2", DEBATE_EARNINGS_WINDOW_DAYS = 21;
 const FACT_DEFS = {
-  backtest_ev_pct: { label: "Backtest average return per trade", unit: "%", signed: true },
-  backtest_win_rate_pct: { label: "Backtest win rate", unit: "%" },
-  backtest_trades: { label: "Backtest trades", unit: "" },
-  strategy_experimental: { label: "Experimental scanner", bool: true },
-  trend_alignment_score: { label: "Trend and market alignment", unit: "/100" },
-  market_trend: { label: "Market trend", str: true },
-  stop_pct: { label: "Stop distance from entry", unit: "%" },
-  rr_to_target_1: { label: "Reward to risk, target 1", unit: " to 1" },
-  from_entry_atr: { label: "Price versus entry", unit: " ATR", signed: true },
-  age_days: { label: "Signal age", unit: " days" },
-  volume_ratio: { label: "Volume versus average", unit: "x" },
-  atr_pct: { label: "Typical daily range", unit: "%" },
-  sector_crowded: { label: "Same sector and direction already ranked higher", bool: true },
-  earnings_in_days: { label: "Days to earnings", unit: " days" },
-  earnings_confirmed: { label: "Earnings date confirmed", bool: true },
-  filing_cautions: { label: "Recent cautionary SEC filings", unit: "" },
+  backtest_ev_pct: { label: "Backtest average return per trade", hint: "Average percent return per trade in this scanner's backtest. Above zero is a plus, below zero a minus.", unit: "%", signed: true },
+  backtest_win_rate_pct: { label: "Backtest win rate", hint: "Share of backtested trades that made money. Good strategies can win less than half the time if wins are bigger than losses.", unit: "%" },
+  backtest_trades: { label: "Backtest trades", hint: "Number of backtested trades. More trades means a more reliable record; a small number means the record could be luck.", unit: "" },
+  strategy_experimental: { label: "Experimental scanner", hint: "Yes means the scanner has no proven edge and is only logged for testing.", bool: true },
+  trend_alignment_score: { label: "Trend and market alignment", hint: "0 to 100: how well the daily trend, trend strength and the market agree with this idea's direction. Higher is better.", unit: "/100" },
+  market_trend: { label: "Market trend", hint: "Direction of the broad market index. For a long idea, a down market is a headwind.", str: true },
+  stop_pct: { label: "Stop distance from entry", hint: "Distance from entry to the stop, as a percent of the entry price. Larger means more money lost per share if it fails.", unit: "%" },
+  rr_to_target_1: { label: "Reward to risk, target 1", hint: "Reward divided by risk to the first target. One or more is favourable, below one is unfavourable.", unit: " to 1" },
+  from_entry_atr: { label: "Price versus entry", hint: "How far the price has moved from the signal price, in typical daily ranges. A large positive number means chasing a move that has already happened.", unit: " ATR", signed: true },
+  age_days: { label: "Signal age", hint: "Days since the signal. Older means a staler entry.", unit: " days" },
+  volume_ratio: { label: "Volume versus average", hint: "Today's volume divided by the average. Above one means more interest than usual.", unit: "x" },
+  atr_pct: { label: "Typical daily range", hint: "Typical daily range as a percent of price. Higher means a more volatile stock.", unit: "%" },
+  sector_crowded: { label: "Same sector and direction already ranked higher", hint: "Yes means other ideas in the same sector and direction already rank higher, so this is largely the same bet.", bool: true },
+  earnings_in_days: { label: "Days to earnings", hint: "Days until the next earnings report. A report inside the hold can gap the price either way.", unit: " days" },
+  earnings_confirmed: { label: "Earnings date confirmed", hint: "Whether the company has confirmed the earnings date.", bool: true },
+  filing_cautions: { label: "Recent cautionary SEC filings", hint: "Count of recent cautionary SEC filings such as an auditor or executive change.", unit: "" },
 };
 const BULL_KEYS = ["backtest_ev_pct", "backtest_win_rate_pct", "backtest_trades", "trend_alignment_score", "market_trend", "stop_pct", "rr_to_target_1", "volume_ratio", "age_days", "from_entry_atr"];
 const BEAR_KEYS = ["backtest_ev_pct", "backtest_trades", "strategy_experimental", "trend_alignment_score", "market_trend", "stop_pct", "from_entry_atr", "atr_pct", "sector_crowded", "earnings_in_days", "earnings_confirmed", "filing_cautions", "age_days"];
@@ -2685,6 +2764,8 @@ function debateFacts(item, marketState) {
     filing_cautions: f ? (f.cautions || []).length : undefined,
   };
   for (const key of Object.keys(facts)) if (facts[key] === undefined || facts[key] === null || (typeof facts[key] === "number" && !Number.isFinite(facts[key]))) delete facts[key];
+  // Earnings only count as a fact when they are close enough to matter; a date months away is not a risk to this trade.
+  if (facts.earnings_in_days !== undefined && facts.earnings_in_days > DEBATE_EARNINGS_WINDOW_DAYS) { delete facts.earnings_in_days; delete facts.earnings_confirmed; }
   return facts;
 }
 
@@ -2735,14 +2816,14 @@ async function debateCall(env, model, system, user, maxTokens = 700) {
   return typeof out === "string" ? parseModelJson(out) : out;
 }
 
-const DEBATE_RULES = `Use ONLY the facts listed. Each claim is ONE sentence of at most 160 characters and cites 1 to 3 facts by key, with the exact value from the list. Do not write any number that is not one of the cited facts. Do not say buy or sell and do not predict prices. Reply with one JSON object and nothing else.`;
+const DEBATE_RULES = `Use ONLY the facts listed, and read each by its "meaning" note: a larger backtest sample is a strength, never a sign of overfitting, and a fact is a strength or a risk only if its meaning says so. Say what the figure implies for this trade, not just that it exists. Each claim is ONE sentence of at most 160 characters and cites 1 to 3 facts by key, with the exact value from the list. Do not write any number that is not one of the cited facts. Do not say buy or sell and do not predict prices. Reply with one JSON object and nothing else.`;
 const BULL_SYSTEM = `You are the BULL analyst in a research tool. Make the strongest honest case FOR this trade idea, in at most 3 claims. ${DEBATE_RULES} Format: {"claims":[{"text":"...","facts":[{"key":"...","value":0}]}]}`;
 const BEAR_SYSTEM = `You are the BEAR analyst in a research tool. Make the strongest honest case AGAINST this trade idea, or for caution, in at most 3 claims. ${DEBATE_RULES} Format: {"claims":[{"text":"...","facts":[{"key":"...","value":0}]}]}`;
 const REBUT_SYSTEM = `You answer the opposing side of a trade-idea debate. You are given the opposing claims with ids and your own side's claims. Write at most 2 rebuttals, each aimed at one opposing claim id. ${DEBATE_RULES} Format: {"rebuttals":[{"to":"B1","text":"...","facts":[{"key":"...","value":0}]}]}`;
-const JUDGE_SYSTEM = `You are the judge of a bull versus bear debate on one trade idea in a research tool. You see only claims that were checked against the data, with ids. Weigh them. Do not say buy or sell, do not predict prices, and do not write numbers that are not in the claims. Reply with one JSON object and nothing else: {"leaning":"bull"|"bear"|"even","verdict":"one or two sentences, at most 220 characters","strongest_bull":"id","strongest_bear":"id","would_change_my_mind":"one sentence, at most 160 characters"}`;
+const JUDGE_SYSTEM = `You are the judge of a bull versus bear debate on one trade idea in a research tool. You see only claims that were checked against the data, with ids. Weigh them. Do not say buy or sell, do not predict prices, and do not write numbers that are not in the claims. Reply with one JSON object and nothing else: {"leaning":"bull"|"bear"|"even","verdict":"one or two sentences, at most 220 characters, naming the single most decisive fact and what it implies; no generic summary","strongest_bull":"id","strongest_bear":"id","would_change_my_mind":"one sentence, at most 160 characters"}`;
 
 function debatePack(item, marketState, keys, allFacts) {
-  return { symbol: item.symbol, direction: item.direction, scanner: item.tag, facts: Object.fromEntries(keys.filter(k => allFacts[k] !== undefined).map(k => [k, { label: FACT_DEFS[k].label, value: allFacts[k] }])) };
+  return { symbol: item.symbol, direction: item.direction, scanner: item.tag, facts: Object.fromEntries(keys.filter(k => allFacts[k] !== undefined).map(k => [k, { label: FACT_DEFS[k].label, value: allFacts[k], meaning: FACT_DEFS[k].hint }])) };
 }
 
 async function runDebate(env, item, marketState) {
@@ -2785,8 +2866,18 @@ async function runDebate(env, item, marketState) {
   return result;
 }
 
+// Writes the judge's lean onto the scanner pick it is about, so the track record can compare results by lean. Only picks logged in the last two days
+// are tagged: a lean given after the price has already moved would look better than it was.
+async function logDebateVerdict(env, item, result) {
+  if (!result?.judge || (item.market || "US") !== "US") return;
+  const cutoff = new Date(Date.now() - 2 * 86400000).toISOString();
+  await env.DB.prepare(`UPDATE recommendations SET debate_leaning = ?, debate_at = ? WHERE id = (SELECT id FROM recommendations
+    WHERE user_id = ? AND symbol = ? AND direction = ? AND strategy = ? AND status = 'PENDING' AND debate_leaning IS NULL AND generated_at >= ?
+    ORDER BY generated_at DESC LIMIT 1)`).bind(result.judge.leaning, new Date().toISOString(), SCANNER_USER_ID, item.symbol, item.direction, item.strategy, cutoff).run().catch(() => {});
+}
+
 const debateRowId = marketId => `DEBATE:${marketId || "US"}`;
-const debateKey = item => `${item.stop}|${item.target_1}|${item.filing?.earnings_in_days ?? ""}`;
+const debateKey = item => `${DEBATE_VERSION}|${item.stop}|${item.target_1}|${item.filing?.earnings_in_days ?? ""}`;
 
 // Runs in the hourly ranking job, never in a visitor's request. Reuses a stored debate while the idea's levels have not changed.
 async function ensureDebate(env, payload) {
@@ -2814,7 +2905,11 @@ async function ensureDebate(env, payload) {
     for (let i = 0; i < todo.length; i += 2) {
       if (Date.now() > deadline) { for (const { item, old } of todo.slice(i)) if (old) items[item.id] = old; break; }
       await Promise.all(todo.slice(i, i + 2).map(async ({ item, key, old }) => {
-        try { items[item.id] = { key, at: Date.now(), result: await runDebate(env, item, ranking.market_state) }; }
+        try {
+          const result = await runDebate(env, item, ranking.market_state);
+          items[item.id] = { key, at: Date.now(), result };
+          await logDebateVerdict(env, item, result);
+        }
         catch (error) { console.error(`Debate failed for ${item.id}: ${cleanError(error)}`); if (old) items[item.id] = old; }
       }));
     }
@@ -3893,6 +3988,7 @@ export default {
       // Once an hour, grade scanner picks that hit a level or whose window has closed.
       if (market.id === "US" && env.DB && new Date(event.scheduledTime).getUTCMinutes() < 5) {
         await settlePendingRecommendations(env.DB, SCANNER_USER_ID, env).catch(() => {});
+        await tagPostMortems(env).catch(error => console.error(`Post-mortem tagging failed: ${cleanError(error)}`));
       }
     })());
   },

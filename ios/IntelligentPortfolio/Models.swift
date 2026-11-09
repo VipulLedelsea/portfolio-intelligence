@@ -225,6 +225,8 @@ struct RankedIdea: Decodable, Identifiable, Hashable, Sendable {
     let bear: String?
     let invalidation: String?
     let filing: FilingCheck?
+    let buyRange: BuyRange?
+    let market: String?
     let debate: Debate?
     let bars: [DailyBar]?
 }
@@ -495,7 +497,17 @@ struct TrackRecordResponse: Decodable, Sendable {
     let summary: TrackRecordSummary?
     /// One summary per scanner (Supertrend, dip scan, and dips seen while the market gate was closed), so they can be compared.
     let strategies: [TrackRecordStrategy]?
+    /// Results grouped by the bull-versus-bear debate's lean, and what the graded picks have in common.
+    let debate: [TrackRecordStrategy]?
+    let lessons: TrackRecordLessons?
     let methodology: String?
+}
+
+struct TrackRecordLessons: Decodable, Sendable {
+    let graded: Int
+    let losers: Int
+    let winners: Int
+    let notes: [String]
 }
 
 struct TrackRecordStrategy: Decodable, Identifiable, Sendable {
