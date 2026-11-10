@@ -1,0 +1,53 @@
+stocks with flips: 527, flips 5971, avg per stock 11.3; baseline win 39.8% avg 1.34%
+
+== the 15 weakest stocks with >= 8 flips (465 stocks qualify) ==
+  ENPH   ?                        n=11 win 9% avg -11.90%
+  FMC    ?                        n=11 win 0% avg -9.46%
+  ETSY   ?                        n=8 win 13% avg -8.97%
+  TECH   Health Care              n=16 win 19% avg -5.84%
+  MOS    Materials                n=16 win 25% avg -5.40%
+  CZR    ?                        n=11 win 27% avg -5.29%
+  EG     Financials               n=18 win 0% avg -5.25%
+  LKQ    ?                        n=13 win 23% avg -5.05%
+  GPC    Consumer Discretionary   n=15 win 13% avg -4.91%
+  OMC    Communication Services   n=12 win 8% avg -4.72%
+  LW     ?                        n=14 win 43% avg -4.65%
+  RVTY   Health Care              n=12 win 25% avg -4.38%
+  UPS    Industrials              n=10 win 10% avg -4.28%
+  BLDR   ?                        n=8 win 25% avg -4.26%
+  PFE    Health Care              n=13 win 23% avg -4.02%
+== the 10 strongest ==
+  WDC    Information Technology   n=12 win 58% avg 37.49%
+  STX    Information Technology   n=14 win 57% avg 21.67%
+  NVDA   Information Technology   n=14 win 50% avg 18.62%
+  AMD    Information Technology   n=12 win 58% avg 17.89%
+  FTNT   Information Technology   n=10 win 50% avg 16.66%
+  GLW    Information Technology   n=11 win 73% avg 15.61%
+  RCL    Consumer Discretionary   n=11 win 64% avg 14.99%
+  WAB    Industrials              n=8 win 75% avg 14.00%
+  CEG    Utilities                n=10 win 50% avg 12.91%
+  MU     Information Technology   n=17 win 53% avg 12.17%
+
+== persistence: 458 stocks with >=4 flips before 2024-11-05 and >=2 after; split by their EARLIER win rate ==
+  weakest third    stocks 152: earlier win 25% -> LATER win 33.8% avg -0.01% (n 843)
+  middle third     stocks 152: earlier win 44% -> LATER win 36.4% avg 0.86% (n 815)
+  strongest third  stocks 154: earlier win 66% -> LATER win 35.0% avg 1.32% (n 829)
+
+== by sector ==
+  ?                        n= 303 win 31% avg -2.75%  (train 34%/-1.92 test 24%/-4.84)
+  Consumer Staples         n= 368 win 37% avg  0.10%  (train 42%/0.38 test 32%/-0.20)
+  Health Care              n= 666 win 36% avg  0.12%  (train 40%/1.01 test 32%/-0.97)
+  Real Estate              n= 348 win 36% avg  0.27%  (train 37%/1.08 test 35%/-0.79)
+  Materials                n= 287 win 35% avg  0.41%  (train 41%/0.59 test 28%/0.22)
+  Utilities                n= 377 win 38% avg  0.43%  (train 37%/1.06 test 40%/-0.35)
+  Financials               n= 878 win 39% avg  0.59%  (train 43%/1.48 test 34%/-0.56)
+  Energy                   n= 266 win 33% avg  0.69%  (train 36%/-0.14 test 29%/1.66)
+  Communication Services   n= 218 win 44% avg  1.55%  (train 45%/2.93 test 43%/-0.17)
+  Consumer Discretionary   n= 550 win 44% avg  1.68%  (train 53%/4.36 test 33%/-1.25)
+  Industrials              n= 902 win 44% avg  2.26%  (train 49%/3.35 test 38%/1.00)
+  Information Technology   n= 808 win 45% avg  5.40%  (train 48%/2.68 test 41%/8.86)
+
+== by volatility (daily ATR % of price) ==
+  calmest third        ATR 1.7%: win 37% avg 0.10% (train 40%/0.86 test 32%/-1.23)
+  middle               ATR 2.3%: win 37% avg 0.35% (train 43%/1.37 test 30%/-1.05)
+  most volatile third  ATR 3.5%: win 44% avg 3.57% (train 49%/3.38 test 41%/3.74)
