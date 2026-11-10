@@ -1,0 +1,50 @@
+flips: 5971; final: 39.8% wins, avg 1.34%
+
+######## checkpoint ENTRY (signal close): 5971 trades, P(final loss) = 60.2%
+flag                                           flagged  P(loss) flagged    not  avg final ret flagged vs not
+Stochastic %K > 80                             5489 (92%)          60.6%  56.2%   1.26% vs 2.25%
+Bollinger %B > 0.95                            3597 (60%)          61.9%  57.8%   0.93% vs 1.98%
+MACD hist falling 3d                            237 (4%)          63.3%  60.1%   1.50% vs 1.34%
+ADX < 20                                       3292 (55%)          61.6%  58.6%   1.24% vs 1.47%
+2+ down closes of last 3                        325 (5%)          62.8%  60.1%   0.43% vs 1.40%
+ADX falling vs 5d ago                          4279 (72%)          60.7%  59.0%   1.20% vs 1.70%
+lagging SPY since entry                        2837 (48%)          61.1%  59.5%   1.41% vs 1.29%
+Aroon-up < 50                                  2965 (50%)          59.8%  60.6%   1.33% vs 1.36%
+  flags that point the same way in both halves: 0 of 17
+
+######## checkpoint after 3 sessions in the trade: 5930 trades, P(final loss) = 60.0%
+flag                                           flagged  P(loss) flagged    not  sell-now gain (train / test)
+RSI2 < 20                                       637 (11%)          79.7%  57.6%   -0.71% (-1.18 / -0.15)
+4+ down closes of last 5                        155 (3%)          71.0%  59.7%   -0.73% (-2.14 / 1.04)
+close < 10d avg                                 723 (12%)          79.0%  57.4%   -0.84% (-1.41 / -0.18)
+Bollinger %B > 0.95                            1812 (31%)          49.2%  64.7%   -0.93% (-1.56 / -0.18)
+MACD hist falling 3d                           1755 (30%)          72.4%  54.8%   -0.98% (-1.00 / -0.95)
+close within 1 ATR of Supertrend line           221 (4%)          87.3%  58.9%   -0.98% (-0.81 / -1.18)
+MFI < 40                                        174 (3%)          67.8%  59.8%   -1.03% (-1.73 / -0.13)
+RSI14 < 50                                      755 (13%)          76.7%  57.6%   -1.14% (-1.97 / -0.21)
+  flags that point the same way in both halves: 0 of 34
+
+######## checkpoint after 5 sessions in the trade: 5800 trades, P(final loss) = 59.1%
+flag                                           flagged  P(loss) flagged    not  sell-now gain (train / test)
+RSI14 < 40                                       98 (2%)          93.9%  58.5%   0.08% (-0.66 / 1.36)
+MFI < 40                                        180 (3%)          74.4%  58.6%   -0.52% (-0.98 / 0.18)
+volume today > 1.5x avg on a down close         259 (4%)          71.8%  58.5%   -0.60% (-0.64 / -0.55)
+MACD line < 0                                   897 (15%)          71.7%  56.8%   -0.82% (-2.45 / 1.16)
+close < 10d avg                                1335 (23%)          79.8%  52.9%   -1.08% (-1.33 / -0.78)
+close < 20d EMA                                1019 (18%)          79.9%  54.7%   -1.17% (-1.48 / -0.79)
+MACD hist falling 3d                           3702 (64%)          68.3%  42.8%   -1.17% (-1.63 / -0.62)
+close < flip-day low                           1347 (23%)          78.0%  53.4%   -1.19% (-1.68 / -0.59)
+  flags that point the same way in both halves: 0 of 35
+
+######## checkpoint after 10 sessions in the trade: 5201 trades, P(final loss) = 54.5%
+flag                                           flagged  P(loss) flagged    not  sell-now gain (train / test)
+MFI < 40                                        176 (3%)          83.0%  53.5%   -0.51% (-0.54 / -0.47)
+RSI14 < 50                                     1043 (20%)          82.7%  47.4%   -0.53% (-1.28 / 0.36)
+-DI above +DI                                  1178 (23%)          79.8%  47.0%   -0.58% (-1.43 / 0.43)
+close within 1 ATR of Supertrend line           636 (12%)          84.4%  50.3%   -0.59% (-1.02 / -0.05)
+OBV below its 20d avg                          1242 (24%)          74.7%  48.1%   -0.62% (-1.18 / 0.09)
+Bollinger %B < 0.5                              903 (17%)          83.5%  48.3%   -0.63% (-1.32 / 0.21)
+close < 10d avg                                2109 (41%)          73.7%  41.3%   -0.66% (-1.32 / 0.11)
+close < flip-day low                           1090 (21%)          80.8%  47.5%   -0.71% (-1.32 / 0.05)
+  flags that point the same way in both halves: 0 of 35
+
