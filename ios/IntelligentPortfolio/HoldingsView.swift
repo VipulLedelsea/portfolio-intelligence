@@ -469,6 +469,10 @@ private struct HoldingCard: View {
                 stat("Now", money(symbol, decimals, price))
                 stat("Profit / loss", "\(signed(symbol, pnl)) (\(String(format: "%+.2f", pct))%)", color: pnl >= 0 ? AppTheme.mint : AppTheme.red)
                 if let v = holding.stopLevel { stat("Exit line", money(symbol, decimals, v)) }
+                if let lock = holding.profitLock, !lock.superseded {
+                    if lock.armed { stat("Profit lock (advice)", lock.hit ? "\(money(symbol, decimals, lock.level)) · reached" : money(symbol, decimals, lock.level), color: lock.hit ? AppTheme.red : .primary) }
+                    else { stat("Profit lock (advice)", "arms after a close over \(money(symbol, decimals, lock.armPrice))", color: AppTheme.muted) }
+                }
                 if let v = holding.trailingLevel { stat("Trailing (4H)", money(symbol, decimals, v)) }
                 if let v = holding.target1 { stat("Profit zone 1", money(symbol, decimals, v)) }
                 if let v = holding.target2 { stat("Profit zone 2", money(symbol, decimals, v)) }

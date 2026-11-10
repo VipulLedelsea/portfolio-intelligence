@@ -107,4 +107,16 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertNil(old.chartPattern)
         XCTAssertTrue(old.labelChips.isEmpty, "an older payload without labels shows no chips")
     }
+
+    func testHoldingDecodesProfitLockAndOldPayloads() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let base = #"{"id":"h1","symbol":"AAA","market":"US","currency_symbol":"$","price_decimals":2,"shares":5,"buy_price":100,"bought_at":"2026-11-02","action":"TAKE_PROFIT","action_label":"Consider taking profit","headline":"h","reasons":["r"]"#
+        let withLock = try decoder.decode(Holding.self, from: Data((base + #","profit_lock":{"armed":true,"level":101,"arm_price":103,"arm_pct":3,"lock_pct":1,"armed_on":"2026-11-04","hit":true,"touched_on":"2026-11-06","superseded":false}}"#).utf8))
+        XCTAssertEqual(withLock.profitLock?.level, 101)
+        XCTAssertEqual(withLock.profitLock?.hit, true)
+        XCTAssertEqual(withLock.profitLock?.armedOn, "2026-11-04")
+        let old = try decoder.decode(Holding.self, from: Data((base + "}").utf8))
+        XCTAssertNil(old.profitLock, "an older payload without the lock still decodes")
+    }
 }

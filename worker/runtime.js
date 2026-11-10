@@ -3659,6 +3659,23 @@ const MONITOR_LINE_STEP_ATR = 0.5;   // a rise in the protective level smaller t
 // backtest32.mjs): selling everything at +5% wins more often (about 63% against 44%) but earns less per trade (+0.50% against +1.97%), so holding on stays a valid choice.
 const CONSIDER_PROFIT_PCT = 5;
 
+// Profit lock (advisory, shadow-mode): once a daily CLOSE is PROFIT_LOCK_ARM_PCT over the buy price, a lock sits PROFIT_LOCK_PCT over the buy price. If price comes back to it,
+// the holding says so and suggests locking the gain. It never replaces the daily Supertrend line, which stays the exit. Backtest (research/pattern-backtest, backtest36.mjs, all
+// 5,823 Supertrend flips): a stop at entry +1% after a close 3% up won 61.8% of trades against 38.7% when holding to the line, at +1.17% per trade against +1.45% (late half
+// +0.78% against +0.95%); after a 5% close 52.4% and +1.29%. A lock only 0.3% to 0.5% over the entry mostly ends in scratches, hence 1%. Armed and hit dates are stored on the
+// holding (lock_armed_at, lock_hit_at) so a lock stays armed once set, and both moments are logged as level events to compare with the backtest.
+const PROFIT_LOCK_ARM_PCT = 3, PROFIT_LOCK_PCT = 1;
+function profitLockState({ buy, boughtDate, bars = [], price, armedAt = null, hitAt = null, stop = 0 }) {
+  const level = buy * (1 + PROFIT_LOCK_PCT / 100), armPrice = buy * (1 + PROFIT_LOCK_ARM_PCT / 100);
+  const base = { arm_pct: PROFIT_LOCK_ARM_PCT, lock_pct: PROFIT_LOCK_PCT, arm_price: round(armPrice, 6), level: round(level, 6), superseded: stop >= level - 1e-9 };
+  const armBar = armedAt ? null : bars.find(bar => bar.d > boughtDate && numeric(bar.c) >= armPrice);
+  const armedOn = armedAt ? String(armedAt).slice(0, 10) : armBar?.d || null;
+  if (!armedOn) return { ...base, armed: false, armed_on: null, armed_close: null, hit: false, touched_on: null };
+  const touchedBar = bars.find(bar => bar.d > armedOn && numeric(bar.l) > 0 && numeric(bar.l) <= level);
+  const hit = Boolean(hitAt) || Boolean(touchedBar) || (numeric(price) > 0 && numeric(price) <= level);
+  return { ...base, armed: true, armed_on: armedOn, armed_close: armBar ? numeric(armBar.c) : null, hit, touched_on: hitAt ? String(hitAt).slice(0, 10) : touchedBar?.d || null };
+}
+
 function monitorLevels(row, snapshot) {
   const market = MARKETS[row.market] || MARKETS.US;
   const fmt = value => fmtPrice(value, market);
@@ -3680,9 +3697,13 @@ function monitorLevels(row, snapshot) {
   const events = [];
   if (firstRun) events.push({ kind: "INITIAL", reason: `Protective level set at ${fmt(stop)} (${line > 0 && stop === line ? "the daily Supertrend line" : "two daily ranges under your buy price, because the daily Supertrend line is not available"}). It rises with the trend and you exit if a day closes under it.` });
   else if (stop - persisted >= MONITOR_LINE_STEP_ATR * atr) events.push({ kind: "LINE_RAISED", reason: `The daily Supertrend line moved up to ${fmt(stop)}, so your protective level moved up with it.` });
+  // Profit lock: Supertrend-exit holdings only (dip and pattern buys keep their own levels).
+  const lock = row.exit_mode !== "LEVELS" && !ownLevels ? profitLockState({ buy, boughtDate, bars: snapshot.recent_daily || [], price, armedAt: row.lock_armed_at, hitAt: row.lock_hit_at, stop }) : null;
+  if (lock?.armed && !row.lock_armed_at) events.push({ kind: "LOCK_ARMED", reason: `${lock.armed_close ? `A daily close of ${fmt(lock.armed_close)} was ${PROFIT_LOCK_ARM_PCT}% or more over your buy price, so` : "Your position has closed"} the profit lock is on at ${fmt(lock.level)} (${PROFIT_LOCK_PCT}% over your buy price). If price comes back to it, the app will suggest locking the gain. This is advice only; the daily Supertrend line is still the exit.` });
+  if (lock?.armed && lock.hit && !lock.superseded && !row.lock_hit_at) events.push({ kind: "LOCK_HIT", reason: `Price ${fmt(price)} is at or under the profit lock ${fmt(lock.level)}${lock.touched_on ? ` (touched ${lock.touched_on})` : ""}. Selling here would lock about ${PROFIT_LOCK_PCT}% over your buy price.` });
   const basis = line > 0 && stop >= line - 1e-9 ? "LINE" : stop > buy + 1e-9 ? "RAISED" : "INITIAL";
   const stopText = basis === "LINE" ? "the daily Supertrend line, which rises as the trend continues; exit if a day closes under it" : basis === "RAISED" ? "raised with the daily Supertrend line" : "two daily ranges under your buy price until the daily Supertrend line is available";
-  return { stop, target1, target2, atr, peak, basis, stopText, events, line };
+  return { stop, target1, target2, atr, peak, basis, stopText, events, line, lock };
 }
 
 // Writes only what changed. MAX() in SQL keeps a stale read from ever lowering a level that another pass has already raised.
@@ -3690,9 +3711,11 @@ function monitorStatements(env, row, levels, price, now) {
   const statements = [];
   const changed = levels.events.length > 0 || row.monitor_atr == null || levels.peak > numeric(row.peak_high) * 1.0005 || levels.stop > numeric(row.stop_level) + 1e-9;
   if (!changed) return statements;
+  const lockArmed = levels.lock?.armed ? levels.lock.armed_on : null, lockHit = levels.lock?.armed && levels.lock.hit && !levels.lock.superseded ? (levels.lock.touched_on || now.slice(0, 10)) : null;
   statements.push(env.DB.prepare(`UPDATE holdings SET monitor_atr = COALESCE(monitor_atr, ?), stop_level = MAX(COALESCE(stop_level, 0), ?),
-    target_1 = MAX(COALESCE(target_1, 0), ?), target_2 = MAX(COALESCE(target_2, 0), ?), peak_high = MAX(COALESCE(peak_high, 0), ?), monitor_at = ?
-    WHERE id = ? AND closed_at IS NULL`).bind(round(levels.atr, 6), round(levels.stop, 6), round(levels.target1, 6), round(levels.target2, 6), round(levels.peak, 6), now, row.id));
+    target_1 = MAX(COALESCE(target_1, 0), ?), target_2 = MAX(COALESCE(target_2, 0), ?), peak_high = MAX(COALESCE(peak_high, 0), ?), monitor_at = ?,
+    lock_armed_at = COALESCE(lock_armed_at, ?), lock_hit_at = COALESCE(lock_hit_at, ?)
+    WHERE id = ? AND closed_at IS NULL`).bind(round(levels.atr, 6), round(levels.stop, 6), round(levels.target1, 6), round(levels.target2, 6), round(levels.peak, 6), now, lockArmed, lockHit, row.id));
   for (const event of levels.events) {
     statements.push(env.DB.prepare(`INSERT INTO holding_level_events (id, holding_id, user_id, symbol, at, kind, reason, price, stop_level, target_1, target_2)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(crypto.randomUUID(), row.id, row.user_id, row.symbol, now, event.kind, event.reason, round(price, 4),
@@ -3702,7 +3725,7 @@ function monitorStatements(env, row, levels, price, now) {
 }
 
 // Cron pass: watches every open US position against the shared, freshly refreshed snapshots and ratchets levels without anyone opening the app.
-const ALERT_ACTIONS = { EXIT: ["high", "Exit signal"], TAKE_PROFIT: ["high", "Profit target reached"], WATCH: ["info", "Weakening: watch it"] };
+const ALERT_ACTIONS = { EXIT: ["high", "Exit signal"], TAKE_PROFIT: ["high", "Consider taking profit"], WATCH: ["info", "Weakening: watch it"] };
 
 function alertStatement(env, row, now, { kind, severity, title, detail, key }) {
   return env.DB.prepare(`INSERT OR IGNORE INTO holding_alerts (id, user_id, holding_id, symbol, at, kind, severity, title, detail, dedupe_key, seen_at)
@@ -3838,6 +3861,13 @@ function evaluateHolding(holding, snapshot, levels = null) {
       headline = "The daily trend has turned down";
       reasons.push("A completed daily close is under the daily Supertrend line, which is the exit that tested best for Supertrend trades. Exit at the next open.");
       reasons.push(...warnings.filter(text => !text.startsWith("Price is at or under")));
+    } else if (levels.lock?.armed && levels.lock.hit && !levels.lock.superseded) {
+      // Advice only: the position was up at least 3% on a close and has come back to the profit lock. The daily trend is still up, so this is a prompt, not the exit.
+      action = "TAKE_PROFIT";
+      headline = "Back at your profit lock: consider locking the gain";
+      reasons.push(`Price ${fmt(price)} is at or under your profit lock ${fmt(levels.lock.level)} (${PROFIT_LOCK_PCT}% over your buy price ${fmt(buy)})${levels.lock.touched_on ? `, first touched ${levels.lock.touched_on}` : ""}. It was set after a daily close ${PROFIT_LOCK_ARM_PCT}% or more over your buy price${levels.lock.armed_on ? ` (${levels.lock.armed_on})` : ""}.`);
+      reasons.push(`The daily Supertrend is still up (exit line ${fmt(stopLevel)}), so this is advice, not an exit signal. In backtests, locking about ${PROFIT_LOCK_PCT}% after a ${PROFIT_LOCK_ARM_PCT}% gain won far more trades (about 62% against 39%) for a slightly lower average return (+1.17% against +1.45%).`);
+      reasons.push(...warnings.filter(text => !text.startsWith("Price is at or under")));
     } else if (pnlPct >= CONSIDER_PROFIT_PCT) {
       action = "TAKE_PROFIT";
       headline = `Up ${pnlPct.toFixed(1)}%: consider taking profit`;
@@ -3896,6 +3926,7 @@ function evaluateHolding(holding, snapshot, levels = null) {
     exit_mode: holding.exit_mode || "TREND",
     stop_basis: levels ? levels.basis : "INITIAL",
     stop_note: levels ? levels.stopText : stopText,
+    profit_lock: levels?.lock || null,
     trailing_level: round(trailing, 4),
     target_1: round(target1, 4),
     target_2: round(target2, 4),

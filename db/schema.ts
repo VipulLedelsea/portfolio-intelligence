@@ -110,6 +110,9 @@ export const holdings = sqliteTable("holdings", {
   // The idea the position came from (DIP or PATTERN) and, for a pattern, the breakout level it fails under (a daily close back below it).
   ideaStrategy: text("idea_strategy"),
   failureLevel: real("failure_level"),
+  // Profit lock (advisory): the day a daily close first reached the arming gain over the buy price, and the day price first came back to the lock. See profitLockState.
+  lockArmedAt: text("lock_armed_at"),
+  lockHitAt: text("lock_hit_at"),
 }, table => [
   index("holdings_user_idx").on(table.userId, table.closedAt),
 ]);

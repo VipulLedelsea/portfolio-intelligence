@@ -695,6 +695,20 @@ struct Holding: Decodable, Identifiable, Sendable {
     let previousAction: String?
     let actionSince: String?
     let lastEntry: LastEntry?
+    /// Advisory profit lock on Supertrend-exit positions: armed by a daily close 3% over the buy price, set 1% over it. Absent on older payloads and on dip or pattern buys.
+    let profitLock: ProfitLock?
+}
+
+struct ProfitLock: Decodable, Sendable {
+    let armed: Bool
+    let level: Double
+    let armPrice: Double
+    let armPct: Double
+    let lockPct: Double
+    let armedOn: String?
+    let hit: Bool
+    let touchedOn: String?
+    let superseded: Bool
 }
 
 struct LastEntry: Decodable, Sendable {
