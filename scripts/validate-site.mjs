@@ -506,6 +506,7 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
     row("hold-ccc", "CCC", { monitor_atr: 2.4, stop_level: 99.9, target_1: 98.4, target_2: 100.8, peak_high: 101 }),    // stored stop already above the line
     row("hold-eee", "EEE"),                                                                                              // the daily trend breaks
     row("hold-hhh", "HHH"),                                                                                              // under the line intraday, daily trend still up
+    row("hold-fff", "FFF", { buy_price: 100 }),                                                                          // bought at 100, now 101.6: under +5%
   ];
   const db = { prepare(sql) {
     const st = { args: [], bind: (...args) => { st.args = args; return st; } };
@@ -540,7 +541,7 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
     assert.equal(aaa.stop_basis, "LINE", "The protective level is the daily Supertrend line");
     assert.ok(aaa.stop_level > 0 && aaa.stop_level < aaa.current_price, "The line sits under the price in an uptrend");
     assert.match(aaa.stop_note, /Supertrend line/);
-    assert.ok(["HOLD", "WATCH"].includes(aaa.action), "An uptrend with the line intact is not an exit");
+    assert.ok(["HOLD", "WATCH", "TAKE_PROFIT"].includes(aaa.action), "An uptrend with the line intact is not an exit");
     assert.deepEqual(kindsFor("hold-aaa"), ["INITIAL"]);
     assert.ok(aaa.reference_lines.length >= 5 && aaa.reference_lines.every(line => line.value > 0), "Holdings carry chart reference lines");
     // BBB: a stored stop far under the line is raised to the line, and the change is logged with its reason.
@@ -557,8 +558,11 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
     // HHH: under the line today but the daily trend has not turned: a warning to watch the close, not an exit.
     assert.equal(byId["hold-hhh"].action, "WATCH", "Under the line intraday is a warning; the exit is a daily close");
     assert.match(byId["hold-hhh"].headline, /only counts if the day closes/);
-    // No time limit and no profit-taking exit: reaching a profit zone does not change the action to take profit.
-    assert.ok(!first.open.some(item => item.action === "TAKE_PROFIT"), "US positions never get a take-profit exit");
+    // Up 5% or more with the daily trend intact: a "consider taking profit" prompt (advice only; targets unchanged, the line exit still applies).
+    assert.equal(aaa.action, "TAKE_PROFIT", "AAA is 5.8% over its buy price"); assert.match(aaa.headline, /consider taking profit/);
+    assert.equal(aaa.target_1, 98, "Targets are unchanged"); assert.equal(aaa.target_2, 100);
+    assert.notEqual(byId["hold-fff"].action, "TAKE_PROFIT", "Under +5% there is no profit prompt");
+    assert.equal(byId["hold-eee"].action, "EXIT", "A daily close under the line still wins over a profit prompt");
     // A second pass changes nothing and adds no events.
     const count = events.length;
     await asAlice();
@@ -638,7 +642,7 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
   const bySymbol = Object.fromEntries(list.open.map(item => [item.symbol, item]));
   assert.ok(["HOLD", "WATCH"].includes(bySymbol.NVDA.action), "US positions exit on a daily Supertrend break, not on a distance from the buy price");
   assert.ok(bySymbol.NVDA.pnl_value < 0 && bySymbol.NVDA.reasons.length > 0);
-  assert.notEqual(bySymbol.MSFT.action, "TAKE_PROFIT", "Reaching a profit zone in an uptrend is not a sell signal");
+  assert.equal(bySymbol.MSFT.action, "TAKE_PROFIT", "A position far over +5% in an uptrend gets the consider-taking-profit prompt"); assert.match(bySymbol.MSFT.headline, /consider taking profit/);
   assert.ok(["HOLD", "WATCH", "TAKE_PROFIT"].includes(bySymbol.AAPL.action));
   assert.ok(bySymbol.AAPL.trailing_level > 0 && bySymbol.AAPL.target_1 > bySymbol.AAPL.buy_price);
   assert.match(list.disclaimer, /not personal financial advice/);

@@ -3654,6 +3654,10 @@ async function holdingSnapshotsFor(env, market, symbols) {
 // Tested on Supertrend entries (ml_st_exits.py): exiting on the line earned +1.8% per trade; adding an early-warning exit (close under a moving
 // average, ADX fading, the market under its 50-day average, a tighter trail) lowered the average each time, so those are shown as warnings only.
 const MONITOR_LINE_STEP_ATR = 0.5;   // a rise in the protective level smaller than this is applied silently, not logged as an event
+// A US Supertrend position that is up this much over the buy price gets a "consider taking profit" prompt (the owner's choice, 2026-11-10). It is advice only:
+// the targets are unchanged, the daily Supertrend line is still the exit, and a close under the line still takes priority. Backtests (research/pattern-backtest,
+// backtest32.mjs): selling everything at +5% wins more often (about 63% against 44%) but earns less per trade (+0.50% against +1.97%), so holding on stays a valid choice.
+const CONSIDER_PROFIT_PCT = 5;
 
 function monitorLevels(row, snapshot) {
   const market = MARKETS[row.market] || MARKETS.US;
@@ -3833,6 +3837,12 @@ function evaluateHolding(holding, snapshot, levels = null) {
       action = "EXIT";
       headline = "The daily trend has turned down";
       reasons.push("A completed daily close is under the daily Supertrend line, which is the exit that tested best for Supertrend trades. Exit at the next open.");
+      reasons.push(...warnings.filter(text => !text.startsWith("Price is at or under")));
+    } else if (pnlPct >= CONSIDER_PROFIT_PCT) {
+      action = "TAKE_PROFIT";
+      headline = `Up ${pnlPct.toFixed(1)}%: consider taking profit`;
+      reasons.push(`Price ${fmt(price)} is ${pnlPct.toFixed(1)}% over your buy price ${fmt(buy)}, past the ${CONSIDER_PROFIT_PCT}% point where this app suggests considering a sale.`);
+      reasons.push(`The daily Supertrend is still up, with the exit line at ${fmt(stopLevel)}; the targets (${fmt(target1)} and ${fmt(target2)}) are unchanged. Selling here locks the gain. Staying in keeps the trend's larger winners but wins less often.`);
       reasons.push(...warnings.filter(text => !text.startsWith("Price is at or under")));
     } else if (warnings.length) {
       action = "WATCH";
