@@ -1,0 +1,84 @@
+
+################ outcome A: current exit (line only): baseline win train 39.0% / test 32.6%; combos tried 672641, qualifying 491114
+top-200 by TRAIN win rate: average train lift 11.3 pts  ->  average TEST lift 1.6 pts; share with test lift > 0: 75%
+top 12 combos (picked on train) -> holdout:
+  sma200 rising 20d + ST age <=10d + RS126 vs SPY>0 + BB width high (pct>=70)
+     train 52.7% (n 893)  TEST 34.9% (n 880, avg 0.90%)  fresh flips: 47% of 51
+  ST age <=10d + RSI14 rising 3d + RS126 vs SPY>0 + BB width high (pct>=70)
+     train 52.7% (n 683)  TEST 37.7% (n 618, avg 1.14%)  fresh flips: 47% of 62
+  ST age <=10d + RS126 vs SPY>0 + sector 63d > market + BB width high (pct>=70)
+     train 52.3% (n 629)  TEST 36.0% (n 553, avg 1.33%)  fresh flips: 47% of 34
+  ST age <=10d + within 5% of 52w high + RS126 vs SPY>0 + BB width high (pct>=70)
+     train 52.1% (n 773)  TEST 35.3% (n 745, avg 0.49%)  fresh flips: 46% of 41
+  sma200 rising 20d + ST age <=10d + ADX>=25 + RS126 vs SPY>0
+     train 52.1% (n 789)  TEST 32.9% (n 687, avg -0.06%)  fresh flips: 46% of 71
+  sma200 rising 20d + ST age <=10d + ADX>=25 + RSI14 rising 3d
+     train 52.0% (n 640)  TEST 33.4% (n 488, avg -0.49%)  fresh flips: 47% of 97
+  ST age <=10d + within 10% of 52w high + RSI2>80 + BB width high (pct>=70)
+     train 51.9% (n 707)  TEST 36.6% (n 590, avg 0.66%)  fresh flips: 48% of 80
+  ST age <=10d + sector 63d > market + BB width high (pct>=70) + SPY calm (ATR%<1.3)
+     train 51.9% (n 869)  TEST 34.7% (n 734, avg 0.88%)  fresh flips: 38% of 40
+  ST age <=10d + within 10% of 52w high + RS126 vs SPY>0 + BB width high (pct>=70)
+     train 51.8% (n 942)  TEST 35.5% (n 895, avg 0.43%)  fresh flips: 48% of 48
+  ext vs sma50 <=3 ATR + sector 63d > market + BB width high (pct>=70) + SPY calm (ATR%<1.3)
+     train 51.8% (n 724)  TEST 33.5% (n 740, avg 1.29%)  fresh flips: 39% of 28
+  sma200 rising 20d + ST age <=10d + RSI2>80 + BB width high (pct>=70)
+     train 51.8% (n 649)  TEST 36.0% (n 541, avg 0.51%)  fresh flips: 49% of 86
+  ext vs sma50 <=3 ATR + RSI14>60 + sector 63d > market + BB width high (pct>=70)
+     train 51.7% (n 695)  TEST 32.3% (n 641, avg 0.34%)  fresh flips: 57% of 21
+
+################ outcome B: stop -15%, target +5%: baseline win train 79.6% / test 75.4%; combos tried 672641, qualifying 491114
+top-200 by TRAIN win rate: average train lift 8.4 pts  ->  average TEST lift -4.1 pts; share with test lift > 0: 3%
+top 12 combos (picked on train) -> holdout:
+  ST age <=10d + ext vs sma50 <=3 ATR + sector 63d > market + BB width high (pct>=70)
+     train 89.1% (n 631)  TEST 68.7% (n 511, avg -1.09%)  fresh flips: 84% of 57
+  ST age <=10d + RSI14<70 + sector 63d > market + BB width high (pct>=70)
+     train 88.9% (n 819)  TEST 70.9% (n 657, avg -0.68%)  fresh flips: 85% of 62
+  ST age <=10d + RSI14 50-70 + sector 63d > market + BB width high (pct>=70)
+     train 88.8% (n 812)  TEST 70.7% (n 641, avg -0.72%)  fresh flips: 84% of 57
+  ST age <=10d + within 5% of 52w high + RS21 vs SPY>0 + sector 63d > market
+     train 88.7% (n 749)  TEST 70.5% (n 651, avg -0.70%)  fresh flips: 81% of 93
+  c>sma50 + ST age <=10d + ROC20>10% + sector 63d > market
+     train 88.6% (n 603)  TEST 74.4% (n 657, avg 0.03%)  fresh flips: 77% of 30
+  ema10>ema20 + ST age <=10d + ROC20>10% + sector 63d > market
+     train 88.5% (n 602)  TEST 74.6% (n 658, avg 0.06%)  fresh flips: 81% of 27
+  ST age <=10d + MACD>0 + ROC20>10% + sector 63d > market
+     train 88.5% (n 602)  TEST 74.6% (n 657, avg 0.06%)  fresh flips: 81% of 26
+  ST age <=10d + close within 3 ATR of ST line + sector 63d > market + BB width high (pct>=70)
+     train 88.5% (n 750)  TEST 68.9% (n 611, avg -1.03%)  fresh flips: 93% of 15
+  ST age <=10d + within 10% of 52w high + sector 63d > market + BB width high (pct>=70)
+     train 88.5% (n 790)  TEST 71.7% (n 658, avg -0.46%)  fresh flips: 81% of 47
+  sma200 rising 20d + ST age <=10d + RSI14 rising 3d + sector 63d > market
+     train 88.5% (n 667)  TEST 70.5% (n 613, avg -0.79%)  fresh flips: 80% of 163
+  ST age <=10d + ADX>=25 + within 10% of 52w high + sector 63d > market
+     train 88.4% (n 606)  TEST 69.6% (n 529, avg -0.93%)  fresh flips: 78% of 55
+  c>sma20 + ST age <=10d + ROC20>10% + sector 63d > market
+     train 88.4% (n 604)  TEST 74.5% (n 659, avg 0.04%)  fresh flips: 77% of 30
+
+################ outcome C: stop -12%, target +10%: baseline win train 62.9% / test 55.5%; combos tried 672641, qualifying 491114
+top-200 by TRAIN win rate: average train lift 12.8 pts  ->  average TEST lift -3.2 pts; share with test lift > 0: 4%
+top 12 combos (picked on train) -> holdout:
+  ext vs sma50 <=3 ATR + sector 63d > market + BB width high (pct>=70) + SPY calm (ATR%<1.3)
+     train 78.6% (n 724)  TEST 54.9% (n 740, avg 0.03%)  fresh flips: 54% of 28
+  ST age <=10d + ext vs sma50 <=3 ATR + sector 63d > market + BB width high (pct>=70)
+     train 78.3% (n 631)  TEST 50.3% (n 511, avg -1.00%)  fresh flips: 67% of 57
+  ST age <=10d + sector 63d > market + BB width high (pct>=70) + SPY calm (ATR%<1.3)
+     train 78.1% (n 869)  TEST 53.0% (n 734, avg -0.34%)  fresh flips: 55% of 40
+  sma200 rising 20d + ST age <=10d + sector 63d > market + BB width high (pct>=70)
+     train 77.8% (n 742)  TEST 53.7% (n 644, avg -0.25%)  fresh flips: 73% of 51
+  ST age <=10d + within 10% of 52w high + sector 63d > market + BB width high (pct>=70)
+     train 77.5% (n 790)  TEST 54.0% (n 658, avg -0.16%)  fresh flips: 70% of 47
+  ST age <=10d + ADX>=25 + sector 63d > market + SPY calm (ATR%<1.3)
+     train 77.3% (n 657)  TEST 51.1% (n 609, avg -0.68%)  fresh flips: 59% of 58
+  sma50>sma200 + ST age <=10d + sector 63d > market + BB width high (pct>=70)
+     train 77.3% (n 758)  TEST 53.5% (n 593, avg -0.26%)  fresh flips: 73% of 48
+  ext vs sma50 <=3 ATR + sector 63d > market + BB width high (pct>=70) + OBV>OBV 20d avg
+     train 77.3% (n 934)  TEST 53.4% (n 854, avg -0.27%)  fresh flips: 67% of 42
+  ST age <=10d + ADX>=25 + within 10% of 52w high + sector 63d > market
+     train 77.2% (n 606)  TEST 49.5% (n 529, avg -1.07%)  fresh flips: 62% of 55
+  within 10% of 52w high + ext vs sma50 <=3 ATR + sector 63d > market + BB width high (pct>=70)
+     train 77.2% (n 640)  TEST 52.5% (n 589, avg -0.46%)  fresh flips: 68% of 28
+  sma50>sma200 + ext vs sma50 <=3 ATR + sector 63d > market + BB width high (pct>=70)
+     train 77.0% (n 643)  TEST 54.1% (n 580, avg -0.11%)  fresh flips: 72% of 32
+  ext vs sma50 <=3 ATR + ROC126>0 + sector 63d > market + BB width high (pct>=70)
+     train 77.0% (n 821)  TEST 55.3% (n 698, avg 0.21%)  fresh flips: 69% of 35

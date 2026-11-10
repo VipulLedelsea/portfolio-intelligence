@@ -1,0 +1,34 @@
+
+################ APP-GATED flips (ADX >= 20 and rising): 470 flips. baseline n= 470 win  44% avg  1.97% | train n= 249 win  51% avg  2.85% | test n= 221 win  37% avg  0.98%
+regime                                    IN regime                     train / test                            OUTSIDE regime
+SPY below 200d avg                        n=  47 win  55% avg  9.05%      18 win  67% avg 11.23% |   29 win  48% avg  7.69%n= 423 win  43% avg  1.18%
+SPY below 50d avg                         n= 116 win  53% avg  5.20%      75 win  63% avg  6.25% |   41 win  34% avg  3.28%n= 354 win  41% avg  0.91%
+SPY >= 5% below 252d high                 n= 109 win  60% avg  6.86%      77 win  65% avg  6.95% |   32 win  47% avg  6.64%n= 361 win  39% avg  0.49%
+SPY >= 8% below 252d high                 n=  50 win  58% avg  9.46%      31 win  61% avg  8.51% |   19 win  53% avg 11.01%n= 420 win  42% avg  1.08%
+SPY >= 10% below 252d high                n=  36 win  53% avg  7.50%      21 win  48% avg  2.52% |   15 win  60% avg 14.46%n= 434 win  43% avg  1.51%
+SPY 20d return <= -3%                     n=  54 win  43% avg  2.85%      32 win  56% avg  6.70% |   22 win  23% avg -2.75%n= 416 win  44% avg  1.85%
+SPY 5d return <= -1.5%                    n=  52 win  52% avg  7.64%      23 win  70% avg 10.12% |   29 win  38% avg  5.68%n= 418 win  43% avg  1.26%
+SPY below 200d OR >= 8% off high          n=  60 win  55% avg  8.11%      31 win  61% avg  8.51% |   29 win  48% avg  7.69%n= 410 win  42% avg  1.07%
+SPY above 50d but below 200d (recovery)   n=   9 win  44% avg  0.87%       4 win  25% avg -4.91% |    5 win  60% avg  5.48%n= 461 win  44% avg  1.99%
+
+"SPY below 200d avg": month-clustered bootstrap, IN minus OUT: avg diff 95% CI [-1.18, 14.50], win diff [-7, 31] pts; flips in 9 distinct months
+  months with the most flips in regime: 2025-04:16, 2023-01:8, 2023-11:6, 2025-05:5, 2026-03:3, 2026-04:3
+  drop the best 2 months: n=  23 win  61% avg 10.23%
+  in regime with +8% target: n=  47 win  64% avg  2.34%   outside: n= 423 win  50% avg  0.71%
+
+################ ALL daily flips (bigger sample): 5971 flips. baseline n=5971 win  40% avg  1.34% | train n=3316 win  43% avg  1.72% | test n=2655 win  35% avg  0.87%
+regime                                    IN regime                     train / test                            OUTSIDE regime
+SPY below 200d avg                        n= 630 win  53% avg  6.69%     274 win  47% avg  3.08% |  356 win  57% avg  9.46%n=5341 win  38% avg  0.71%
+SPY below 50d avg                         n=1192 win  44% avg  2.80%     652 win  49% avg  3.23% |  540 win  37% avg  2.28%n=4779 win  39% avg  0.98%
+SPY >= 5% below 252d high                 n=1410 win  45% avg  3.35%    1013 win  42% avg  1.80% |  397 win  52% avg  7.29%n=4561 win  38% avg  0.72%
+SPY >= 8% below 252d high                 n= 903 win  42% avg  2.78%     674 win  37% avg  0.47% |  229 win  59% avg  9.56%n=5068 win  39% avg  1.09%
+SPY >= 10% below 252d high                n= 668 win  41% avg  2.73%     540 win  35% avg -0.06% |  128 win  66% avg 14.49%n=5303 win  40% avg  1.17%
+SPY 20d return <= -3%                     n= 467 win  41% avg  2.59%     213 win  48% avg  2.69% |  254 win  36% avg  2.50%n=5504 win  40% avg  1.24%
+SPY 5d return <= -1.5%                    n= 364 win  39% avg  1.25%     152 win  56% avg  4.73% |  212 win  26% avg -1.24%n=5607 win  40% avg  1.35%
+SPY below 200d OR >= 8% off high          n=1030 win  44% avg  3.58%     674 win  37% avg  0.47% |  356 win  57% avg  9.46%n=4941 win  39% avg  0.88%
+SPY above 50d but below 200d (recovery)   n= 227 win  49% avg  4.29%     123 win  33% avg -0.40% |  104 win  67% avg  9.84%n=5744 win  39% avg  1.23%
+
+"SPY below 200d avg": month-clustered bootstrap, IN minus OUT: avg diff 95% CI [0.84, 10.55], win diff [1, 28] pts; flips in 11 distinct months
+  months with the most flips in regime: 2023-01:172, 2025-04:157, 2025-05:131, 2023-11:34, 2025-03:30, 2026-04:26
+  drop the best 2 months: n= 301 win  58% avg  7.60%
+  in regime with +8% target: n= 630 win  65% avg  3.02%   outside: n=5341 win  47% avg  0.24%

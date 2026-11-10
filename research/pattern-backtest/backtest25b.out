@@ -1,0 +1,22 @@
+
+combos that gained >= 8 pts of win rate on BOTH halves: 13
+  pat: tight 20d base  + pat: breaks 50d high + st: ADX >= 25  train 64.3% (n 42) test 43.5% (n 23)
+  vol: OBV rising 20d + pat: breaks 50d high + st: ADX >= 25  train 61.0% (n 41) test 44.4% (n 27)
+  pat: hammer  + pat: NR7  + pat: higher pivot low  train 60.9% (n 64) test 43.2% (n 44)
+  st: ADX >= 25 + st: RS 63d vs SPY > 0 + pat: higher pivot low  train 58.1% (n 74) test 48.4% (n 64)
+  pat: tight 20d base  + pat: breaks 50d high + st: ADX >= 20 and rising  train 56.8% (n 44) test 45.9% (n 37)
+  vol: OBV rising 20d + pat: breaks 50d high + st: ADX >= 20 and rising  train 56.1% (n 41) test 46.2% (n 39)
+  vol: up/down volume ratio 20d >= 1.3 + pat: hammer  + pat: higher pivot low  train 55.6% (n 90) test 43.2% (n 74)
+  pat: breaks 50d high + st: ADX >= 20 and rising + st: SPY above 200d  train 55.3% (n 47) test 46.2% (n 39)
+  vol: accumulation  + pat: NR7  + st: ADX >= 20 and rising  train 55.2% (n 67) test 43.8% (n 48)
+  vol: accumulation  + st: ADX >= 25 + pat: higher pivot low  train 53.2% (n 171) test 44.0% (n 166)
+
+== follow-up: flips when SPY is BELOW vs ABOVE its 200-day average ==
+below: ALL n=630 win 53% avg 6.69% | train n=274 47%/3.08% | test n=356 57%/9.46%
+above: ALL n=5341 win 38% avg 0.71% | train n=3042 43%/1.60% | test n=2299 32%/-0.46%
+  below, 2022: n=30 win 40% avg -1.70%
+  below, 2023: n=244 win 48% avg 3.66%
+  below, 2025: n=318 win 58% avg 8.45%
+  below, 2026: n=38 win 55% avg 17.95%
+
+survivors (>= +8 pts on both halves): real 13 vs by chance (shuffled outcomes, 30 repeats): median 14, max 56, range 1-56

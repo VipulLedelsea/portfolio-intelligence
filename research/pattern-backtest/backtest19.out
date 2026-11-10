@@ -1,0 +1,14 @@
+Reference: current exit (line only): flips 44.6% / +2.14%, ALL rows 36.4% / +0.59%
+
+stop -7%, target +20%                                             | flips win  40.6 avg  2.21 (avg win 16.2, loss -7.4, tr 49/3.99 te 31/0.26) d 52 | ALL win 35.5 avg 0.99
+stop -7%, target +20%, 8-week rule                                | flips win  40.6 avg  2.30 (avg win 16.4, loss -7.4, tr 49/4.21 te 31/0.18) d 53 | ALL win 35.2 avg 1.13
+stop -7%, target +25%                                             | flips win  38.5 avg  2.25 (avg win 17.5, loss -7.3, tr 48/4.50 te 28/-0.24) d 58 | ALL win 34.0 avg 1.06
+stop -7%, target +25%, 8-week rule                                | flips win  38.5 avg  2.35 (avg win 17.8, loss -7.3, tr 48/4.69 te 28/-0.22) d 58 | ALL win 33.8 avg 1.19
+stop -8%, target +20%                                             | flips win  44.6 avg  2.62 (avg win 16.0, loss -8.2, tr 55/4.84 te 34/0.17) d 58 | ALL win 39.1 avg 1.18
+stop -8%, target +20%, 8-week rule                                | flips win  44.6 avg  2.70 (avg win 16.2, loss -8.2, tr 55/5.07 te 34/0.09) d 58 | ALL win 38.7 avg 1.31
+stop -8%, target +25%                                             | flips win  42.5 avg  2.69 (avg win 17.3, loss -8.1, tr 54/5.57 te 30/-0.47) d 63 | ALL win 37.5 avg 1.25
+stop -8%, target +25%, 8-week rule                                | flips win  42.5 avg  2.80 (avg win 17.6, loss -8.1, tr 54/5.75 te 30/-0.45) d 64 | ALL win 37.3 avg 1.38
+stop -7%, no target, then Supertrend line                         | flips win  41.1 avg  1.55 (avg win 11.6, loss -5.5, tr 47/2.29 te 35/0.72) d 35 | ALL win 35.1 avg 0.48
+stop -7%, target +25%, 8-week rule, then Supertrend line          | flips win  41.1 avg  1.36 (avg win 11.1, loss -5.4, tr 47/2.55 te 35/0.04) d 32 | ALL win 35.0 avg 0.42
+stop -8%, no target, then Supertrend line                         | flips win  42.7 avg  1.89 (avg win 12.0, loss -5.6, tr 49/2.62 te 36/1.09) d 37 | ALL win 35.7 avg 0.51
+stop -8%, target +25%, 8-week rule, then Supertrend line          | flips win  42.7 avg  1.62 (avg win 11.3, loss -5.6, tr 49/2.97 te 36/0.12) d 34 | ALL win 35.6 avg 0.44

@@ -1,0 +1,66 @@
+pullback-to-rising-EMA20 triggers: 12364; average structural stop 2.48% below entry
+
+######## target 1R: ALL triggers  train win 51.8% avg -0.08% (n 6665) | test win 49.7% avg -0.17% (n 5699)
+combos tried 59711; top-300 by train win: avg train 56.0% -> avg TEST 50.2% (baseline test 49.7%); profitable-in-train 297, their TEST avg return -0.15%
+   ADX>=25 + breadth >50d >=60% + RSI2<30
+      train 58.1% avg 0.08% (n 577) | TEST 52.8% avg -0.04% (n 301)
+   within 5% of 52w high + breadth >50d >=60% + RSI2<30
+      train 58.0% avg 0.07% (n 629) | TEST 51.0% avg -0.12% (n 304)
+   RSI2<50 (small dip) + ATR% <=2 + rel vol>=1
+      train 57.8% avg 0.11% (n 554) | TEST 49.7% avg -0.18% (n 336)
+   ADX rising 5d + rel vol>=1 + SPY calm (ATR%<1.3)
+      train 57.6% avg 0.23% (n 535) | TEST 47.9% avg -0.30% (n 528)
+   ADX rising 5d + close within 3 ATR of ST line + close in top 25% of range
+      train 57.5% avg 0.23% (n 593) | TEST 52.9% avg -0.02% (n 435)
+
+######## target 1.5R: ALL triggers  train win 43.9% avg -0.01% (n 6665) | test win 40.3% avg -0.21% (n 5699)
+combos tried 59711; top-300 by train win: avg train 49.1% -> avg TEST 41.3% (baseline test 40.3%); profitable-in-train 300, their TEST avg return -0.16%
+   close within 3 ATR of ST line + RSI2>80 + ROC20>0
+      train 51.3% avg 0.43% (n 636) | TEST 41.1% avg -0.26% (n 494)
+   ADX rising 5d + within 10% of 52w high + close in top 25% of range
+      train 51.2% avg 0.39% (n 600) | TEST 41.5% avg -0.16% (n 463)
+   sma50 rising 20d + ST age <=10d + touched sma20 (low<=sma20)
+      train 51.0% avg 0.52% (n 539) | TEST 40.0% avg -0.19% (n 423)
+   ADX rising 5d + close within 3 ATR of ST line + close in top 25% of range
+      train 50.6% avg 0.44% (n 593) | TEST 43.7% avg 0.01% (n 435)
+   ema10>ema20 + ST age <=10d + touched sma20 (low<=sma20)
+      train 50.5% avg 0.44% (n 541) | TEST 41.5% avg -0.16% (n 443)
+
+######## target 2R: ALL triggers  train win 39.5% avg 0.02% (n 6665) | test win 35.3% avg -0.24% (n 5699)
+combos tried 59711; top-300 by train win: avg train 45.8% -> avg TEST 36.7% (baseline test 35.3%); profitable-in-train 300, their TEST avg return -0.31%
+   close within 3 ATR of ST line + RSI2>80 + ROC20>0
+      train 48.9% avg 0.49% (n 636) | TEST 35.6% avg -0.47% (n 494)
+   sma50 rising 20d + ST age <=10d + touched sma20 (low<=sma20)
+      train 48.4% avg 0.70% (n 539) | TEST 33.8% avg -0.34% (n 423)
+   ema10>ema20 + ST age <=10d + touched sma20 (low<=sma20)
+      train 47.7% avg 0.62% (n 541) | TEST 35.9% avg -0.29% (n 443)
+   close within 3 ATR of ST line + RSI2>80 + SPY within 3% of high
+      train 47.7% avg 0.49% (n 577) | TEST 35.8% avg -0.42% (n 551)
+   ST age <=10d + MACD>0 + touched sma20 (low<=sma20)
+      train 47.6% avg 0.60% (n 567) | TEST 35.6% avg -0.33% (n 458)
+
+######## target +3%: ALL triggers  train win 45.0% avg -0.04% (n 6665) | test win 44.3% avg -0.16% (n 5699)
+combos tried 59711; top-300 by train win: avg train 56.5% -> avg TEST 51.9% (baseline test 44.3%); profitable-in-train 300, their TEST avg return -0.19%
+   close within 3 ATR of ST line + RSI2>80 + ROC20>0
+      train 58.8% avg 0.28% (n 636) | TEST 52.4% avg -0.18% (n 494)
+   sma20>sma50 + RSI2>80 + ROC20>0
+      train 58.3% avg 0.32% (n 569) | TEST 49.1% avg -0.40% (n 401)
+   sma20>sma50 + RSI2>80 + OBV>OBV 20d avg
+      train 57.9% avg 0.39% (n 556) | TEST 48.3% avg -0.38% (n 418)
+   close within 3 ATR of ST line + RSI2>80 + touched sma20 (low<=sma20)
+      train 57.8% avg 0.27% (n 528) | TEST 52.8% avg -0.14% (n 398)
+   RSI2>80 + OBV>OBV 20d avg + breadth >200d >=60%
+      train 57.8% avg 0.38% (n 632) | TEST 54.9% avg -0.03% (n 324)
+
+######## target +5%: ALL triggers  train win 36.6% avg 0.01% (n 6665) | test win 33.6% avg -0.23% (n 5699)
+combos tried 59711; top-300 by train win: avg train 47.0% -> avg TEST 39.9% (baseline test 33.6%); profitable-in-train 300, their TEST avg return -0.30%
+   close within 3 ATR of ST line + RSI2>80 + ROC20>0
+      train 50.2% avg 0.39% (n 636) | TEST 39.3% avg -0.38% (n 494)
+   c>sma50 + close within 2 ATR of ST line + RSI2>80
+      train 49.3% avg 0.28% (n 517) | TEST 40.4% avg -0.21% (n 436)
+   c>sma200 + close within 2 ATR of ST line + RSI2>80
+      train 49.3% avg 0.28% (n 517) | TEST 40.4% avg -0.21% (n 436)
+   sma50>sma200 + close within 2 ATR of ST line + RSI2>80
+      train 49.3% avg 0.28% (n 517) | TEST 40.4% avg -0.21% (n 436)
+   close within 2 ATR of ST line + close within 3 ATR of ST line + RSI2>80
+      train 49.3% avg 0.28% (n 517) | TEST 40.4% avg -0.21% (n 436)

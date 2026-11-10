@@ -1,0 +1,84 @@
+all daily Supertrend flips: 5971 (train 3316, test 2655). Current exit.  ALL: n=5971 win  40% avg  1.34% | train n=3316 win  43% avg  1.72% | test n=2655 win  35% avg  0.87%
+  with +8% target: ALL n=5971 win  49% avg  0.53%
+
+== Part 1: each feature alone (TRUE vs FALSE) ==
+feature                                               TRUE all                      train / test win%, avg%           FALSE all
+vol: flip-day rel vol >= 1.5                          n=1439 win  43% avg  1.41%    50/33%  2.59/-0.06%               n=4532 win  39% avg  1.32%
+vol: flip-day rel vol >= 2                            n= 713 win  43% avg  1.84%    54/30%  3.18/0.06%                n=5258 win  39% avg  1.28%
+vol: max rel vol of last 3d >= 2                      n= 985 win  44% avg  1.57%    53/30%  3.12/-0.62%               n=4986 win  39% avg  1.30%
+vol: 20d avg >= 1.1 x 50d avg                         n=1463 win  41% avg  1.60%    50/31%  2.80/0.00%                n=4508 win  39% avg  1.26%
+vol: dry-up before (10d avg < 0.8 x 50d)              n=1067 win  40% avg  2.25%    37/43%  0.68/3.98%                n=4904 win  40% avg  1.15%
+vol: up/down volume ratio 20d >= 1.3                  n=2428 win  39% avg  1.18%    42/36%  1.18/1.18%                n=3543 win  40% avg  1.46%
+vol: OBV above its 20d avg                            n=5414 win  39% avg  1.34%    43/35%  1.62/0.99%                n= 557 win  43% avg  1.37%
+vol: OBV rising 20d                                   n=4107 win  39% avg  1.32%    42/35%  1.43/1.20%                n=1864 win  41% avg  1.39%
+vol: dollar volume >= $100M                           n=5386 win  40% avg  1.43%    44/35%  1.84/0.97%                n= 585 win  40% avg  0.54%
+vol: flip-day volume is the 20d high                  n= 912 win  42% avg  1.66%    49/31%  2.90/-0.04%               n=5059 win  39% avg  1.29%
+vol: power bar (+2% on rel vol >= 1.5)                n=1246 win  42% avg  1.58%    50/32%  2.90/0.01%                n=4725 win  39% avg  1.28%
+vol: accumulation (down-day vol < up-day vol, 10d)    n=5278 win  40% avg  1.33%    43/35%  1.60/0.99%                n= 693 win  41% avg  1.47%
+pat: tight 20d base (range <= 12%)                    n=4329 win  38% avg  0.51%    43/31%  1.35/-0.70%               n=1642 win  45% avg  3.54%
+pat: breaks 20d high                                  n=2843 win  39% avg  1.19%    41/36%  1.08/1.32%                n=3128 win  41% avg  1.48%
+pat: breaks 50d high                                  n= 587 win  42% avg  1.87%    51/32%  2.48/1.17%                n=5384 win  40% avg  1.29%
+pat: bull flag (+15% run, tight 5d)                   n= 298 win  36% avg -0.03%    42/29%  1.07/-1.28%               n=5673 win  40% avg  1.42%
+pat: bullish engulfing (last 2d)                      n= 704 win  39% avg  1.24%    41/37%  1.20/1.28%                n=5267 win  40% avg  1.36%
+pat: hammer (last 2d)                                 n= 751 win  41% avg  1.35%    46/35%  1.81/0.74%                n=5220 win  40% avg  1.34%
+pat: inside day (last 3d)                             n=1385 win  41% avg  1.54%    46/35%  2.43/0.53%                n=4586 win  39% avg  1.29%
+pat: NR7 (last 3d)                                    n=1732 win  41% avg  1.92%    46/34%  2.50/1.15%                n=4239 win  39% avg  1.11%
+pat: cup-like (15-35% dip, back within 8%)            n= 779 win  43% avg  4.05%    47/40%  3.24/4.82%                n=5192 win  39% avg  0.94%
+pat: within 5% of 52w high                            n=1597 win  39% avg  0.93%    44/32%  1.67/-0.05%               n=4374 win  40% avg  1.49%
+pat: gap up >= 1% on flip day                         n=1816 win  43% avg  2.70%    49/36%  2.99/2.39%                n=4155 win  39% avg  0.75%
+st: ADX >= 20 and rising                              n= 470 win  44% avg  1.97%    51/37%  2.85/0.98%                n=5501 win  39% avg  1.29%
+st: ADX >= 25                                         n=1205 win  42% avg  1.20%    49/33%  2.89/-0.67%               n=4766 win  39% avg  1.38%
+st: close > 200d avg                                  n=3749 win  39% avg  1.32%    42/35%  1.48/1.10%                n=2222 win  41% avg  1.39%
+st: SPY above 200d                                    n=5341 win  38% avg  0.71%    43/32%  1.60/-0.46%               n= 630 win  53% avg  6.69%
+st: RS 63d vs SPY > 0                                 n=2386 win  39% avg  1.84%    44/35%  2.11/1.53%                n=3585 win  40% avg  1.01%
+pat: double bottom (10-40 bars, breaks middle peak)   n=3721 win  38% avg  0.83%    42/33%  1.29/0.22%                n=2250 win  43% avg  2.20%
+pat: higher pivot low                                 n=2505 win  40% avg  1.51%    41/38%  1.25/1.81%                n=3466 win  40% avg  1.23%
+
+== Part 2: every single, pair and triple of the 30 features (3345 qualifying combos; picked on train, judged on test) ==
+baseline win: train 43.5%  test 35.1%
+top 50 by train win rate: train avg 66.7% -> test avg 27.1%
+permutation null (outcomes shuffled, 30 repeats): top-50 train avg win 52.9% (range 47.1-58.6%) -> so the real train lift above baseline (23.3 pts) vs by-chance lift (9.4 pts)
+
+top 15 combos by train win (with holdout):
+  vol: flip-day rel vol >= 2 + vol: OBV rising 20d + st: ADX >= 25
+     train 71.7% (n 60) | TEST 25.0% (n 56)
+  vol: flip-day rel vol >= 2 + pat: breaks 20d high + st: ADX >= 25
+     train 70.0% (n 50) | TEST 31.1% (n 45)
+  vol: OBV rising 20d + pat: hammer  + st: ADX >= 25
+     train 70.0% (n 40) | TEST 21.2% (n 33)
+  vol: flip-day rel vol >= 2 + pat: hammer  + pat: gap up >= 1% on flip day
+     train 69.6% (n 46) | TEST 22.2% (n 27)
+  vol: up/down volume ratio 20d >= 1.3 + pat: gap up >= 1% on flip day + st: ADX >= 25
+     train 69.5% (n 59) | TEST 29.3% (n 75)
+  vol: flip-day rel vol >= 2 + vol: OBV rising 20d + st: ADX >= 20 and rising
+     train 69.4% (n 49) | TEST 38.2% (n 55)
+  vol: up/down volume ratio 20d >= 1.3 + vol: power bar  + st: ADX >= 25
+     train 69.2% (n 52) | TEST 28.0% (n 50)
+  vol: max rel vol of last 3d >= 2 + pat: inside day  + pat: NR7 
+     train 68.9% (n 45) | TEST 19.2% (n 26)
+  vol: flip-day rel vol >= 2 + pat: gap up >= 1% on flip day + st: ADX >= 25
+     train 68.8% (n 77) | TEST 29.2% (n 65)
+  vol: flip-day rel vol >= 1.5 + vol: 20d avg >= 1.1 x 50d avg + pat: inside day 
+     train 68.6% (n 51) | TEST 23.7% (n 59)
+  vol: max rel vol of last 3d >= 2 + vol: up/down volume ratio 20d >= 1.3 + st: ADX >= 25
+     train 68.2% (n 44) | TEST 26.5% (n 49)
+  vol: max rel vol of last 3d >= 2 + pat: gap up >= 1% on flip day + st: ADX >= 25
+     train 68.2% (n 88) | TEST 29.2% (n 72)
+  vol: max rel vol of last 3d >= 2 + pat: hammer  + pat: gap up >= 1% on flip day
+     train 68.0% (n 50) | TEST 20.6% (n 34)
+  vol: OBV rising 20d + vol: power bar  + st: ADX >= 20 and rising
+     train 67.9% (n 53) | TEST 40.3% (n 67)
+  vol: flip-day rel vol >= 2 + vol: flip-day volume is the 20d high + st: ADX >= 25
+     train 67.5% (n 80) | TEST 29.0% (n 69)
+
+combos that gained >= 8 pts of win rate on BOTH halves: 13
+  pat: tight 20d base  + pat: breaks 50d high + st: ADX >= 25  train 64.3% (n 42) test 43.5% (n 23)
+  vol: OBV rising 20d + pat: breaks 50d high + st: ADX >= 25  train 61.0% (n 41) test 44.4% (n 27)
+  pat: hammer  + pat: NR7  + pat: higher pivot low  train 60.9% (n 64) test 43.2% (n 44)
+  st: ADX >= 25 + st: RS 63d vs SPY > 0 + pat: higher pivot low  train 58.1% (n 74) test 48.4% (n 64)
+  pat: tight 20d base  + pat: breaks 50d high + st: ADX >= 20 and rising  train 56.8% (n 44) test 45.9% (n 37)
+  vol: OBV rising 20d + pat: breaks 50d high + st: ADX >= 20 and rising  train 56.1% (n 41) test 46.2% (n 39)
+  vol: up/down volume ratio 20d >= 1.3 + pat: hammer  + pat: higher pivot low  train 55.6% (n 90) test 43.2% (n 74)
+  pat: breaks 50d high + st: ADX >= 20 and rising + st: SPY above 200d  train 55.3% (n 47) test 46.2% (n 39)
+  vol: accumulation  + pat: NR7  + st: ADX >= 20 and rising  train 55.2% (n 67) test 43.8% (n 48)
+  vol: accumulation  + st: ADX >= 25 + pat: higher pivot low  train 53.2% (n 171) test 44.0% (n 166)

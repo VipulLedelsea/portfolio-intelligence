@@ -1,0 +1,9 @@
+bull flags inside a fresh Supertrend (<=10d): 769
+
+exit target: BULL FLAG win 46% avg 2.64% (n 769) | train win 38% avg 0.93% (n 303) | test win 52% avg 3.75% (n 466)
+   control A: any fresh-Supertrend day                 win 41% avg 1.28% (n 6152)
+   control B: fresh-Supertrend day after a 20%+ run-up   win 44% avg 2.30% (n 6152)
+
+exit line: BULL FLAG win 44% avg 5.33% (n 769) | train win 34% avg 2.37% (n 303) | test win 50% avg 7.26% (n 466)
+   control A: any fresh-Supertrend day                 win 35% avg 2.59% (n 6152)
+   control B: fresh-Supertrend day after a 20%+ run-up   win 39% avg 4.29% (n 6152)

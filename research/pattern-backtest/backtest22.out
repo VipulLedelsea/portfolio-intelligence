@@ -1,0 +1,108 @@
+
+################ B1 pullback (5d<0) + Supertrend up + SPY 5d<=-1.5% | stop 2 ATR / target 1 ATR (avg stop 5.2% of price)
+ALL                            n= 7152 win  71.5% avg  0.47% avg win  2.50 loss -4.62 worst5% -6.5%
+  train                        n= 3781 win  71.1% avg  0.43% avg win  2.30 loss -4.19 worst5% -5.7%
+  test                         n= 3371 win  71.9% avg  0.52% avg win  2.72 loss -5.12 worst5% -7.3%
+  signal days 142, avg 50.4 trades per signal day; equal-weight basket per day: mean 0.25%, positive on 59% of days
+  earnings flag (covered trades 2526):
+   report inside hold             n=  156 win  55.8% avg -0.86% avg win  4.05 loss -7.05 worst5% -11.9%
+   no report in hold              n= 2370 win  73.7% avg  0.64% avg win  2.67 loss -5.02 worst5% -7.2%
+  by market drop depth:
+   SPY 5d -1.5% to -2.5%          n= 5069 win  71.3% avg  0.41% avg win  2.43 loss -4.63 worst5% -6.4%
+   SPY 5d -2.5% to -4%            n= 1802 win  73.0% avg  0.69% avg win  2.67 loss -4.67 worst5% -6.7%
+   SPY 5d below -4%               n=  281 win  64.4% avg  0.19% avg win  2.64 loss -4.25 worst5% -5.7%
+   SPY above 200d                 n= 6007 win  70.5% avg  0.36% avg win  2.43 loss -4.60 worst5% -6.5%
+   SPY below 200d                 n= 1145 win  76.9% avg  1.09% avg win  2.85 loss -4.76 worst5% -5.9%
+   SPY ATR% <= median (1.08%)     n= 3585 win  70.4% avg  0.32% avg win  2.38 loss -4.60 worst5% -6.5%
+   SPY ATR% > median              n= 3567 win  72.6% avg  0.63% avg win  2.62 loss -4.63 worst5% -6.4%
+  sizing x1 / x1.5 (drop<=-2.5%) / x2 (drop<=-4%): equal-weight avg 0.47% vs weighted 0.49% (train 0.49, test 0.49); sizing does not change the win rate
+
+################ B2 RSI2<10 above 200d + SPY 5d<=-1.5% | stop 2 ATR / target 1 ATR (avg stop 5.4% of price)
+ALL                            n= 4142 win  71.3% avg  0.56% avg win  2.63 loss -4.61 worst5% -6.6%
+  train                        n= 2241 win  70.0% avg  0.37% avg win  2.33 loss -4.20 worst5% -5.8%
+  test                         n= 1901 win  73.0% avg  0.77% avg win  2.96 loss -5.14 worst5% -7.4%
+  signal days 142, avg 29.2 trades per signal day; equal-weight basket per day: mean 0.44%, positive on 63% of days
+  earnings flag (covered trades 1183):
+   report inside hold             n=   79 win  53.2% avg -1.74% avg win  4.54 loss -8.86 worst5% -16.8%
+   no report in hold              n= 1104 win  78.1% avg  1.27% avg win  3.08 loss -5.18 worst5% -6.9%
+  by market drop depth:
+   SPY 5d -1.5% to -2.5%          n= 2513 win  72.5% avg  0.58% avg win  2.66 loss -4.92 worst5% -6.9%
+   SPY 5d -2.5% to -4%            n= 1290 win  69.6% avg  0.57% avg win  2.61 loss -4.08 worst5% -6.2%
+   SPY 5d below -4%               n=  339 win  69.0% avg  0.29% avg win  2.46 loss -4.53 worst5% -6.8%
+   SPY above 200d                 n= 3342 win  71.4% avg  0.55% avg win  2.62 loss -4.60 worst5% -6.6%
+   SPY below 200d                 n=  800 win  71.3% avg  0.57% avg win  2.68 loss -4.66 worst5% -6.7%
+   SPY ATR% <= median (1.18%)     n= 2079 win  71.6% avg  0.48% avg win  2.51 loss -4.65 worst5% -6.9%
+   SPY ATR% > median              n= 2063 win  71.1% avg  0.63% avg win  2.75 loss -4.56 worst5% -6.5%
+  sizing x1 / x1.5 (drop<=-2.5%) / x2 (drop<=-4%): equal-weight avg 0.56% vs weighted 0.54% (train 0.39, test 0.73); sizing does not change the win rate
+
+################ B3 pullback + above 50d + SPY 5d<=-1.5% | stop 2 ATR / target 1 ATR (avg stop 5.2% of price)
+ALL                            n= 6855 win  71.9% avg  0.48% avg win  2.49 loss -4.67 worst5% -6.5%
+  train                        n= 3569 win  71.6% avg  0.44% avg win  2.29 loss -4.26 worst5% -5.7%
+  test                         n= 3286 win  72.2% avg  0.53% avg win  2.71 loss -5.13 worst5% -7.3%
+  signal days 143, avg 47.9 trades per signal day; equal-weight basket per day: mean 0.29%, positive on 55% of days
+  earnings flag (covered trades 2391):
+   report inside hold             n=  141 win  51.1% avg -1.19% avg win  3.97 loss -6.57 worst5% -10.9%
+   no report in hold              n= 2250 win  74.8% avg  0.77% avg win  2.70 loss -4.99 worst5% -7.1%
+  by market drop depth:
+   SPY 5d -1.5% to -2.5%          n= 4835 win  71.7% avg  0.43% avg win  2.44 loss -4.65 worst5% -6.5%
+   SPY 5d -2.5% to -4%            n= 1775 win  72.9% avg  0.64% avg win  2.66 loss -4.79 worst5% -6.7%
+   SPY 5d below -4%               n=  245 win  69.0% avg  0.35% avg win  2.45 loss -4.34 worst5% -5.6%
+   SPY above 200d                 n= 5749 win  71.0% avg  0.37% avg win  2.43 loss -4.66 worst5% -6.6%
+   SPY below 200d                 n= 1106 win  76.7% avg  1.04% avg win  2.79 loss -4.73 worst5% -5.7%
+   SPY ATR% <= median (1.09%)     n= 3469 win  71.8% avg  0.38% avg win  2.37 loss -4.69 worst5% -6.5%
+   SPY ATR% > median              n= 3386 win  72.0% avg  0.58% avg win  2.62 loss -4.65 worst5% -6.5%
+  sizing x1 / x1.5 (drop<=-2.5%) / x2 (drop<=-4%): equal-weight avg 0.48% vs weighted 0.49% (train 0.52, test 0.47); sizing does not change the win rate
+
+################ B1 pullback (5d<0) + Supertrend up + SPY 5d<=-1.5% | stop 1.5 ATR / target 0.75 ATR (avg stop 3.9% of price)
+ALL                            n= 7152 win  74.5% avg  0.37% avg win  1.87 loss -3.99 worst5% -5.0%
+  train                        n= 3781 win  74.2% avg  0.37% avg win  1.72 loss -3.52 worst5% -4.3%
+  test                         n= 3371 win  74.8% avg  0.38% avg win  2.04 loss -4.53 worst5% -5.7%
+  signal days 142, avg 50.4 trades per signal day; equal-weight basket per day: mean 0.21%, positive on 60% of days
+  earnings flag (covered trades 2526):
+   report inside hold             n=   97 win  54.6% avg -0.76% avg win  3.49 loss -5.88 worst5% -10.4%
+   no report in hold              n= 2429 win  76.2% avg  0.42% avg win  2.01 loss -4.65 worst5% -5.8%
+  by market drop depth:
+   SPY 5d -1.5% to -2.5%          n= 5069 win  74.9% avg  0.38% avg win  1.82 loss -3.92 worst5% -4.9%
+   SPY 5d -2.5% to -4%            n= 1802 win  74.1% avg  0.36% avg win  1.99 loss -4.30 worst5% -5.6%
+   SPY 5d below -4%               n=  281 win  68.3% avg  0.31% avg win  1.98 loss -3.29 worst5% -4.1%
+   SPY above 200d                 n= 6007 win  73.6% avg  0.29% avg win  1.82 loss -3.97 worst5% -5.0%
+   SPY below 200d                 n= 1145 win  79.1% avg  0.81% avg win  2.11 loss -4.11 worst5% -4.7%
+   SPY ATR% <= median (1.08%)     n= 3585 win  74.3% avg  0.28% avg win  1.76 loss -4.01 worst5% -5.1%
+   SPY ATR% > median              n= 3567 win  74.7% avg  0.47% avg win  1.98 loss -3.97 worst5% -4.9%
+  sizing x1 / x1.5 (drop<=-2.5%) / x2 (drop<=-4%): equal-weight avg 0.37% vs weighted 0.37% (train 0.40, test 0.34); sizing does not change the win rate
+
+################ B2 RSI2<10 above 200d + SPY 5d<=-1.5% | stop 1.5 ATR / target 0.75 ATR (avg stop 4.0% of price)
+ALL                            n= 4142 win  73.8% avg  0.40% avg win  1.95 loss -3.95 worst5% -5.1%
+  train                        n= 2241 win  71.9% avg  0.24% avg win  1.72 loss -3.56 worst5% -4.7%
+  test                         n= 1901 win  76.0% avg  0.60% avg win  2.21 loss -4.49 worst5% -5.9%
+  signal days 142, avg 29.2 trades per signal day; equal-weight basket per day: mean 0.42%, positive on 64% of days
+  earnings flag (covered trades 1183):
+   report inside hold             n=   52 win  51.9% avg -1.62% avg win  3.26 loss -6.90 worst5% -12.7%
+   no report in hold              n= 1131 win  80.5% avg  0.90% avg win  2.32 loss -4.94 worst5% -6.0%
+  by market drop depth:
+   SPY 5d -1.5% to -2.5%          n= 2513 win  75.8% avg  0.51% avg win  1.97 loss -4.06 worst5% -5.1%
+   SPY 5d -2.5% to -4%            n= 1290 win  70.5% avg  0.25% avg win  1.95 loss -3.80 worst5% -5.1%
+   SPY 5d below -4%               n=  339 win  70.8% avg  0.18% avg win  1.85 loss -3.87 worst5% -5.4%
+   SPY above 200d                 n= 3342 win  74.2% avg  0.43% avg win  1.95 loss -3.94 worst5% -5.0%
+   SPY below 200d                 n=  800 win  72.0% avg  0.30% avg win  1.96 loss -3.98 worst5% -5.4%
+   SPY ATR% <= median (1.18%)     n= 2079 win  74.7% avg  0.38% avg win  1.86 loss -4.00 worst5% -5.2%
+   SPY ATR% > median              n= 2063 win  72.8% avg  0.42% avg win  2.05 loss -3.91 worst5% -5.0%
+  sizing x1 / x1.5 (drop<=-2.5%) / x2 (drop<=-4%): equal-weight avg 0.40% vs weighted 0.37% (train 0.24, test 0.53); sizing does not change the win rate
+
+################ B3 pullback + above 50d + SPY 5d<=-1.5% | stop 1.5 ATR / target 0.75 ATR (avg stop 3.9% of price)
+ALL                            n= 6855 win  74.9% avg  0.38% avg win  1.87 loss -4.06 worst5% -5.0%
+  train                        n= 3569 win  75.1% avg  0.40% avg win  1.71 loss -3.59 worst5% -4.4%
+  test                         n= 3286 win  74.6% avg  0.36% avg win  2.03 loss -4.56 worst5% -5.7%
+  signal days 143, avg 47.9 trades per signal day; equal-weight basket per day: mean 0.20%, positive on 59% of days
+  earnings flag (covered trades 2391):
+   report inside hold             n=   92 win  51.1% avg -1.03% avg win  3.40 loss -5.66 worst5% -10.2%
+   no report in hold              n= 2299 win  76.9% avg  0.49% avg win  2.03 loss -4.65 worst5% -5.7%
+  by market drop depth:
+   SPY 5d -1.5% to -2.5%          n= 4835 win  75.5% avg  0.40% avg win  1.82 loss -3.97 worst5% -5.0%
+   SPY 5d -2.5% to -4%            n= 1775 win  73.7% avg  0.31% avg win  1.99 loss -4.37 worst5% -5.6%
+   SPY 5d below -4%               n=  245 win  71.8% avg  0.40% avg win  1.86 loss -3.31 worst5% -4.0%
+   SPY above 200d                 n= 5749 win  74.4% avg  0.31% avg win  1.82 loss -4.05 worst5% -5.1%
+   SPY below 200d                 n= 1106 win  77.7% avg  0.71% avg win  2.09 loss -4.09 worst5% -4.7%
+   SPY ATR% <= median (1.09%)     n= 3469 win  75.4% avg  0.31% avg win  1.75 loss -4.10 worst5% -5.2%
+   SPY ATR% > median              n= 3386 win  74.4% avg  0.45% avg win  1.98 loss -4.01 worst5% -5.0%
+  sizing x1 / x1.5 (drop<=-2.5%) / x2 (drop<=-4%): equal-weight avg 0.38% vs weighted 0.37% (train 0.44, test 0.30); sizing does not change the win rate
