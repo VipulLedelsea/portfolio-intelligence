@@ -93,4 +93,18 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(ai.items.first?.rrT1, 0.5)
         XCTAssertEqual(ai.items.first?.bars?.count, 1)
     }
+
+    func testRankedIdeaDecodesInformationOnlyChartLabels() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let item = #"{"strategy":"SUPERTREND","symbol":"AAA","company":"A Co","sector":"Tech","direction":"LONG","price":101,"entry":100,"stop":94,"target_1":null,"target_2":null,"atr":2.5,"atr_pct":2.5,"volume_ratio":null,"age_days":0,"scanner_score":80,"tag":"Supertrend","detail":"Strong fresh long entry","exit_rule":"x","alignment_score":100,"alignment_note":"n","currency_symbol":"$","price_decimals":2,"id":"SUPERTREND:AAA:LONG","evidence":{"label":"Supertrend","n":503,"win_rate_pct":45,"avg_win_pct":11.3,"avg_loss_pct":-6.2,"ev_pct":1.61,"experimental":false,"note":"n"},"scanner_rank_in_list":1,"stop_pct":6,"stop_atr":2.4,"rr_t1":null,"rr_t2":null,"from_entry_atr":0.4,"stop_hit":false,"rules_score":81.3,"crowded":false,"rank":1,"score":81.3,"confidence":"High","reason":"r","sources":["rules"]"#
+        let labelled = try decoder.decode(RankedIdea.self, from: Data((item + #","chart_pattern":"Bull flag","chart_pattern_days_ago":1,"prior_run_up":true,"market_regime":"CORRECTION","spy_below_high_pct":7.4}"#).utf8))
+        XCTAssertEqual(labelled.chartPattern, "Bull flag")
+        XCTAssertEqual(labelled.labelChips, ["Bull flag · 1d ago", "Ran up 20%+ first", "Market in correction"])
+        let today = try decoder.decode(RankedIdea.self, from: Data((item + #","chart_pattern":"Flat base","chart_pattern_days_ago":0,"prior_run_up":false,"market_regime":"NEAR_HIGHS"}"#).utf8))
+        XCTAssertEqual(today.labelChips, ["Flat base · today", "Market near highs"])
+        let old = try decoder.decode(RankedIdea.self, from: Data((item + "}").utf8))
+        XCTAssertNil(old.chartPattern)
+        XCTAssertTrue(old.labelChips.isEmpty, "an older payload without labels shows no chips")
+    }
 }

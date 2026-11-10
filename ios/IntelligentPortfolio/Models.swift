@@ -285,6 +285,30 @@ struct RankedIdea: Decodable, Identifiable, Hashable, Sendable {
     let market: String?
     let debate: Debate?
     let bars: [DailyBar]?
+    /// Information-only chart labels on US long Supertrend ideas. No score, stop or exit uses them.
+    let chartPattern: String?
+    let chartPatternDaysAgo: Int?
+    let priorRunUp: Bool?
+    let marketRegime: String?
+    let spyBelowHighPct: Double?
+}
+
+extension RankedIdea {
+    /// Short chips for the information-only labels, in the order they are shown.
+    var labelChips: [String] {
+        var chips: [String] = []
+        if let pattern = chartPattern {
+            let days = chartPatternDaysAgo ?? 0
+            chips.append(days == 0 ? "\(pattern) · today" : "\(pattern) · \(days)d ago")
+        }
+        if priorRunUp == true { chips.append("Ran up 20%+ first") }
+        switch marketRegime {
+        case "CORRECTION": chips.append("Market in correction")
+        case "NEAR_HIGHS": chips.append("Market near highs")
+        default: break
+        }
+        return chips
+    }
 }
 
 /// The third scanner mode (experimental): candlestick patterns on a breakout or breakdown day.

@@ -784,6 +784,66 @@ function candlePatternInputs(daily) {
   };
 }
 
+// Information-only chart labels for Supertrend ideas: a classic chart pattern whose breakout happened in the last few sessions, and whether the stock
+// had already run up 20% or more. They do NOT change a score, a stop, an exit or which ideas are listed, and they are not sent to the ranking agent.
+// Detectors are the ones in research/pattern-backtest/backtest27.mjs (bull flag, flat base, cup and handle, ascending triangle; the double bottom was left out because it matched a quarter of all flips and never beat its control). In that
+// test, with a pattern-based stop, none lifted the win rate toward a high level, and most of the bull flag's edge was the prior surge, so the live track
+// record is what will say whether any label matters. The label is stored with each logged pick (pickFeatures) for that purpose.
+const CHART_LABEL_LOOKBACK = 3, CHART_LABEL_MIN_BARS = 130;
+function chartLabelInputs(daily) {
+  const n = daily.length;
+  if (n < CHART_LABEL_MIN_BARS) return null;
+  const h = daily.map(bar => bar.high), l = daily.map(bar => bar.low), c = daily.map(bar => bar.close), v = daily.map(bar => bar.volume);
+  const hi = (i, j) => { let m = -Infinity; for (let k = i; k <= j; k++) if (h[k] > m) m = h[k]; return m; };
+  const lo = (i, j) => { let m = Infinity; for (let k = i; k <= j; k++) if (l[k] < m) m = l[k]; return m; };
+  const pivotLows = [], pivotHighs = [];
+  for (let i = 3; i < n - 3; i++) {
+    let isLow = true, isHigh = true;
+    for (let k = 1; k <= 3; k++) {
+      if (!(l[i] < l[i - k] && l[i] < l[i + k])) isLow = false;
+      if (!(h[i] > h[i - k] && h[i] > h[i + k])) isHigh = false;
+    }
+    if (isLow) pivotLows.push(i);
+    if (isHigh) pivotHighs.push(i);
+  }
+  const detect = t => {
+    // Cup and handle: a 15-35% cup, then a shallow handle, closing above the handle high.
+    const cupLeft = hi(t - 100, t - 30); let leftIndex = t - 100;
+    for (let k = t - 100; k <= t - 30; k++) if (h[k] === cupLeft) { leftIndex = k; break; }
+    const cupBottom = lo(leftIndex, t - 8), cupDepth = 1 - cupBottom / cupLeft, handleHigh = hi(t - 12, t - 1), handleLow = lo(t - 12, t - 1);
+    if (cupDepth >= 0.15 && cupDepth <= 0.35 && handleHigh >= 0.95 * cupLeft && (handleHigh - handleLow) / handleHigh <= 0.12 && c[t] > handleHigh && c[t - 1] <= handleHigh) return "Cup and handle";
+    // Bull flag: a pole of 20% or more, then a tight 3 to 10 session flag, closing above the flag high.
+    for (let flag = 3; flag <= 10; flag++) {
+      const flagHigh = hi(t - flag, t - 1), flagLow = lo(t - flag, t - 1), poleLow = lo(t - flag - 15, t - flag), poleHigh = hi(t - flag - 15, t - flag), pole = poleHigh - poleLow;
+      if (pole / poleLow >= 0.20 && flagHigh - flagLow <= 0.5 * pole && flagLow >= poleHigh - 0.5 * pole && c[t] > flagHigh && c[t - 1] <= flagHigh) return "Bull flag";
+    }
+    // Flat base: a 25-session range within 12%, closing above it on volume 1.3x the 50-day average.
+    const baseHigh = hi(t - 25, t - 1), baseLow = lo(t - 25, t - 1), volumeAverage = mean(v.slice(t - 50, t));
+    if ((baseHigh - baseLow) / baseHigh <= 0.12 && c[t] > baseHigh && c[t - 1] <= baseHigh && volumeAverage > 0 && v[t] >= 1.3 * volumeAverage) return "Flat base";
+    // Ascending triangle: two or more flat highs, rising lows, closing above the flat top.
+    const highs = pivotHighs.filter(i => i + 3 <= t && i >= t - 40), lows = pivotLows.filter(i => i + 3 <= t && i >= t - 40);
+    if (highs.length >= 2 && lows.length >= 2) {
+      const top = Math.max(...highs.map(i => h[i]));
+      if (highs.every(i => Math.abs(h[i] / top - 1) <= 0.015) && l[lows.at(-1)] > l[lows[0]] * 1.01 && c[t] > top && c[t - 1] <= top) return "Ascending triangle";
+    }
+    return null;
+  };
+  let pattern = null, daysAgo = null;
+  for (let back = 0; back < CHART_LABEL_LOOKBACK && !pattern; back++) { pattern = detect(n - 1 - back); if (pattern) daysAgo = back; }
+  const runUp = hi(n - 26, n - 1) / lo(n - 26, n - 1) - 1;
+  return { pattern, days_ago: daysAgo, prior_run_up: runUp >= 0.20 };
+}
+
+// The market label: SPY at least 5% below its 252-session high is a "correction". In backtests (research/pattern-backtest/README.md, backtest26) Supertrend
+// flips that started in such a market did much better than flips with the market near its highs, but from only a few market episodes.
+const MARKET_CORRECTION_PCT = 5;
+function marketRegimeLabel(spy) {
+  const close = numeric(spy?.recent_daily?.at(-1)?.c), high = numeric(spy?.high_252);
+  if (!(close > 0) || !(high > 0)) return null;
+  const below = round((1 - close / high) * 100, 1);
+  return { regime: below >= MARKET_CORRECTION_PCT ? "CORRECTION" : "NEAR_HIGHS", spy_below_high_pct: Math.max(0, below) };
+}
+
 // Chart reference lines, shown beside the stop and targets so a position can be read against the chart. They do not set any
 // level: backtests (research/pattern-backtest, ml_chart.py) found swing-low stops and prior-high targets did worse than ATR levels.
 function chartRefs(closes, daily) {
@@ -841,6 +901,8 @@ function snapshotFromPayload(symbol, dailyItem, signalItem, quote, market = MARK
     atr_14_pct: round(atr14 / price * 100, 3),
     dip: dipInputs(closes, daily),
     pattern: candlePatternInputs(daily),
+    chart_label: chartLabelInputs(daily),
+    high_252: round(Math.max(...highs.slice(-252)), 4),
     recent_daily: daily.slice(-12).map(bar => ({ d: String(bar.date).slice(0, 10), h: bar.high, l: bar.low, c: bar.close })),
     chart_refs: chartRefs(closes, daily),
     chart_daily: daily.slice(-60).map(bar => ({ d: String(bar.date).slice(0, 10), o: bar.open, h: bar.high, l: bar.low, c: bar.close })),
@@ -1568,6 +1630,8 @@ function pickFeatures(item, marketState) {
     from_entry_atr: item.from_entry_atr ?? null, stop_pct: item.stop_pct ?? null, rr_t1: item.rr_t1 ?? null, alignment: item.alignment_score ?? null, age_days: item.age_days ?? null,
     volume_ratio: item.volume_ratio ?? null, atr_pct: item.atr_pct ?? null, crowded: item.crowded === true, market_state: marketState || null,
     earnings_in_days: f?.earnings_in_days ?? null, cautions: (f?.cautions || []).length,
+    // Information-only labels, stored so the live track record can show whether they matter. No rule or score reads them.
+    chart_pattern: item.chart_pattern ?? null, prior_run_up: item.prior_run_up === true, market_regime: item.market_regime ?? null,
   };
 }
 
@@ -1842,8 +1906,9 @@ function rankRulesReason(item) {
   return parts.join(" · ");
 }
 
-function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, marketId = "US", filings = new Map(), learnedRules = [] }) {
+function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, marketId = "US", filings = new Map(), learnedRules = [], spy = null }) {
   const marketState = trend?.state || "UNKNOWN";
+  const regime = marketId === "US" ? marketRegimeLabel(spy) : null;
   const agrees = direction => marketState === "UP" ? (direction === "LONG" ? 100 : 25) : marketState === "DOWN" ? (direction === "SHORT" ? 100 : 25) : 55;
   const raw = [];
   for (const c of candidates || []) {
@@ -1862,6 +1927,12 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
       alignment_score: Math.round((agrees(c.direction) + (c.daily_aligned && c.daily_adx >= 20 ? 100 : 40)) / 2),
       alignment_note: `Daily Supertrend ${c.daily_supertrend_direction}, daily ADX ${c.daily_adx}${c.daily_adx_rising ? " and rising" : ""}; market ${marketState.toLowerCase()}.`,
       currency_symbol: c.currency_symbol, price_decimals: c.price_decimals,
+      // Information-only labels (US long ideas): not used by any score, filter or exit.
+      ...(us && c.direction === "LONG" ? {
+        chart_pattern: snapshots?.get(c.symbol)?.chart_label?.pattern ?? null, chart_pattern_days_ago: snapshots?.get(c.symbol)?.chart_label?.days_ago ?? null,
+        prior_run_up: snapshots?.get(c.symbol)?.chart_label?.prior_run_up === true,
+        market_regime: regime?.regime ?? null, spy_below_high_pct: regime?.spy_below_high_pct ?? null,
+      } : {}),
     });
   }
   if (dipScan?.available && dipScan.gate?.open) {
@@ -2380,11 +2451,11 @@ async function discover(market = MARKETS.US, env = {}, previous = null) {
   const patternScan = market.id === "US" ? buildPatternScan(snapshots, metadata) : null;
   const candidates = allCandidates.filter(candidate => candidate.entry_eligible);
   const learnedRules = await loadActiveLearnedRules(env);
-  let ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id, learnedRules });
+  let ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id, learnedRules, spy: indexSnapshots.get("SPY") });
   if (market.id === "US" && ranking.items.length) {
     // Second pass with the SEC filing flags for the ideas that survived the first one.
     const filings = await loadFilingFlags(env, [...new Set(ranking.items.map(item => item.symbol))]);
-    if (filings.size) ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id, filings, learnedRules });
+    if (filings.size) ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id, filings, learnedRules, spy: indexSnapshots.get("SPY") });
   }
   const lateCandidates = allCandidates.filter(candidate => !candidate.entry_eligible);
   // When each fresh setup was first seen. There is no closing time: a setup leaves the list when its price runs away or the trend fails, not when time runs out.
