@@ -1,0 +1,39 @@
+candidate setups: 98415 (pivot support 76027, Supertrend-line support 22388)
+
+configurations tried (n>=200): 278
+
+== highest win rate with avg > 0 on BOTH halves ==
+stline <=1ATR bounce touches>=1 ST<=10d target 0.75R               n=  441 win  60.1% avg  0.05% (win 1.7, loss -2.4) risk 2.3% | train 59/0.09 test 61/0.02
+stline <=1ATR bounce touches>=1 ST<=10d target resistance          n=  432 win  49.8% avg  0.03% (win 2.4, loss -2.3) risk 2.2% | train 49/0.04 test 51/0.03
+stline <=1ATR touches>=1 ST<=10d target 1.5R                       n= 1821 win  45.2% avg  0.15% (win 3.5, loss -2.7) risk 2.5% | train 46/0.19 test 45/0.10
+stline <=1ATR touches>=1 ST<=10d target resistance (res>=1R)       n= 1221 win  40.5% avg  0.11% (win 3.5, loss -2.2) risk 2.0% | train 42/0.22 test 39/0.00
+stline <=1ATR touches>=1 ST<=10d target 2R                         n= 1821 win  39.7% avg  0.21% (win 4.6, loss -2.7) risk 2.5% | train 40/0.25 test 39/0.18
+stline <=0.5ATR touches>=1 ST<=10d target 2R                       n=  822 win  37.8% avg  0.10% (win 3.6, loss -2.0) risk 1.8% | train 39/0.18 test 37/0.01
+pivot <=1ATR bounce touches>=2 ST<=10d target 2R                   n= 2982 win  37.7% avg  0.07% (win 3.4, loss -1.9) risk 1.7% | train 38/0.10 test 37/0.04
+pivot <=1ATR touches>=3 ST<=10d target 2R                          n= 1754 win  36.6% avg  0.06% (win 3.6, loss -2.0) risk 1.8% | train 36/0.01 test 37/0.10
+
+== win rate >= 70% (any profit) ==
+stline <=1ATR bounce touches>=1 ST<=10d target 0.25R               n=  441 win  73.9% avg -0.18% (win 0.4, loss -1.9) risk 2.3% | train 72/-0.15 test 75/-0.22
+stline <=1ATR touches>=1 ST<=10d target 0.25R                      n= 1821 win  74.6% avg -0.23% (win 0.5, loss -2.3) risk 2.5% | train 74/-0.22 test 75/-0.25
+stline <=1ATR bounce touches>=1 target 0.25R                       n= 3060 win  71.7% avg -0.27% (win 0.4, loss -2.0) risk 2.1% | train 72/-0.26 test 71/-0.29
+stline <=1ATR touches>=1 target 0.25R                              n= 9824 win  70.8% avg -0.32% (win 0.4, loss -2.2) risk 2.3% | train 72/-0.27 test 70/-0.38
+
+== highest win rate regardless of profit ==
+stline <=1ATR touches>=1 ST<=10d target 0.25R                      n= 1821 win  74.6% avg -0.23% (win 0.5, loss -2.3) risk 2.5% | train 74/-0.22 test 75/-0.25
+stline <=1ATR bounce touches>=1 ST<=10d target 0.25R               n=  441 win  73.9% avg -0.18% (win 0.4, loss -1.9) risk 2.3% | train 72/-0.15 test 75/-0.22
+stline <=1ATR bounce touches>=1 target 0.25R                       n= 3060 win  71.7% avg -0.27% (win 0.4, loss -2.0) risk 2.1% | train 72/-0.26 test 71/-0.29
+stline <=1ATR touches>=1 target 0.25R                              n= 9824 win  70.8% avg -0.32% (win 0.4, loss -2.2) risk 2.3% | train 72/-0.27 test 70/-0.38
+stline <=1ATR bounce touches>=1 ST<=10d target 0.5R                n=  441 win  69.2% avg  0.01% (win 1.1, loss -2.3) risk 2.3% | train 68/0.08 test 70/-0.04
+stline <=1ATR touches>=1 ST<=10d target 0.5R                       n= 1821 win  67.2% avg -0.08% (win 1.1, loss -2.5) risk 2.5% | train 67/-0.09 test 68/-0.07
+stline <=1ATR bounce touches>=1 target 0.5R                        n= 3060 win  65.4% avg -0.15% (win 1.0, loss -2.3) risk 2.1% | train 67/-0.13 test 64/-0.19
+pivot <=1ATR touches>=1 target 0.25R                               n=24178 win  65.2% avg -0.35% (win 0.4, loss -1.7) risk 1.9% | train 66/-0.31 test 64/-0.40
+
+== best average return with test-half win >= 60% ==
+stline <=1ATR bounce touches>=1 ST<=10d target 0.75R               n=  441 win  60.1% avg  0.05% (win 1.7, loss -2.4) risk 2.3% | train 59/0.09 test 61/0.02
+stline <=1ATR bounce touches>=1 ST<=10d target 0.5R                n=  441 win  69.2% avg  0.01% (win 1.1, loss -2.3) risk 2.3% | train 68/0.08 test 70/-0.04
+stline <=1ATR touches>=1 ST<=10d target 0.5R                       n= 1821 win  67.2% avg -0.08% (win 1.1, loss -2.5) risk 2.5% | train 67/-0.09 test 68/-0.07
+stline <=1ATR bounce touches>=1 target 0.5R                        n= 3060 win  65.4% avg -0.15% (win 1.0, loss -2.3) risk 2.1% | train 67/-0.13 test 64/-0.19
+stline <=1ATR bounce touches>=1 ST<=10d target 0.25R               n=  441 win  73.9% avg -0.18% (win 0.4, loss -1.9) risk 2.3% | train 72/-0.15 test 75/-0.22
+stline <=1ATR touches>=1 ST<=10d target 0.25R                      n= 1821 win  74.6% avg -0.23% (win 0.5, loss -2.3) risk 2.5% | train 74/-0.22 test 75/-0.25
+stline <=1ATR touches>=1 target 0.5R                               n= 9824 win  63.5% avg -0.23% (win 1.1, loss -2.5) risk 2.3% | train 64/-0.20 test 62/-0.27
+pivot <=1ATR touches>=1 ST<=10d target 0.5R                        n= 8482 win  61.8% avg -0.24% (win 0.9, loss -2.0) risk 1.9% | train 62/-0.21 test 61/-0.27

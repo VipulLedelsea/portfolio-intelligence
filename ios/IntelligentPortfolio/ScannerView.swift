@@ -712,6 +712,23 @@ private func scannerTint(_ strategy: String) -> Color {
     }
 }
 
+/// Neutral, wrapping chips for the information-only chart labels (pattern, prior run-up, market state).
+private struct LabelChips: View {
+    let chips: [String]
+    var body: some View {
+        if !chips.isEmpty {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 6, alignment: .leading)], alignment: .leading, spacing: 4) {
+                ForEach(chips, id: \.self) { chip in
+                    Text(chip).font(.caption2).foregroundStyle(AppTheme.muted).lineLimit(1)
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .overlay(Capsule().stroke(AppTheme.muted.opacity(0.4), lineWidth: 0.5))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+}
+
 private struct RankedRow: View {
     let idea: RankedIdea
     private func money(_ value: Double) -> String { PriceFormat.string(value, prefix: idea.currencySymbol, decimals: idea.priceDecimals) }
@@ -728,6 +745,7 @@ private struct RankedRow: View {
                     Text(long ? "Long" : "Short").font(.caption2.weight(.semibold)).foregroundStyle(long ? AppTheme.mint : AppTheme.red)
                 }
                 Text(idea.reason).font(.caption).foregroundStyle(AppTheme.muted).fixedSize(horizontal: false, vertical: true)
+                LabelChips(chips: idea.labelChips)
                 Text("Score \(Int(idea.score)) · \(idea.confidence) confidence").font(.caption2.weight(.semibold)).foregroundStyle(idea.confidence == "High" ? AppTheme.mint : AppTheme.muted)
                 if let range = idea.buyRange { BuyRangeBar(range: range, currency: idea.currencySymbol, decimals: idea.priceDecimals) }
             }
@@ -784,6 +802,13 @@ private struct RankedDetailSheet: View {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("\(idea.company) · \(idea.tag) · \(long ? "Long" : "Short")").font(.subheadline).foregroundStyle(AppTheme.muted)
                     Text(idea.reason).font(.callout)
+                    if !idea.labelChips.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            LabelChips(chips: idea.labelChips)
+                            Text("Chart labels are for information only. They do not change the score, stop or exit, and backtests found no reliable edge from them; the live track record will show whether they matter.")
+                                .font(.caption2).foregroundStyle(AppTheme.muted).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                     if candles.count > 1 {
                         CandlestickChart(series: candles,
                                          levels: ScenarioLevels(reference: idea.entry, current: idea.price, risk: idea.stop, target1: chartTarget1, target2: chartTarget2),

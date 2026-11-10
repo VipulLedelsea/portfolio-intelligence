@@ -1,0 +1,6 @@
+flips replayed: 5971
+HOLD to the line:       wins 38.2%  losses 58.2%  avg 1.34% (win 13.0 / loss -6.2)
+WORKER profit lock:     wins 61.3%  losses 36.2%  avg 1.02% (win 6.0 / loss -7.3)
+  early half:           wins 62.4%  losses 35.4%  avg 1.35% (win 6.0 / loss -6.7)   (hold wins 41.9%  losses 54.4%  avg 1.72% (win 11.5 / loss -5.7))
+  late half:            wins 59.9%  losses 37.1%  avg 0.60% (win 5.9 / loss -8.0)   (hold wins 33.5%  losses 63.0%  avg 0.87% (win 15.3 / loss -6.7))
+Backtest reference (backtest36: up 3% -> stop to entry +1%): wins 61.8%, losses 35.6%, avg +1.17%; early +1.47 / late +0.78; hold wins 38.7%, avg +1.45%

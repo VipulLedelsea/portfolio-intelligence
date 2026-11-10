@@ -1,0 +1,45 @@
+APP-GATED flips: 304 stocks traded, 470 trades; stocks with ZERO wins: 139 (46%); of those with 2+ gated trades: 27
+ALL daily flips: 527 stocks, 5971 trades; stocks with ZERO wins: 19; with 3+ flips: 8; with 5+ flips: 4
+
+== zero wins on ALL flips, 5+ flips (never produced a win), worst average first ==
+  VFC    (former member)          trades  6  wins 0  avg -10.87%  worst  -19.7%  last flip 2024-01-30
+  FMC    (former member)          trades 11  wins 0  avg  -9.46%  worst  -33.4%  last flip 2025-03-10
+  WHR    (former member)          trades  6  wins 0  avg  -5.66%  worst   -9.2%  last flip 2023-12-15
+  EG     Financials               trades 18  wins 0  avg  -5.25%  worst   -8.8%  last flip 2026-04-15
+
+== zero wins on ALL flips, 3 to 4 flips ==
+  SEDG   (former member)          trades  4  wins 0  avg -15.44%  worst  -17.9%  last flip 2023-12-15
+  COIN   Financials               trades  3  wins 0  avg  -9.36%  worst  -17.1%  last flip 2026-04-17
+  AAP    (former member)          trades  3  wins 0  avg  -5.12%  worst   -8.5%  last flip 2023-04-03
+  WDAY   Information Technology   trades  4  wins 0  avg  -4.59%  worst   -7.1%  last flip 2025-08-19
+
+== zero wins on APP-GATED flips with 2+ gated trades ==
+  LW     (former member)          trades  3  wins 0  avg -14.91%  worst  -23.4%  last flip 2025-09-02
+  HSY    Consumer Staples         trades  2  wins 0  avg -10.69%  worst  -14.1%  last flip 2024-12-10
+  FTV    Industrials              trades  2  wins 0  avg  -8.59%  worst   -8.6%  last flip 2026-02-05
+  TECH   Health Care              trades  3  wins 0  avg  -8.14%  worst  -11.6%  last flip 2024-10-31
+  INTU   Information Technology   trades  2  wins 0  avg  -7.92%  worst  -12.5%  last flip 2025-07-28
+  POOL   (former member)          trades  2  wins 0  avg  -6.60%  worst   -9.0%  last flip 2025-03-10
+  QCOM   Information Technology   trades  2  wins 0  avg  -6.47%  worst  -12.8%  last flip 2025-10-28
+  MSCI   Financials               trades  2  wins 0  avg  -6.10%  worst   -8.4%  last flip 2025-10-29
+  TRV    Financials               trades  2  wins 0  avg  -5.90%  worst   -8.6%  last flip 2024-11-18
+  ITW    Industrials              trades  2  wins 0  avg  -5.67%  worst   -8.4%  last flip 2024-07-15
+  KMB    Consumer Staples         trades  2  wins 0  avg  -5.50%  worst   -7.5%  last flip 2025-08-05
+  PFE    Health Care              trades  2  wins 0  avg  -5.10%  worst   -5.9%  last flip 2025-01-07
+  KR     Consumer Staples         trades  2  wins 0  avg  -4.89%  worst   -6.9%  last flip 2025-06-23
+  WM     Industrials              trades  2  wins 0  avg  -4.78%  worst   -5.4%  last flip 2025-04-04
+  EG     Financials               trades  2  wins 0  avg  -4.73%  worst   -7.5%  last flip 2023-11-27
+  CMCSA  Communication Services   trades  3  wins 0  avg  -4.72%  worst  -11.5%  last flip 2026-04-24
+  JCI    Industrials              trades  3  wins 0  avg  -4.70%  worst   -6.2%  last flip 2025-02-06
+  NWSA   Communication Services   trades  2  wins 0  avg  -4.51%  worst   -5.2%  last flip 2025-08-25
+  AIZ    Financials               trades  2  wins 0  avg  -4.40%  worst   -4.8%  last flip 2025-10-03
+  L      Financials               trades  2  wins 0  avg  -4.09%  worst   -4.8%  last flip 2024-08-29
+  NEE    Utilities                trades  2  wins 0  avg  -3.84%  worst   -4.2%  last flip 2025-01-17
+  STE    Health Care              trades  3  wins 0  avg  -3.68%  worst   -5.7%  last flip 2025-11-07
+  AMCR   Materials                trades  2  wins 0  avg  -3.39%  worst   -6.5%  last flip 2026-02-05
+  PSA    Real Estate              trades  2  wins 0  avg  -3.35%  worst   -5.2%  last flip 2025-10-13
+  MAS    Industrials              trades  2  wins 0  avg  -2.94%  worst   -5.7%  last flip 2024-11-26
+  BRK.B  Financials               trades  2  wins 0  avg  -2.50%  worst   -4.0%  last flip 2026-02-04
+  ALL    Financials               trades  2  wins 0  avg  -2.12%  worst   -3.3%  last flip 2025-08-06
+
+wrote stocks_no_wins.csv (831 rows, both views, sorted weakest first)

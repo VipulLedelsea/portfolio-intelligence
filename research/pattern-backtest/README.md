@@ -253,3 +253,216 @@ Does a report inside the hold hurt? Robinhood's earnings feed only holds about t
 - **Share of trades flagged:** about 7% of 5-day dips and 14% of 10-day dips and sharp dips.
 - **What it means:** an earnings flag is a tail-risk control, not an edge. It does not show that skipping those trades raises the average. Small samples (31 to 142 flagged trades in the sharp and gated rows), one rising-market window, overlapping trades.
 - **Not tested:** Supertrend (about 34 days held, so most trades span a report) and the pattern scan.
+
+### Swing Exhaustion Fade: learned odds and liquidity sweep (backtest12.mjs, 2026-11-10)
+
+`node backtest12.mjs` (output in `backtest12.out`). Idea from a TradingView script: a causal 2.5 ATR zigzag; every bar of a live down-leg is filed by retracement depth (tenths of k) and swing size (ATR); once the leg is confirmed each bar is labelled "was the low already in". Odds = smoothed hit rate (neighbouring depth bins at half weight), reported also as a Wilson lower bound. Pooled across the point-in-time S&P 500, using only legs confirmed strictly before the signal date (no lookahead); predictions start 2022-11-18 after 3,000 labels. Sweep flag = the leg's low went under the previous confirmed swing low (within 120 bars) and the close is back above it. Long only, next-open entry, 0.1% per side.
+
+- **The odds are honest.** Predicted vs actual "low already in" by quintile: 35/35, 42/43, 45/43, 52/51, 62/61 percent (n = 12,725 setup bars).
+- **They do not predict returns.** Setup bars (35-80% retrace, swing >= 2 ATR) averaged -0.06% over 5 days vs -0.02% for any stock-day. Top-third odds: -0.00% to +0.07%; bottom third: -0.05% to -0.14%; every edge over the unfiltered setup had |t| under 1. Wilson >= 0.60 (9.7% of setups) was -0.19% on the 5-day hold.
+- **Overlay on the current dip entry:** no help. Above-median odds left only 66 of 1,617 dip trades and did not beat the rest (+0.17% vs +0.34%); the sweep flag (175 trades) was flat to worse (-0.51% vs +0.46% on the 10-day exit, t about 0).
+- **Why:** "the low is probably in" is mostly a statement about the swing's shape, and the dip entry (RSI2 < 5, -5% in 3 days) already picks the washed-out moment; odds high enough to clear 60% are rare and mostly outside it.
+- **Decision:** not added to ranking. Not tested: per-stock odds tables (too few swings per stock in four years), shorts, intraday swings.
+
+### Swing odds as a filter on the app's own ideas (backtest13.mjs, 2026-11-10)
+
+`node backtest13.mjs` (output in `backtest13.out`). Same learned-odds table as backtest12 but learned for both legs (down-leg: odds the low is in; up-leg: odds the high is in, flipped so high = good for a long). Applied to the three long ideas the ranking feeds the agent: Supertrend flip + ADX (n = 307), DIP (RSI2 < 10, n = 9,379) and DIP_SHARP (n = 1,422), on a 5-day hold and on 10 days with a 2 ATR stop and target. Question: does the swing score, or the sweep flag, tell the agent which ideas will lose?
+
+- **No separation.** AUC for ranking winners above losers is 0.46 to 0.51 for the swing score and 0.49 to 0.51 for the sweep flag (0.50 = nothing). The existing features (RSI2, extension below the 20-day average) are no better, 0.49 to 0.56.
+- **Rejecting the worst-scoring third** removes 27% to 35% of the worst-20% trades, which is what random removal gives (33%). The average return of kept trades moved from -0.07% to +0.13% (Supertrend, 5d) and fell from 0.42% to 0.25% (DIP_SHARP, 10d); all within noise, with the removed group's sign flipping between halves.
+- **Wrong direction where it is significant.** On Supertrend flips (10d), ideas in an exhausted up-leg did better than fresh ones (+0.41% vs -0.05%, weekly t -2.7): momentum continued. DIP_SHARP with a sweep did worse (-0.44% vs +0.52%, n = 144, t -0.3).
+- **Decision:** not given to the ranking agent. Caveat: this tests whether the number separates outcomes, not the model's wording; a feature with AUC near 0.50 gives the agent nothing to act on.
+
+### Win-rate research: indicator combinations and the win-rate / profit trade-off (backtest14 to 17, 2026-11-10)
+
+Rows = every up-trend day (daily Supertrend up, ADX >= 20 and rising; every 3rd day, plus every fresh flip), 25,947 rows and 475 fresh flips, point-in-time S&P 500, entry next open, 0.1% per side. 67 indicator conditions (trend, location, momentum, relative strength, volatility, volume, candle, SPY regime, breadth, sector). Train = before 2024-11-05, test = after. Scripts: `lib14.mjs`, `backtest14.mjs` to `backtest17.mjs`, outputs `backtest14.out` to `backtest17.out`.
+
+- **Baselines:** fresh flips 44.6% wins, +2.14% per trade (train 50.6% / +2.85%, test 38.1% / +1.36%). All up-trend rows 36.4% wins, +0.59%. The flips' own win rate fell in the second half.
+- **Single indicators:** none lifts the win rate by a stable amount. The best ones (extended 3+ ATR above the 20-day average, RSI2 > 80, RSI14 > 60) add 1 to 5 points in both halves; most flip sign between halves.
+- **Exhaustive search (backtest16):** 672,641 pair / triple / quad combinations. Picked on train, the top 200 had +11.3 points of win-rate lift (current exit), +8.4 (stop 15% / target 5%) and +12.8 (stop 12% / target 10%); on the holdout the same combos averaged +1.6, -4.1 and -3.2 points. Only 3% to 4% of them stayed above baseline on the two stop/target exits. That is selection bias, not signal: no combination of these indicators reliably raises the win rate.
+- **What does move win rate is the exit, and it moves profit the other way (backtest14, 15, 17).** Fresh flips, all rows:
+
+| Exit | Win rate | Avg per trade | Note |
+|---|---|---|---|
+| Supertrend line only (current) | 44.6% (36.4%) | +2.14% (+0.59%) | big winners, small losers |
+| Hard stop -12%, target +10% | 62.7% | +1.64% | wins up 18 pts for -0.5 pts of profit (backtest14, flips only; half-split not shown) |
+| Stop -20%, target +12% | 65.9% (64.3%) | +1.85% (+1.88%) | all rows positive in both halves; flips test half -1.21% |
+| Stop -20%, target +5% | 81.3% (80.9%) | +0.85% (+1.04%) | wins 74% / avg negative in the flips' test half |
+| Stop -20%, target +3% or +4% | 85% to 88% | +0.42% to +0.69% (all rows +0.6% to +0.85%) | 85% is reachable, with 20% stops and tiny wins; flips test half -0.9% to -1.1% |
+| Sell half at +4%, rest to the line, break-even | 67.8% (61.1%) | +0.63% (+0.30%) | flips test half -0.76% |
+| Sell half at +3%, rest to break-even | 74.5% (67.5%) | +0.38% (+0.24%) | flips test half -0.85% |
+
+- **Reading:** 85% wins is reachable only by letting losses grow (stop 15% to 20%) and capping wins at +3% to +4%; expectancy falls to under +1% per trade and turns negative in the 2024-11 to 2026-11 flips. A 60% to 65% win rate keeps roughly +1.6% to +1.9% per trade (stop 12% to 20%, target 10% to 12%) but the wide stops are a risk-sizing decision, and the flips' recent half is weaker for every variant. Break-even locks and ATR trails lowered win rate or profit; time stops lifted wins to 54% to 56% but cut profit to +0.2% to +0.55%.
+- **Caveats:** exits were chosen on the same flips (in-sample for the flip numbers; the all-rows numbers are the larger check); overlapping rows; one mostly rising market; 475 flips give a win-rate standard error of about 2.3 points.
+
+### Tight stops: high win rate with a small stop (backtest18.mjs, 2026-11-10)
+
+Owner constraint: keep the stop small too. 117,846 member stock-days (every 4th day, any trend state), 10-day hold, stop 1 to 2 ATR (average ATR is 2.6% of price, so 2 ATR is about 5.2%), target 0.5 to 1 ATR, entry next open, 0.1% per side. 79 conditions (67 trend / momentum / volume / regime ones plus dip and market-stress ones), all singles, pairs and triples (82,239 combos); chosen on train (< 2024-11-05), judged on test.
+
+- **Baseline by geometry alone:** stop 2 ATR / target 0.5 ATR wins 79% to 81% but averages 0.00% (train) and -0.06% (test). The win rate comes from the tiny target, not from the entry, and costs eat the profit.
+- **Picked combos fall back on the holdout:** the top 400 by train win rate went from 84.2% to 78.8% (stop 2 / target 0.5), 71.3% to 65.8% (2 / 1), 73.4% to 68.0% (1.5 / 0.75). Selection bias again.
+- **One family survived:** a pullback inside an up-trend while SPY is down 1.5% or more over 5 days (e.g. ROC5 < 0 + Supertrend up + SPY 5d <= -1.5%). Stop 2 ATR / target 1 ATR: train 74.0% / +0.72%, test 70.5% / +0.36% (n 2,234); stop 1.5 / target 0.75: test 72.7% / +0.22%. This is the market-stress dip scan the app already runs.
+- **Result:** with a stop near 5%, about 70% to 73% wins at +0.2% to +0.4% per trade is the robust ceiling here. 78% to 80% is reachable but earns about zero. 85% with profit was not found, and nothing here reaches the +1.7% per trade of the Supertrend book.
+
+### IBD-style sell rules (backtest19.mjs, 2026-11-10)
+
+The investors.com "taking profits" page could not be opened from here (fetch and the in-app browser both blocked), so the rules tested come from background knowledge of IBD's method: cut losses at 7% to 8%, sell at +20% to +25%, and the 8-week rule (a +20% gain within 3 weeks of the buy point means hold at least 8 weeks). Fresh flips (475) and all up-trend rows; entry next open, 0.1% per side.
+
+- **Win rate did not move:** 38.5% to 44.6% on the flips (current exit 44.6%). A 7% to 8% stop with no line exit costs wins at -7% and ties at -8%.
+- **Profit:** +2.21% to +2.80% per trade full-sample (current +2.14%), but the 2024-11 to 2026-11 half fell to -0.5% to +0.3% (first half +4.0% to +5.8%). Stop -8% with the Supertrend line instead of the +20% to +25% target: +1.89%, test half +1.09%.
+- **8-week rule:** adds +0.0 to +0.12 points to the average and changes no win rate; not distinguishable from noise.
+- **Decision:** no change. The numbers above are from the rules as I understand them; if the page's exact rules differ, paste its text and re-test.
+
+### Owner's levels: stop 3% to 5%, target +10% to +15% (backtest20.mjs, 2026-11-10)
+
+Pure stop and target (no Supertrend-line exit), 60 or 120 day cap, fresh flips (475) and all up-trend rows (25.9k), 0.1% per side.
+
+- **Win rate falls, not rises:** flips 22.9% to 41.5% (stop 3% to 5%), against 44.6% today. Break-even win rate for these levels is 17% to 33%, so they are profitable on paper, but only by +0.5% to +1.25% per trade (today +2.14%), and the 2024-11 to 2026-11 half is negative on every cell (-0.1% to -0.8%).
+- **Why:** the average daily range is about 2.6% of price, so a 3% to 5% stop is hit by ordinary noise before a +10% move happens. Wider stops did better on every cell (5% beat 4% beat 3%).
+- **Decision:** this payoff shape does not give a high win rate or more profit with these entries.
+
+### Pullback to rising support with a structural stop, plus filtering (backtest21.mjs, 2026-11-10)
+
+Entry: close above the 50-day average with the 50 above the 200, a rising 20-day EMA, price dipped to the EMA (low within 0.5% of it) and closed back above it. Stop: just under the lowest low of the last 5 days (average 2.5% below entry, capped at 5%). Targets 1R, 1.5R, 2R, +3%, +5%; 15-day cap; 12,364 triggers; 0.1% per side. Then the owner's filtering idea: all single, pair and triple conditions (59,711 combos), picked on train (< 2024-11-05) and judged on test.
+
+- **Unfiltered the entry has no edge:** 1R target wins 51.8% (train) and 49.7% (test) with -0.08% and -0.17% per trade; other targets win 34% to 45% and average -0.2% on test. A close structural stop is hit too often.
+- **Filtering lifts win rate a little on the holdout but not profit.** Top-300 combos by train win rate: +3% target test win 51.9% vs 44.3% baseline, 1R 50.2% vs 49.7%; their test average return stays negative (-0.15% to -0.31%). The best individual combos (e.g. RSI2 > 80 + close within 3 ATR of the Supertrend line + ROC20 > 0) win 52% on test at -0.18% per trade.
+- **Decision:** not a usable entry. Across every search in this series the only profitable high-win setup remains the market-stress pullback (about 70% wins at +0.2% to +0.4%, tight stop).
+
+### The stress-dip book: earnings flag and regime sizing (backtest22.mjs, 2026-11-10)
+
+Three market-stress pullback definitions, each with SPY down 1.5% or more over 5 days: B1 5-day pullback + Supertrend up, B2 RSI2 < 10 above the 200-day average, B3 5-day pullback above the 50-day. 10-day hold, point-in-time S&P 500, one position per stock, 0.1% per side. Exits: stop 2 ATR (avg 5.2% of price) / target 1 ATR, and stop 1.5 ATR (avg 3.9%) / target 0.75 ATR.
+
+- **The book is stable across halves:** 71% to 75% wins, +0.37% to +0.56% per trade (about 7,000 trades for B1/B3, 4,100 for B2). Test half is as good as train (B1: 71.9% / +0.52% vs 71.1% / +0.43%). Typical loss -4.0% to -4.7%, typical win +1.9% to +2.6%.
+- **[RETRACTED, see the correction below] Earnings in the hold looked like the one filter that worked:** with a report inside the hold the trade wins 51% to 56% and averages -0.8% to -1.7% (n 52 to 156); without one it wins 74% to 81% and averages +0.4% to +1.3%. Best case, B2 without earnings: 78.1% wins / +1.27% (stop 2 ATR, target 1 ATR), 80.5% / +0.90% (stop 1.5 ATR, about 4% of price, target 0.75 ATR).
+- **Caveat on the earnings result:** Robinhood's earnings history covers only about the last five quarters, so this is 2025 to 2026 (about 1,100 to 2,400 covered trades per variant, 52 to 156 flagged) in one mostly rising market. Direction is the same in every variant; the size is uncertain.
+- **Regime sizing did not help:** the drop depth is not monotonic (SPY 5d below -4% wins less: 64% to 71% vs 71% to 76%), SPY below its 200-day average helps B1 and B3 (77% vs 71%) but not B2, and weighting trades 1x / 1.5x / 2x by drop depth moved the average by 0.00 to 0.02 points. Sizing cannot change win rate anyway.
+- **Clustering risk:** only 142 signal days in four years with 30 to 50 trades each, all falling with the market. Equal-weight baskets averaged +0.20% to +0.44% per signal day and were positive on 55% to 64% of days, so a trade-level 75% win rate is not 75% of days.
+- **Decision (revised below):** the earnings exclusion does not hold up; the book itself (71% to 75% wins) is unchanged; no regime sizing.
+
+### Supertrend + support/resistance (backtest23.mjs, 2026-11-10)
+
+Owner's hypothesis: Supertrend direction plus support and resistance can reach ~85% wins. Setup: Supertrend up; price within 0.5 or 1 ATR above a support, which is either a clustered pivot-low level (3-bar fractals, known 3 bars later, 1 to 3 touches, 120-bar look-back) or the Supertrend line itself; optional bounce candle (green close, low within 0.3 ATR of the support); optional fresh Supertrend (age <= 10 days). Stop 0.25 ATR under the support (average risk 1.7% to 2.5% of price, capped at 5%). Targets: next pivot-high resistance (at least 0.5 ATR away, optionally 1 or 1.5R away), or 0.25R, 0.5R, 0.75R, 1R, 1.5R, 2R. 98,415 candidate setups, 278 configurations with at least 200 trades, 15-day cap, one trade per stock per week, 0.1% per side.
+
+- **Win rate follows the target distance, not the setup.** 1R target about 50% to 53%; 0.75R about 60%; 0.5R about 65% to 69%; 0.25R about 71% to 75%. That is roughly stop / (stop + target), what a random walk gives.
+- **Profit is about zero everywhere:** the best 1R to 2R cells average +0.0% to +0.21% (win 37% to 53%), the 0.25R and 0.5R cells -0.27% to +0.01%. Gross of the 0.2% round-trip cost the 0.25R cells are about -0.03%: no edge before costs either.
+- **Resistance as the target did not help:** 40% to 52% wins at +0.0% to +0.1%.
+- **The 85% level is not on the table:** the highest win rate in any cell was 74.6% (target 0.25R, average -0.23% per trade, both halves negative).
+- **What the idea is good for:** placing a stop close (2% to 2.5%) under a Supertrend line or support, not for lifting the win rate.
+
+### Correction: the earnings flag in backtest22 was biased; earnings proximity tests (backtest22b.mjs, backtest24.mjs, 2026-11-10)
+
+backtest22 flagged a trade when a report fell between entry and the ACTUAL exit day. Trades that win fast (target hit on day 1 to 3) exit early and so rarely span a report, while slow or stopped trades do, so the "report inside the hold" group was filled with slower trades and its low win rate was partly an artefact. The tradable test uses only what is known at entry: a report inside the maximum hold window (10 days for the dip book).
+
+- **Dip book, corrected (backtest22b.mjs):** report inside the 10-day window vs none: B1 75.4% vs 72.0% wins (+0.58% vs +0.55%), B3 74.7% vs 73.2%, B2 75.1% vs 76.7% (+0.47% vs +1.19%); at the 1.5 ATR stop 77.7% to 80.3% vs 74.8% to 79.0%. No consistent win-rate gain from excluding them; flagged trades have somewhat deeper average losses (-5.3% to -8.6% vs -4.6% to -5.1%). The "74% to 81% wins when earnings are excluded" claim is withdrawn.
+- **Supertrend ideas (backtest24.mjs):** by trading days from entry to the next report (5 buckets, 7,559 covered Supertrend-up days and 149 fresh flips, 2025-04 to 2026-05 only), win rate is 37% to 40% in every bucket and the average return 1.3% to 2.3% with no pattern; skipping entries with a report within 5 to 20 days changes win rate by under 1 point. The raw "report inside the hold" split on Supertrend (58% vs 19% wins) is the same artefact in the opposite direction: long holds are the winners and long holds span reports.
+- **Decision:** no earnings filter for either book. Backtest11 (fixed 5 and 10 day horizon, no exit-day dependence) is unaffected: earnings remain a tail-risk flag only.
+
+### Volume x patterns x Supertrend (backtest25.mjs, 2026-11-10)
+
+Base: every daily Supertrend flip up with no ADX gate (5,971 flips; train 3,316, test 2,655; current exit: 40% wins, +1.34%; train 43.5% / +1.72%, test 35.1% / +0.87%). 30 features: 12 volume (flip-day relative volume 1.5x and 2x, 3-day surge, rising or dried-up participation, up/down volume ratio, OBV, dollar volume, volume high, power bar, accumulation), 14 pattern (tight base, 20 and 50 day breakouts, bull flag, engulfing, hammer, inside day, NR7, cup-like, double bottom, higher low, near 52-week high, gap up) and 5 Supertrend context (ADX, 200-day average, SPY regime, relative strength). Each alone, then all singles, pairs and triples (3,345 qualifying combos) picked on train and judged on test, with a permutation null (outcomes shuffled among the same trades, 30 repeats).
+
+- **Volume does not carry over.** Flip-day volume >= 2x average: train 54% wins (+10 pts), test 30% (-5 pts). Same shape for 1.5x, the 3-day surge, power bars and volume highs: they look good in 2022 to 2024 and fail in 2024 to 2026. OBV, accumulation and up/down volume ratio: within 1 to 3 points of baseline either way.
+- **Patterns:** tight base, bull flag, near-52-week-high and double bottom are at or below baseline; breakout of 50 days (+1 to +2 pts), engulfing, hammer, inside day, NR7 within noise. Cup-like (15% to 35% dip, back within 8%: 779 flips) and gap-up flip days lift AVERAGE return in both halves (cup-like +4.05% vs +0.94%; gap-up +2.70% vs +0.75%) with +3 to +5 points of win rate; these are profit lifts from a few big winners, not win-rate fixes, and were not tested against a null.
+- **Combinations:** the top 50 combos by train win rate average 66.7% on train and 27.1% on test (baseline 35.1%). The same search on shuffled outcomes reaches 52.9% on train (47% to 59%), so the real in-sample structure is larger than chance, but it reverses out of sample: a regime effect, not a stable edge. Combos gaining >= 8 points on both halves: 13 real vs a median of 14 under the null (range 1 to 56). No combination is distinguishable from chance.
+- **The one consistent factor is the market regime:** flips when SPY is below its 200-day average: 630 flips, 53% wins, +6.69% (train 47% / +3.1%, test 57% / +9.5%); flips with SPY above it: 38% / +0.71% (train 43% / +1.6%, test 32% / -0.46%). By year (SPY below): 2023 n 244 +3.7%, 2025 n 318 +8.5%, 2026 n 38 +18%, 2022 n 30 -1.7%. Caveat: these cluster in two or three market episodes (2023 and the 2025 tariff selloff and rebound), so the effective sample is a handful of independent events. It is consistent with the stress-dip result: the best entries come out of market weakness.
+- **Reading:** in a rising market since 2024-11 the Supertrend flip earns about nothing (32% wins, -0.46%); the book's profit comes from flips that start in or just after corrections. Volume and patterns add no stable win rate on top.
+
+### Regime-aware gating of the main book (backtest26.mjs, 2026-11-10)
+
+Fresh daily Supertrend flips split by SPY's state at the signal (current exit). App-gated flips (ADX >= 20 and rising): 470, baseline 44% wins / +1.97% (train 51% / +2.85%, test 37% / +0.98%). All daily flips: 5,971, baseline 40% / +1.34%.
+
+- **Best simple regime: SPY at least 5% below its 252-day high.** App-gated: 109 flips, 60% wins, +6.86% per trade (train 65% / +6.95%, test 47% / +6.64%), against 39% / +0.49% outside. All flips: 1,410, 45% / +3.35% vs 38% / +0.72%. SPY below its 200-day average: gated 47 flips, 55% / +9.05% vs 43% / +1.18%; all flips 630, 53% / +6.69% vs 38% / +0.71%. SPY 5-day return <= -1.5%: gated 52 flips, 52% / +7.64%.
+- **Adding a +8% target inside the 200-day regime:** gated 64% wins / +2.34% (n 47), all flips 65% / +3.02%; outside the regime the same target gives 50% / +0.71% (gated) and 47% / +0.24% (all).
+- **How solid it is:** the weak-market flips come from 9 (gated) or 11 (all) distinct months, dominated by 2025-04 (tariff selloff), 2023-01 and 2023-11. Month-clustered bootstrap of in-regime minus out-of-regime: all flips avg +0.84 to +10.55 pts (excludes zero), win +1 to +28 pts; app-gated flips avg -1.18 to +14.50 (includes zero) because of the small sample. Dropping the two heaviest months keeps it positive (all flips 58% / +7.6%; gated 61% / +10.2% on 23 flips). Some definitions (SPY 20-day return <= -3%, recovery zone) are not stable across halves.
+- **Reading:** flips are the best trades when they start in or just after a market correction (about 23% of app-gated flips), reaching about 60% wins and +6.9% per trade; with the market near its highs they earn +0.5% at 39% wins. 60% to 65% wins is the ceiling found with this lever; 85% is not.
+
+### Supertrend + chart patterns as the main strategy (backtest27.mjs, backtest27b.mjs, 2026-11-10)
+
+Owner's direction: use Supertrend and patterns together as the main strategy. Causal detectors for bull flag (20%+ pole, tight flag), flat base breakout (25-bar range <= 12%, volume >= 1.3x), cup and handle, ascending triangle and double bottom; breakout close while the daily Supertrend is up (optionally with the ADX gate, or a fresh Supertrend <= 10 days old); entry next open, pattern stop (under the flag / base / handle / pivot lows, risk 1% to 8%), exit either the measured-move target (30-day cap) or the Supertrend line (120-day cap). Every trade is compared with 8 random controls: Supertrend-up days in the same month with the same stop and target distance in ATR units. 0.1% per side.
+
+- **Win rates stay at 33% to 60%.** Target exit: flat base 54% to 60%, double bottom 53% to 55%, cup 49% to 53%, bull flag 40% to 46%, triangle 46% to 52%. Line exit: 33% to 44%. Nothing near 85%.
+- **Most patterns add nothing over the matched control** (edge within about +/-3 pts of win rate and +/-0.7% of average): double bottom (-1.6 to +0.7 pts), ascending triangle, cup and handle on the plain Supertrend filter.
+- **The best cells:** bull flag in a fresh Supertrend (n 769): line exit 44% wins, +5.33% per trade (train 34% / +2.37%, test 50% / +7.26%); target exit 46%, +2.64%. Flat base breakout with the ADX gate (n 164): 60% wins vs 50% for the control (+9.8 pts), +0.65% per trade. Cup and handle with the ADX gate, line exit (n 910): 42% wins, +1.65%, +4.8 pts and +0.64% over control.
+- **The bull flag edge is mostly the prior surge (backtest27b):** against fresh-Supertrend days that also followed a 20%+ run-up, the flag's edge falls to +2 pts of win rate and +0.3% per trade (target exit) and +5 pts / +1.0% (line exit), against +4 to +5 pts / +1.3% to +1.4% over any fresh-Supertrend day. Same finding as the first pattern rounds.
+- **Reading:** patterns on top of Supertrend change profit a little (the flag and cup raise the size of winners) but not the win rate; the strategy stays a 40% to 45% win, large-winner system. No pattern lifts it toward 85%.
+
+### Which stocks do not produce wins? (backtest28.mjs, 2026-11-10)
+
+All daily Supertrend flips (current exit), 527 stocks, 5,971 flips (about 11 per stock), 39.8% wins, +1.34% per trade. Live track record read from the production database on 2026-11-10 (24 settled picks only, all from the last week): Supertrend 15 settled, 11 wins, +6.85% average; losers WST -4.73%, ORLY -3.29%, EL -2.66%, ACN -1.95%; dips 9 of 9 wins, +3.87%.
+
+- **Weakest stocks by their own history (8+ flips):** ENPH 9% wins, FMC 0%, ETSY 13%, TECH 19%, MOS 25%, CZR 27%, EG 0%, LKQ 23%, GPC 13%, OMC 8%, UPS 10%, PFE 23%. Strongest: WDC, STX, NVDA, AMD, FTNT, GLW, RCL, MU (50% to 73% wins).
+- **A stock's own past win rate does not predict its future one:** 458 stocks with 4+ flips before 2024-11-05, split by earlier win rate: weakest third (25% earlier) won 33.8% later (avg -0.01%); middle (44%) 36.4% (+0.86%); strongest (66%) 35.0% (+1.32%). Average return shows slight persistence, win rate none. Do not blacklist stocks by name.
+- **What is consistent is the type of stock.** Volatility (daily ATR % of price): most volatile third 44% wins, +3.57% (train 49% / +3.38%, test 41% / +3.74%); calmest third 37%, +0.10% (test 32%, -1.23%). Sector: Information Technology 45% / +5.40% (test +8.86%), Industrials 44% / +2.26%; Health Care, Consumer Staples, Real Estate, Materials, Utilities 35% to 38% with about 0% to +0.4% (test half negative for most). The "?" group (former index members with no sector in the current list) is the worst: 31%, -2.75%.
+- **Reading:** the Supertrend flip works on volatile growth names (tech, industrials, high ATR) and does not produce wins on calm defensive names; individual stocks are not stable enough to exclude by name.
+
+### Why do some flips lose and others win? (backtest30.mjs, 2026-11-10)
+
+All 5,971 daily Supertrend flips (2,374 winners averaging +12.5%, 3,597 losers averaging -6.0%) and the 470 app-gated ones, compared on 18 things known at entry (volatility, ADX, trendiness, prior flips, stop distance, momentum, relative strength, volume, gap, liquidity, SPY state). AUC of each feature for winner vs loser, early and late half (0.50 = no information).
+
+- **Almost nothing at entry separates winners from losers.** Every AUC is between 0.46 and 0.59. The only differences that kept the same direction in both halves: stock volatility (ATR 2.6% winners vs 2.4% losers; top third 44% wins / +3.58% vs 37% / +0.1%), a wider stop distance (the same thing), a lower prior 60-day return (low third 43% wins vs 38%), and, on app-gated flips, the market being further below its high (top third 55% wins / +4.62% vs 38% to 39%) and a higher 40-day efficiency ratio (trendier stock: 49% wins / +4.02% vs 41%).
+- **Anatomy of the 3,597 losers:** held 22 days on average (winners 59); average worst dip -7.8%. 35% first reached +5% above entry and 8% reached +10% before turning down; 32% never rose 2%; 21% were out inside 10 days. Winners: 17% first dipped more than 5% below entry; best run averaged +23.5%.
+- **Stocks with no wins and 3+ flips (8):** FMC, VFC, WHR, SEDG, AAP (former index members, long-term decliners), EG, COIN, WDAY. They average higher volatility (ATR 3.5% vs 2.5%) and more flips in the prior year (4.2 vs 3.3). Per-stock win rate correlates -0.31 with flips per year, but at trade level the prior flip count has AUC 0.50, so choppiness is not a usable entry signal.
+- **Reading:** losing flips are mostly trends that failed or reversed after a start, not something visible at entry; a third give back a 5%+ gain first. The strongest context is the market (corrections) and the stock's trendiness and volatility; structural decliners (stocks later removed from the index) lose repeatedly.
+
+### Which indicators showed a flip was a loser? (backtest31.mjs, 2026-11-10)
+
+All 5,971 daily flips (60% end as losses). 36 warning flags (RSI, MACD, stochastic, CCI, MFI, CMF, OBV, Aroon, Bollinger, ADX / DI, moving averages, distance from the Supertrend line, down closes, down-day volume, lagging SPY) checked at entry and after 3, 5 and 10 sessions in the trade, among trades still open. For each flag: the share that ended as a loss, and the "sell-now gain" (selling at that close instead of holding to the Supertrend line exit).
+
+- **At entry nothing warns:** the best flags (stochastic %K > 80, Bollinger %B > 0.95, ADX < 20) move the loss rate from about 56% to 61%; none points the same way in both halves.
+- **After entry the losers show themselves, strongly.** Share ending as a loss when flagged vs not. Day 3: close within 1 ATR of the Supertrend line 87% vs 59% (4% of trades), close under the 10-day average 79% vs 57%, RSI14 < 50 77% vs 58%, MACD histogram falling 72% vs 55%. Day 5: RSI14 < 40 94% vs 59% (2% of trades), close under the 20-day EMA 80% vs 55%, close under the flip-day low 78% vs 53%. Day 10: close within 1 ATR of the line 84% vs 50%, RSI14 < 50 83% vs 47%, Bollinger %B < 0.5 84% vs 48%, -DI above +DI 80% vs 47%.
+- **But selling when they fire does not pay:** the sell-now gain is negative for every flag at every checkpoint (about -0.5% to -1.2% per flagged trade; 0 of about 104 flags positive in both halves). Flagged trades that finish as losses lose about the same as selling would, and the minority that recover into large winners (the +12% average win) more than pay for the rest. This is why every weakness exit tested earlier lowered profit.
+- **Reading:** the indicators describe a trade that is already failing; they are not a reason to leave it, and none predicts a loser before the trade starts.
+
+### What if every exit became a 5% to 10% profit point? (backtest32.mjs, 2026-11-10)
+
+Current exits against profit points of +5%, +7.5%, +10% and scale-outs, for the Supertrend flips (app-gated 470 trades; all 5,971) and the stress-dip scan (RSI2 < 10 above the 200-day average with SPY down 1.5% over 5 days: 4,115 trades; sharp dips 666). Stops unchanged (Supertrend line, or 2 ATR for dips); next-open entry, 0.1% per side. Early / late = before / after 2024-11-05.
+
+- **Supertrend, app-gated flips (current: 44.0% wins, +1.97% per trade, 39 days):** sell all at +5%: 63.0% wins, +0.50% (late half -0.51%); at +7.5%: 51.9%, +0.73%; at +10%: 46.6%, +0.83%; half at +5% and the rest at +10%: 57.4%, +0.67%; half at +5% and the rest on the line: 56.6%, +1.23% (late +0.23%); half at +10%, rest on the line: 46.4%, +1.40%. All 5,971 flips (current 39.8%, +1.34%): the same ordering, every sell-all variant lower than the current average and negative in the late half for +5%, +7.5% and +10%.
+- **Stress dips (current stop 2 ATR, target 1 ATR, 10 days: 71.4% wins, +0.57%; sharp dips 72.7%, +0.92%):** sell all at +5%: 57.6%, +0.58% (sharp 62.2%, +0.85%); at +10%: 53.3%, +0.69% (sharp 56.3%, +1.18%). With a 20-day cap: +10% averages +1.11% (sharp +1.62%) against +0.61% (sharp +0.88%) now, at 50% to 54% wins instead of 75%.
+- **Reading:** converting everything to 5% to 10% lifts the win rate on Supertrend (to 47% to 63%) but cuts its profit by 58% to 75%, and makes the recent half negative; on dips it does the opposite, lowering the win rate 14 to 20 points and raising profit per trade when the hold is 20 days. The best compromise for Supertrend is half at +5% and the rest on the line (56.6% wins, +1.23%).
+
+### After entry: can chart and volume warn of a downturn? (backtest33.mjs, 2026-11-10)
+
+193,277 open-trade days (Supertrend still up, day 3 onward) from 5,823 daily Supertrend flips. 25 chart, volume, momentum and trend warning flags known at each close (closes under the 10 and 20-day EMA, distance to the Supertrend line, 5-day low and swing-low breaks, giving back half the gain, gap downs, wide down days, engulfing and shooting-star candles, RSI / MACD / ADX / DI turns, distribution days, high-volume down days, breakdowns on volume, OBV and RSI divergence at highs, climax volume, money flow). Targets: (a) a fall of 6% or more from that close within the next 10 sessions (base rate 22.0%; early 18.5%, late 26.2%), (b) the Supertrend exit firing within 5 sessions (base 14.6%). Train before 2024-11-05, test after.
+
+- **Single flags barely lift the chance of a 6% drop.** Best: gap down 1% or more 31.0% (vs 21.3% without it; 13,068 days), gave back half the gain after +5% 28.0%, high-volume down day (1.5x, -1.5%) 26.0%, climax volume 24.8%, within 1 ATR of the line 24.3%, RSI14 crossing under 50 24.2%. Most others are within a point of the base rate (distribution days 21.4%, OBV divergence 20.6%, bearish engulfing 21.8%, MACD histogram cross 21.4%, 5-day low break 21.9%); two (shooting star, extended-plus-reversal candle) are below it.
+- **A model of all flags and context numbers predicts a 6% drop poorly:** AUC 0.60 train, 0.571 test (distance to the line alone 0.509). On the test half the top 10% of scores had a 40.7% chance of a 6% drop (base 26.3%), the top 5% 48.4%, the top 1% 64.0%.
+- **It predicts the system's own exit well, but that is just proximity to the line:** exit within 5 sessions, AUC 0.755 test, identical to distance-to-line alone (0.755). Top 10% of scores 51.6% (base 15.3%).
+- **First-alert rules fire often and add nothing for a 6% drop:** volume warning (49% of trades) 23.2% after the alert (base 22.0%); swing-low or 5-day-low break (90%) 22.2%; giveback (49%) 23.1%; reversal candle (74%) 21.6%; RSI + MACD + -DI (49%) 21.8%; any two of four (81%) 22.9%. Train / test of the volume rule: 19% / 28%.
+- **They do come early:** median 9 to 14 sessions before the Supertrend exit (reversal candles 23), and the price at the eventual exit is lower than the alert close in 63% to 72% of alerts, but on average it is 0.5% to 1.1% HIGHER, because the trades that keep running pay for the rest.
+- **Reading:** chart and volume do not tell reliably, from a held trade, that a 6% decline is starting; what is predictable is that the trade is nearing the Supertrend exit. An exit alert can honestly say "X% of the time this setup fell 6% or more within 10 sessions, against 22% normally", but the best single signals raise that to 26% to 31%.
+
+### Does a weakness alert help "continue or exit at the current profit"? (backtest34.mjs, backtest35.mjs, backtest36.mjs, 2026-11-10)
+
+5,823 daily Supertrend flips, each day of each trade scored with the backtest33 warning flags. At the first day a warning rule fires while the trade is up P%, the choices are: hold to the Supertrend line (current), exit all, exit half and run the rest to the line, or keep the trade with a protective stop moved up. Net of 0.1% per side; causal (only what was known at that close).
+
+- **Exit-on-alert loses money on average.** Trade-level average (hold 1.45%, 40.3% wins): warning (gap down / giveback / high-volume down day) while up 5%, exit all: +0.84%, 45.7% wins; exit half: +1.14%; up 3%, exit all +0.69%, 51.0% wins. Other rules (near the line, 2+ of 5 warnings) cost 0.0 to 0.2 points but also add under 2 points of win rate. In 61% to 75% of alerts exiting at that close would have beaten holding (median advantage +1.2% to +2.8%), yet the average still favours holding because of the large winners; same trade-off as every earlier exit test.
+- **The alert adds nothing to a plain profit lock.** Moving the stop to breakeven only after an alert: 41% to 44% wins, +1.40% to +1.45% (about the same as holding). (backtest34.mjs also prints a "same policy on a RANDOM day" column; that control is not causal because it picks days using the whole trade, so ignore it.)
+- **What does help is a rule with no alert at all: lock in a profit once the trade is up.** Stop raised to entry +1% once a close is up 3%: 61.8% wins (vs 38.7%), losses worse than -0.5% fall from 57.6% to 35.6%, average +1.17% (vs +1.45%), early / late halves +1.47% / +0.78% (wins 63% / 61%). Up 5% -> +1%: 52.4% wins, +1.29%; up 4% -> +1%: 56.3%, +1.23%; up 7% -> +1%: 45.5%, +1.36%. A stop only 0.3% to 0.5% over the entry is not useful: it ends 21% to 37% of trades as scratches around zero (backtest14's break-even test failed for this reason). Raising the lock to +2% moves wins to 53.8% to 64.4% and the average by about -0.1 points. Every cell in the grid points the same way in both halves.
+- **Cost of the lock:** about 0.16 to 0.28 points of average return (-11% to -19%) for 12 to 24 points of win rate; the late half loses the same amount.
+- **Reading:** chart and volume warnings do not tell a held trade when to leave (they flag dips that tend to bounce). A profit lock does tell a held trade what to do once it is in profit: keep part of the gain at almost no cost to the average.
+
+### Replay gate for the app's profit lock (replay_profit_lock.mjs, 2026-11-10)
+
+The worker's own `profitLockState` (imported from `worker/runtime.js`) replayed day by day over all 5,971 daily Supertrend flips (arm at a daily close 3% over the buy price, lock at the buy price +1%, hit by a later daily low): lock 61.3% wins, 36.2% losses, +1.02% per trade (early half +1.35%, late +0.60%) against hold 38.2% wins, +1.34% (early +1.72%, late +0.87%). The backtest (backtest36.mjs) gave 61.8% wins, +1.17% against hold +1.45%. The worker arms one session earlier than the backtest and covers 148 more flips, which accounts for the small difference; the cost of the lock is -0.32 points of average return here against -0.28 there. Gate passed (wins within 0.5 points; cost within 0.05 points). The app logs LOCK_ARMED and LOCK_HIT events on real holdings to compare against these numbers.
+
+### Does rising seller volume signal the start of a downtrend? (backtest37.mjs, 2026-11-10)
+
+The same 193,277 open-trade days as backtest33. Nine selling-volume measures: volume on down closes versus earlier down days, volume attributed to sellers by where each bar closed (volume x (high - close) / range) against 10 days earlier, sellers' share of 5-day volume, net up-minus-down volume balance and its change, three down closes in a row on rising volume, fading up-volume, and any 1.5x-volume down day. Targets: a 6%+ fall within 10 sessions (base 22.0%; train 18.5%, test 26.2%) and the Supertrend exit within 5 sessions (base 14.6%).
+
+- **No lift for a 6% fall.** Down-day volume 30%+ above earlier down days: 20.5% (lift 0.93); sellers' volume up 30% against 10 days earlier: 21.6% (0.98); sellers above 60% of 5-day volume: 23.0% (1.06); net balance worse than before: 22.1% (1.01); three down closes on rising volume: 21.6% (0.98); a heavy selling day: 20.6% (0.93). AUCs for the continuous measures are 0.48 to 0.52 on the later half.
+- **Heavy selling is, if anything, followed by bounces:** down days with rising down-volume are slightly LESS likely to precede a 6% fall (20.5% against 22.2%), in line with capitulation days that reverse.
+- **It does track the system's own exit** (Supertrend exit within 5 sessions: AUC 0.60 to 0.66 for sellers' share and net balance; three rising-volume down closes 33% against 14%), but that is the price already sliding toward the line, not an advance warning of a deeper fall: among days that already closed down, or under the 10-day EMA, or within 0.5 ATR of the line, adding rising selling volume changes the chance of a 6% fall by -1.8 to +0.4 points.
+- **First time it fires in a trade:** 41% to 96% of trades, and the next 10 sessions hold a 6% fall 21.9% to 22.4% of the time (base 22.0%); the eventual exit price averages 0.6% to 1.3% above the alert close.
+- **Reading:** rising seller volume does not warn of a coming downtrend in these trades; it mostly marks days when price has already weakened.
+
+### Wait for confirmation before entering? (backtest38.mjs, 2026-11-10)
+
+Instead of buying the open after the daily Supertrend flip, enter only after a confirmation (trend still up on that day; exit unchanged: daily Supertrend line, no target). Compared on the same flips: 463 app-gated flips and 5,687 daily flips (current entry: 44.1% wins, +1.99% and 39.7%, +1.20%).
+
+- **Waiting a fixed time:** 1 session 43.3% wins, +1.95%; 3 sessions 41.9%, +1.88% (entry 0.24% higher); 5 sessions 40.1%, +1.95% (0.53% higher); 10 sessions 39.0%, +1.76% (1.55% higher). On all flips the average falls from +1.20% to +1.13% (3 sessions), +1.09% (5) and +0.96% (10) with the win rate dropping from 39.7% to 36.7%.
+- **Waiting for price to confirm:** a close above the flip day's high (63% of gated flips qualify) 43.3% wins, +1.68% (late half +0.42%); a close 2% over the flip close (44% qualify) 44.3%, +2.58% but only 44% of flips traded, giving +1.13% per flip against +1.99%; two higher closes 44.6%, +1.64% (late -0.31%); a close 4% over 41.1%, +1.92% (late -0.11%).
+- **Waiting for indicators to agree** (close over the 50-day average, MACD above 0, RSI14 above 50, OBV over its average, ADX 20+ and rising, any day in the next 10 sessions): 74% of gated flips qualify, 42.2% wins, +1.61% against 44.1%, +1.99% (late +0.24%); any 4 of the 5: 42.4%, +1.54%. On all flips: 39.5%, +0.98% (late -0.01%).
+- **Why it does not help:** the flips that confirm are the ones that were already running, and waiting hands the early part of the move to someone else. The same flips bought at once earned +3.4% to +6.9% (10-session, 4% and indicator-agreement groups), against +1.6% to +2.6% when entered on confirmation; the entry is 0.5% to 5.2% higher. The win rate does not rise in any variant (36.7% to 44.6%), and the expected return per flip is lower in every one (+0.5% to +1.9% against +1.2% to +2.0%).
+- **Reading:** a delayed or "all indicators agree" entry costs profit without raising the win rate. The app's own entry (confirmed 4-hour flip, daily Supertrend up, daily ADX gate) is already the confirmation that tested best.

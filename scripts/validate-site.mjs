@@ -488,7 +488,7 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
     return { begins_at: dayAgo(offset).toISOString(), open_price: String(close), high_price: String(close + 1), low_price: String(close - 1), close_price: String(close), volume: 1000 };
   });
   const crash = { 3: 90, 2: 80, 1: 70 };                       // an uptrend whose last three closes break the line
-  const quotes = { EEE: "70", HHH: "92" };                     // HHH trades under its line today but has not closed there
+  const quotes = { EEE: "70", HHH: "92", LLL: "96.5" };                     // HHH trades under its line today but has not closed there
   const hourly = series(300, 3600, nowSeconds - 4 * 3600, 100).map(r => ({ begins_at: new Date(r.time * 1000).toISOString(), open_price: String(r.open), high_price: String(r.high), low_price: String(r.low), close_price: String(r.close), volume: 1000 }));
   globalThis.fetch = async input => {
     const url = new URL(String(input));
@@ -505,7 +505,10 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
     row("hold-bbb", "BBB", { monitor_atr: 2.4, stop_level: 90, target_1: 98.4, target_2: 100.8, peak_high: 101 }),     // stored stop far under the line
     row("hold-ccc", "CCC", { monitor_atr: 2.4, stop_level: 99.9, target_1: 98.4, target_2: 100.8, peak_high: 101 }),    // stored stop already above the line
     row("hold-eee", "EEE"),                                                                                              // the daily trend breaks
-    row("hold-hhh", "HHH"),                                                                                              // under the line intraday, daily trend still up
+    row("hold-hhh", "HHH", { buy_price: 100 }),                                                                                           // under the line intraday, daily trend still up
+    row("hold-fff", "FFF", { buy_price: 100 }),                                                                          // bought at 100, now 101.6: under +5%
+    row("hold-lll", "LLL"),                                                                                              // bought at 96, closed above +3% earlier, now 96.5: back at the profit lock (96.96)
+    row("hold-mmm", "MMM", { lock_armed_at: dateOf(3) }),                                                                // lock armed earlier and stored
   ];
   const db = { prepare(sql) {
     const st = { args: [], bind: (...args) => { st.args = args; return st; } };
@@ -516,8 +519,9 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
       if (sql.startsWith("UPDATE scan_cache SET refreshing_until = ? WHERE market = ?")) { const r = cache.get(a[1]); if (r) r.refreshing_until = a[0]; return { success: true }; }
       if (sql.startsWith("UPDATE scan_cache SET payload")) { const r = cache.get(a[2]); if (r) { r.payload = a[0]; r.generated_at = a[1]; r.refreshing_until = null; } return { success: true }; }
       if (sql.startsWith("UPDATE holdings SET monitor_atr")) {
-        const r = rows.find(x => x.id === a[6]); // MAX() semantics, as in SQL
+        const r = rows.find(x => x.id === a[8]); // MAX() and COALESCE() semantics, as in SQL
         r.monitor_atr ??= a[0]; r.stop_level = Math.max(r.stop_level ?? 0, a[1]); r.target_1 = Math.max(r.target_1 ?? 0, a[2]); r.target_2 = Math.max(r.target_2 ?? 0, a[3]); r.peak_high = Math.max(r.peak_high ?? 0, a[4]); r.monitor_at = a[5];
+        r.lock_armed_at ??= a[6]; r.lock_hit_at ??= a[7];
       } else if (sql.startsWith("INSERT INTO holding_level_events")) events.push({ id: a[0], holding_id: a[1], user_id: a[2], symbol: a[3], at: a[4], kind: a[5], reason: a[6], price: a[7], stop_level: a[8], target_1: a[9], target_2: a[10] });
       return { success: true, meta: { changes: 1 } };
     };
@@ -540,14 +544,14 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
     assert.equal(aaa.stop_basis, "LINE", "The protective level is the daily Supertrend line");
     assert.ok(aaa.stop_level > 0 && aaa.stop_level < aaa.current_price, "The line sits under the price in an uptrend");
     assert.match(aaa.stop_note, /Supertrend line/);
-    assert.ok(["HOLD", "WATCH"].includes(aaa.action), "An uptrend with the line intact is not an exit");
-    assert.deepEqual(kindsFor("hold-aaa"), ["INITIAL"]);
+    assert.ok(["HOLD", "WATCH", "TAKE_PROFIT"].includes(aaa.action), "An uptrend with the line intact is not an exit");
+    assert.deepEqual(kindsFor("hold-aaa"), ["INITIAL", "LOCK_ARMED"]);
     assert.ok(aaa.reference_lines.length >= 5 && aaa.reference_lines.every(line => line.value > 0), "Holdings carry chart reference lines");
     // BBB: a stored stop far under the line is raised to the line, and the change is logged with its reason.
     assert.ok(byId["hold-bbb"].stop_level > 90 + 1, "The protective level moves up with the line");
     assert.ok(Math.abs(byId["hold-bbb"].stop_level - aaa.stop_level) < 0.01, "Both positions follow the same line");
-    assert.deepEqual(kindsFor("hold-bbb"), ["LINE_RAISED"]);
-    assert.match(byId["hold-bbb"].level_events[0].reason, /Supertrend line moved up/);
+    assert.deepEqual(kindsFor("hold-bbb"), ["LINE_RAISED", "LOCK_ARMED"]);
+    assert.match(byId["hold-bbb"].level_events.find(e => e.kind === "LINE_RAISED").reason, /Supertrend line moved up/);
     // CCC: a stored stop already above the line is never lowered.
     assert.equal(byId["hold-ccc"].stop_level, 99.9, "The protective level never moves down");
     assert.equal(rows.find(r => r.id === "hold-ccc").stop_level, 99.9);
@@ -557,8 +561,21 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
     // HHH: under the line today but the daily trend has not turned: a warning to watch the close, not an exit.
     assert.equal(byId["hold-hhh"].action, "WATCH", "Under the line intraday is a warning; the exit is a daily close");
     assert.match(byId["hold-hhh"].headline, /only counts if the day closes/);
-    // No time limit and no profit-taking exit: reaching a profit zone does not change the action to take profit.
-    assert.ok(!first.open.some(item => item.action === "TAKE_PROFIT"), "US positions never get a take-profit exit");
+    // Up 5% or more with the daily trend intact: a "consider taking profit" prompt (advice only; targets unchanged, the line exit still applies).
+    assert.equal(aaa.action, "TAKE_PROFIT", "AAA is 5.8% over its buy price"); assert.match(aaa.headline, /consider taking profit/);
+    assert.equal(aaa.target_1, 98, "Targets are unchanged"); assert.equal(aaa.target_2, 100);
+    assert.notEqual(byId["hold-fff"].action, "TAKE_PROFIT", "Under +5% there is no profit prompt");
+    assert.equal(byId["hold-eee"].action, "EXIT", "A daily close under the line still wins over a profit prompt");
+    // Profit lock (advisory): armed by a daily close 3% over the buy price, sits 1% over it, never replaces the Supertrend line.
+    assert.equal(aaa.profit_lock.armed, true); assert.equal(aaa.profit_lock.level, 96.96); assert.equal(aaa.profit_lock.hit, false, "Price is well above the lock");
+    assert.equal(byId["hold-fff"].profit_lock.armed, false, "A position that has not closed 3% up has no lock yet"); assert.equal(byId["hold-fff"].profit_lock.arm_price, 103);
+    assert.equal(byId["hold-lll"].profit_lock.hit, true, "Back at the lock");
+    assert.equal(byId["hold-lll"].action, "TAKE_PROFIT"); assert.match(byId["hold-lll"].headline, /profit lock/);
+    assert.match(byId["hold-lll"].reasons.join(" "), /advice, not an exit signal/);
+    assert.deepEqual(kindsFor("hold-lll"), ["INITIAL", "LOCK_ARMED", "LOCK_HIT"]);
+    assert.equal(rows.find(r => r.id === "hold-lll").lock_armed_at != null, true, "The armed day is stored"); assert.equal(rows.find(r => r.id === "hold-lll").lock_hit_at != null, true);
+    assert.equal(byId["hold-eee"].profit_lock.armed === undefined, false); assert.equal(rows.find(r => r.id === "hold-mmm").lock_armed_at, dateOf(3), "A stored armed day is kept");
+    assert.equal(byId["hold-mmm"].profit_lock.armed, true);
     // A second pass changes nothing and adds no events.
     const count = events.length;
     await asAlice();
@@ -638,7 +655,7 @@ assert.equal((await post("/api/discover", { market: "XX" })).status, 400, "Unkno
   const bySymbol = Object.fromEntries(list.open.map(item => [item.symbol, item]));
   assert.ok(["HOLD", "WATCH"].includes(bySymbol.NVDA.action), "US positions exit on a daily Supertrend break, not on a distance from the buy price");
   assert.ok(bySymbol.NVDA.pnl_value < 0 && bySymbol.NVDA.reasons.length > 0);
-  assert.notEqual(bySymbol.MSFT.action, "TAKE_PROFIT", "Reaching a profit zone in an uptrend is not a sell signal");
+  assert.equal(bySymbol.MSFT.action, "TAKE_PROFIT", "A position far over +5% in an uptrend gets the consider-taking-profit prompt"); assert.match(bySymbol.MSFT.headline, /consider taking profit/);
   assert.ok(["HOLD", "WATCH", "TAKE_PROFIT"].includes(bySymbol.AAPL.action));
   assert.ok(bySymbol.AAPL.trailing_level > 0 && bySymbol.AAPL.target_1 > bySymbol.AAPL.buy_price);
   assert.match(list.disclaimer, /not personal financial advice/);

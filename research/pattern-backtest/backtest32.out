@@ -1,0 +1,48 @@
+
+################ A. SUPERTREND — APP-GATED flips (ADX >= 20 and rising): 470 trades
+CURRENT: Supertrend line only                  win  44.0%  avg  1.97% (win  12.2 / loss  -6.1)  days  39  %/day  0.050  PF 1.58  | early 51%/2.85 late 37%/0.98
+line + sell all at +5%                         win  63.0%  avg  0.50% (win   4.9 / loss  -7.0)  days  16  %/day  0.032  PF 1.19  | early 68%/1.40 late 57%/-0.51
+line + sell all at +7.5%                       win  51.9%  avg  0.73% (win   7.4 / loss  -6.4)  days  21  %/day  0.036  PF 1.24  | early 57%/1.84 late 46%/-0.51
+line + sell all at +10%                        win  46.6%  avg  0.83% (win   8.8 / loss  -6.1)  days  25  %/day  0.034  PF 1.25  | early 52%/1.84 late 40%/-0.30
+line + half at +5%, rest at +10%               win  57.4%  avg  0.67% (win   5.9 / loss  -6.4)  days  20  %/day  0.033  PF 1.25  | early 62%/1.62 late 52%/-0.41
+line + half at +5%, rest on the line           win  56.6%  avg  1.23% (win   7.0 / loss  -6.3)  days  27  %/day  0.045  PF 1.45  | early 62%/2.12 late 51%/0.23
+line + half at +5%, rest on the line, stop to breakeven win  62.6%  avg  0.74% (win   5.4 / loss  -7.0)  days  25  %/day  0.030  PF 1.28  | early 67%/1.92 late 57%/-0.58
+line + half at +10%, rest on the line          win  46.4%  avg  1.40% (win  10.1 / loss  -6.1)  days  32  %/day  0.044  PF 1.43  | early 52%/2.34 late 40%/0.34
+
+################ A. SUPERTREND — ALL daily flips: 5971 trades
+CURRENT: Supertrend line only                  win  39.8%  avg  1.34% (win  12.5 / loss  -6.0)  days  36  %/day  0.037  PF 1.37  | early 43%/1.72 late 35%/0.87
+line + sell all at +5%                         win  60.8%  avg  0.30% (win   5.1 / loss  -7.1)  days  15  %/day  0.021  PF 1.11  | early 61%/0.58 late 60%/-0.05
+line + sell all at +7.5%                       win  50.1%  avg  0.49% (win   7.4 / loss  -6.5)  days  19  %/day  0.026  PF 1.15  | early 52%/0.96 late 48%/-0.11
+line + sell all at +10%                        win  44.8%  avg  0.65% (win   9.1 / loss  -6.2)  days  22  %/day  0.029  PF 1.19  | early 47%/1.22 late 42%/-0.07
+line + half at +5%, rest at +10%               win  55.7%  avg  0.47% (win   6.0 / loss  -6.5)  days  19  %/day  0.026  PF 1.17  | early 58%/0.90 late 53%/-0.06
+line + half at +5%, rest on the line           win  54.4%  avg  0.82% (win   6.8 / loss  -6.3)  days  26  %/day  0.032  PF 1.28  | early 57%/1.15 late 51%/0.41
+line + half at +5%, rest on the line, stop to breakeven win  60.1%  avg  0.66% (win   5.7 / loss  -7.0)  days  23  %/day  0.029  PF 1.24  | early 61%/1.03 late 59%/0.20
+line + half at +10%, rest on the line          win  44.4%  avg  1.00% (win  10.0 / loss  -6.2)  days  29  %/day  0.034  PF 1.29  | early 47%/1.47 late 41%/0.40
+
+################ B. STRESS-DIP — ALL stress dips (RSI2 < 10 above 200d, SPY 5d <= -1.5%), cap 10 days: 4115 trades
+CURRENT: stop 2 ATR, target 1 ATR, 10d         win  71.4%  avg  0.57% (win   2.6 / loss  -4.6)  days   4  %/day  0.126  PF 1.43  | early 70%/0.37 late 73%/0.80
+stop 2 ATR, sell all at +5%, 10d               win  57.6%  avg  0.58% (win   4.0 / loss  -4.1)  days   7  %/day  0.084  PF 1.33  | early 54%/0.37 late 62%/0.84
+stop 2 ATR, sell all at +10%, 10d              win  53.3%  avg  0.69% (win   4.9 / loss  -4.2)  days   8  %/day  0.083  PF 1.36  | early 50%/0.41 late 57%/1.02
+stop 2 ATR, half at +5%, rest at +10%, 10d     win  56.1%  avg  0.64% (win   4.3 / loss  -4.0)  days   8  %/day  0.084  PF 1.36  | early 53%/0.39 late 60%/0.93
+stop 5%, sell all at +5%, 10d                  win  56.9%  avg  0.55% (win   4.0 / loss  -4.0)  days   7  %/day  0.078  PF 1.32  | early 55%/0.38 late 59%/0.74
+
+################ B. STRESS-DIP — ALL stress dips (RSI2 < 10 above 200d, SPY 5d <= -1.5%), cap 20 days: 4115 trades
+CURRENT: stop 2 ATR, target 1 ATR, 20d         win  74.7%  avg  0.61% (win   2.7 / loss  -5.5)  days   5  %/day  0.120  PF 1.44  | early 73%/0.41 late 76%/0.84
+stop 2 ATR, sell all at +5%, 20d               win  58.6%  avg  0.75% (win   4.8 / loss  -5.0)  days   9  %/day  0.083  PF 1.36  | early 56%/0.58 late 62%/0.96
+stop 2 ATR, sell all at +10%, 20d              win  50.3%  avg  1.11% (win   7.1 / loss  -5.0)  days  13  %/day  0.086  PF 1.45  | early 48%/0.92 late 53%/1.33
+stop 2 ATR, half at +5%, rest at +10%, 20d     win  54.8%  avg  0.93% (win   5.6 / loss  -4.7)  days  11  %/day  0.085  PF 1.44  | early 53%/0.75 late 57%/1.14
+stop 5%, sell all at +5%, 20d                  win  58.5%  avg  0.70% (win   4.7 / loss  -5.0)  days   9  %/day  0.075  PF 1.34  | early 57%/0.60 late 60%/0.82
+
+################ B. STRESS-DIP — SHARP stress dips (RSI2 < 5, -5% in 3d), cap 10 days: 666 trades
+CURRENT: stop 2 ATR, target 1 ATR, 10d         win  72.7%  avg  0.92% (win   3.3 / loss  -5.4)  days   5  %/day  0.201  PF 1.62  | early 73%/0.75 late 73%/1.03
+stop 2 ATR, sell all at +5%, 10d               win  62.2%  avg  0.85% (win   4.4 / loss  -5.0)  days   7  %/day  0.129  PF 1.44  | early 62%/0.96 late 62%/0.77
+stop 2 ATR, sell all at +10%, 10d              win  56.3%  avg  1.18% (win   5.9 / loss  -4.9)  days   8  %/day  0.145  PF 1.55  | early 58%/1.37 late 55%/1.06
+stop 2 ATR, half at +5%, rest at +10%, 10d     win  60.4%  avg  1.02% (win   4.9 / loss  -4.9)  days   7  %/day  0.138  PF 1.52  | early 62%/1.16 late 59%/0.92
+stop 5%, sell all at +5%, 10d                  win  59.3%  avg  0.85% (win   4.4 / loss  -4.3)  days   6  %/day  0.138  PF 1.49  | early 61%/1.02 late 58%/0.74
+
+################ B. STRESS-DIP — SHARP stress dips (RSI2 < 5, -5% in 3d), cap 20 days: 666 trades
+CURRENT: stop 2 ATR, target 1 ATR, 20d         win  74.6%  avg  0.88% (win   3.4 / loss  -6.6)  days   5  %/day  0.167  PF 1.53  | early 77%/0.81 late 73%/0.93
+stop 2 ATR, sell all at +5%, 20d               win  63.8%  avg  1.03% (win   5.1 / loss  -6.2)  days   8  %/day  0.126  PF 1.46  | early 65%/1.19 late 63%/0.93
+stop 2 ATR, sell all at +10%, 20d              win  54.4%  avg  1.62% (win   8.0 / loss  -6.0)  days  12  %/day  0.132  PF 1.60  | early 55%/1.76 late 54%/1.53
+stop 2 ATR, half at +5%, rest at +10%, 20d     win  59.2%  avg  1.33% (win   6.1 / loss  -5.7)  days  10  %/day  0.130  PF 1.57  | early 61%/1.47 late 58%/1.23
+stop 5%, sell all at +5%, 20d                  win  60.4%  avg  1.01% (win   5.1 / loss  -5.3)  days   8  %/day  0.131  PF 1.48  | early 62%/1.17 late 59%/0.90

@@ -1,0 +1,32 @@
+
+== FRESH FLIPS (the app's entry): covered trades 149, entries 2025-04-23 to 2026-05-13 ==
+all covered                        n=  149 win  47.0% avg  3.06% avg win  13.8 loss  -6.5 worst5% -12.1%
+report inside the hold             n=   75 win  74.7% avg 10.30% avg win  16.0 loss  -6.4 worst5% -11.3%
+no report inside the hold          n=   74 win  18.9% avg -4.27% avg win   5.2 loss  -6.5 worst5% -12.5%
+by trading days from entry to the next report:
+  0-5 days                           n=   10 win  50.0% avg -0.46% avg win   7.3 loss  -8.2 worst5% -12.1%
+  6-10 days                          n=    5 win  60.0% avg -0.54% avg win   6.0 loss -10.3 worst5% -12.8%
+  11-20 days                         n=   20 win  60.0% avg  5.66% avg win  12.2 loss  -4.2 worst5% -7.5%
+  21-40 days                         n=   25 win  44.0% avg  9.67% avg win  29.9 loss  -6.2 worst5% -10.4%
+  41+ days                           n=   89 win  43.8% avg  1.22% avg win  11.2 loss  -6.6 worst5% -12.2%
+rule: skip entries with a report within N days:
+  N=5: kept 139 win 46.8% avg 3.31%  | skipped 10 win 50.0% avg -0.46%
+  N=10: kept 134 win 46.3% avg 3.46%  | skipped 15 win 53.3% avg -0.48%
+  N=15: kept 126 win 45.2% avg 3.50%  | skipped 23 win 56.5% avg 0.63%
+  N=20: kept 114 win 43.9% avg 3.07%  | skipped 35 win 57.1% avg 3.03%
+
+== ALL Supertrend-up days (bigger sample): covered trades 7559, entries 2025-04-23 to 2026-05-18 ==
+all covered                        n= 7559 win  38.5% avg  1.92% avg win  14.1 loss  -5.7 worst5% -11.3%
+report inside the hold             n= 3736 win  58.3% avg  7.17% avg win  16.5 loss  -5.8 worst5% -11.0%
+no report inside the hold          n= 3823 win  19.1% avg -3.22% avg win   7.2 loss  -5.7 worst5% -11.4%
+by trading days from entry to the next report:
+  0-5 days                           n=  757 win  39.0% avg  1.34% avg win  13.5 loss  -6.4 worst5% -14.0%
+  6-10 days                          n=  625 win  40.3% avg  1.71% avg win  13.6 loss  -6.3 worst5% -12.9%
+  11-20 days                         n= 1121 win  37.3% avg  1.38% avg win  13.8 loss  -6.0 worst5% -12.4%
+  21-40 days                         n= 1824 win  38.5% avg  2.30% avg win  14.4 loss  -5.3 worst5% -10.0%
+  41+ days                           n= 3232 win  38.4% avg  2.06% avg win  14.3 loss  -5.6 worst5% -10.9%
+rule: skip entries with a report within N days:
+  N=5: kept 6802 win 38.4% avg 1.98%  | skipped 757 win 39.0% avg 1.34%
+  N=10: kept 6177 win 38.2% avg 2.01%  | skipped 1382 win 39.6% avg 1.51%
+  N=15: kept 5570 win 38.2% avg 2.07%  | skipped 1989 win 39.2% avg 1.49%
+  N=20: kept 5056 win 38.4% avg 2.15%  | skipped 2503 win 38.6% avg 1.45%

@@ -1,0 +1,97 @@
+learned labels 629236; predictions from 2022-11-18; 557 stocks
+
+################ exit: 5d hold, no levels ################
+
+SUPERTREND flip (long)   n = 307 (0.7% in a down-leg, rest in an up-leg)   mean -0.07%   win 51.8%   worst-20% line -2.89%
+  feature                                       AUC win-vs-loss   AUC avoids worst-20%   (0.50 = no information)
+  swing score (exhaustion odds)                    0.475                 0.482
+  sweep flag                                       0.502                 0.487
+  extension below 20d avg (existing-style)         0.487                 0.517
+  RSI2 (existing, low=oversold)                    0.558                 0.508
+  Reject worst-third swing score (<= 0.86): removed 103, kept 204
+    all -0.07%  ->  kept 0.13%  (removed avg -0.49%; kept-vs-removed weekly t 0.8; halves of kept: 0.17% / 0.11%; removed: 0.16% / -1.39%)
+    removed 35.5% of the worst-20% trades (random removal would be 33%); win rate all 51.8% -> kept 52.9%
+  Sweep flag: with 38 trades 0.10% vs without -0.10% (weekly t -0.8)
+  In an up-leg (1 - odds the high is in): better-half -0.19% (n 154) vs worse-half 0.07% (n 151), weekly t -0.5
+  2x2 on existing extension (rows) x swing score (cols), mean% (n):  swing-low  | swing-high
+    more extended below avg         -0.20 (82)   |      -0.08 (72)
+    less extended                   0.32 (71)   |      -0.28 (82)
+
+DIP (RSI2<10 in uptrend)   n = 9379 (50.9% in a down-leg, rest in an up-leg)   mean 0.11%   win 51.1%   worst-20% line -2.70%
+  feature                                       AUC win-vs-loss   AUC avoids worst-20%   (0.50 = no information)
+  swing score (exhaustion odds)                    0.503                 0.504
+  sweep flag                                       0.507                 0.499
+  extension below 20d avg (existing-style)         0.488                 0.482
+  RSI2 (existing, low=oversold)                    0.497                 0.497
+  Reject worst-third swing score (<= 0.17): removed 3127, kept 6252
+    all 0.11%  ->  kept 0.13%  (removed avg 0.07%; kept-vs-removed weekly t -1.2; halves of kept: 0.20% / 0.07%; removed: -0.06% / 0.21%)
+    removed 34.0% of the worst-20% trades (random removal would be 33%); win rate all 51.1% -> kept 51.3%
+  Sweep flag: with 2230 trades 0.14% vs without 0.10% (weekly t -0.3)
+  In a down-leg (odds the low is in): better-half 0.18% (n 2389) vs worse-half 0.06% (n 2381), weekly t -0.2
+  In an up-leg (1 - odds the high is in): better-half 0.13% (n 2305) vs worse-half 0.07% (n 2304), weekly t 0.7
+  2x2 on existing extension (rows) x swing score (cols), mean% (n):  swing-low  | swing-high
+    more extended below avg        0.01 (3458)   |     0.10 (1232)
+    less extended                 0.49 (1230)   |     0.09 (3459)
+
+DIP_SHARP   n = 1422 (93.0% in a down-leg, rest in an up-leg)   mean 0.46%   win 52.3%   worst-20% line -2.96%
+  feature                                       AUC win-vs-loss   AUC avoids worst-20%   (0.50 = no information)
+  swing score (exhaustion odds)                    0.501                 0.460
+  sweep flag                                       0.494                 0.478
+  extension below 20d avg (existing-style)         0.526                 0.506
+  RSI2 (existing, low=oversold)                    0.492                 0.514
+  Reject worst-third swing score (<= 0.11): removed 475, kept 947
+    all 0.46%  ->  kept 0.46%  (removed avg 0.45%; kept-vs-removed weekly t 0.4; halves of kept: 0.42% / 0.48%; removed: 0.26% / 0.73%)
+    removed 28.8% of the worst-20% trades (random removal would be 33%); win rate all 52.3% -> kept 52.1%
+  Sweep flag: with 155 trades 0.47% vs without 0.45% (weekly t 1.2)
+  In a down-leg (odds the low is in): better-half 0.61% (n 662) vs worse-half 0.33% (n 661), weekly t 1.4
+  2x2 on existing extension (rows) x swing score (cols), mean% (n):  swing-low  | swing-high
+    more extended below avg         0.32 (384)   |      0.45 (327)
+    less extended                  0.51 (327)   |      0.55 (384)
+
+################ exit: 10d, stop 2 ATR, target 2 ATR ################
+
+SUPERTREND flip (long)   n = 306 (0.7% in a down-leg, rest in an up-leg)   mean 0.15%   win 55.6%   worst-20% line -4.29%
+  feature                                       AUC win-vs-loss   AUC avoids worst-20%   (0.50 = no information)
+  swing score (exhaustion odds)                    0.466                 0.472
+  sweep flag                                       0.493                 0.507
+  extension below 20d avg (existing-style)         0.556                 0.546
+  RSI2 (existing, low=oversold)                    0.534                 0.502
+  Reject worst-third swing score (<= 0.86): removed 103, kept 203
+    all 0.15%  ->  kept 0.14%  (removed avg 0.17%; kept-vs-removed weekly t -0.8; halves of kept: 0.35% / -0.06%; removed: 0.83% / -0.76%)
+    removed 33.9% of the worst-20% trades (random removal would be 33%); win rate all 55.6% -> kept 55.7%
+  Sweep flag: with 38 trades 0.07% vs without 0.16% (weekly t -0.5)
+  In an up-leg (1 - odds the high is in): better-half -0.05% (n 154) vs worse-half 0.41% (n 150), weekly t -2.7
+  2x2 on existing extension (rows) x swing score (cols), mean% (n):  swing-low  | swing-high
+    more extended below avg          0.57 (81)   |       0.27 (72)
+    less extended                   0.09 (71)   |      -0.33 (82)
+
+DIP (RSI2<10 in uptrend)   n = 7433 (42.1% in a down-leg, rest in an up-leg)   mean 0.24%   win 53.0%   worst-20% line -4.13%
+  feature                                       AUC win-vs-loss   AUC avoids worst-20%   (0.50 = no information)
+  swing score (exhaustion odds)                    0.496                 0.515
+  sweep flag                                       0.493                 0.486
+  extension below 20d avg (existing-style)         0.500                 0.484
+  RSI2 (existing, low=oversold)                    0.501                 0.500
+  Reject worst-third swing score (<= 0.22): removed 2479, kept 4954
+    all 0.24%  ->  kept 0.19%  (removed avg 0.35%; kept-vs-removed weekly t -1.2; halves of kept: 0.25% / 0.13%; removed: 0.26% / 0.47%)
+    removed 34.2% of the worst-20% trades (random removal would be 33%); win rate all 53.0% -> kept 52.6%
+  Sweep flag: with 1975 trades 0.07% vs without 0.31% (weekly t -1.2)
+  In a down-leg (odds the low is in): better-half 0.54% (n 1564) vs worse-half 0.21% (n 1563), weekly t -0.0
+  In an up-leg (1 - odds the high is in): better-half 0.11% (n 2153) vs worse-half 0.18% (n 2153), weekly t 0.4
+  2x2 on existing extension (rows) x swing score (cols), mean% (n):  swing-low  | swing-high
+    more extended below avg        0.26 (2690)   |     0.43 (1027)
+    less extended                 0.33 (1026)   |     0.12 (2690)
+
+DIP_SHARP   n = 1339 (93.1% in a down-leg, rest in an up-leg)   mean 0.42%   win 51.9%   worst-20% line -5.22%
+  feature                                       AUC win-vs-loss   AUC avoids worst-20%   (0.50 = no information)
+  swing score (exhaustion odds)                    0.478                 0.448
+  sweep flag                                       0.485                 0.462
+  extension below 20d avg (existing-style)         0.492                 0.538
+  RSI2 (existing, low=oversold)                    0.487                 0.535
+  Reject worst-third swing score (<= 0.11): removed 447, kept 892
+    all 0.42%  ->  kept 0.25%  (removed avg 0.76%; kept-vs-removed weekly t -0.3; halves of kept: 0.22% / 0.26%; removed: 0.35% / 1.42%)
+    removed 27.2% of the worst-20% trades (random removal would be 33%); win rate all 51.9% -> kept 50.1%
+  Sweep flag: with 144 trades -0.44% vs without 0.52% (weekly t -0.3)
+  In a down-leg (odds the low is in): better-half 0.28% (n 623) vs worse-half 0.65% (n 623), weekly t -0.0
+  2x2 on existing extension (rows) x swing score (cols), mean% (n):  swing-low  | swing-high
+    more extended below avg         0.33 (362)   |      0.05 (308)
+    less extended                  0.93 (307)   |      0.38 (362)

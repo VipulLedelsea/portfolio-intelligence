@@ -784,6 +784,66 @@ function candlePatternInputs(daily) {
   };
 }
 
+// Information-only chart labels for Supertrend ideas: a classic chart pattern whose breakout happened in the last few sessions, and whether the stock
+// had already run up 20% or more. They do NOT change a score, a stop, an exit or which ideas are listed, and they are not sent to the ranking agent.
+// Detectors are the ones in research/pattern-backtest/backtest27.mjs (bull flag, flat base, cup and handle, ascending triangle; the double bottom was left out because it matched a quarter of all flips and never beat its control). In that
+// test, with a pattern-based stop, none lifted the win rate toward a high level, and most of the bull flag's edge was the prior surge, so the live track
+// record is what will say whether any label matters. The label is stored with each logged pick (pickFeatures) for that purpose.
+const CHART_LABEL_LOOKBACK = 3, CHART_LABEL_MIN_BARS = 130;
+function chartLabelInputs(daily) {
+  const n = daily.length;
+  if (n < CHART_LABEL_MIN_BARS) return null;
+  const h = daily.map(bar => bar.high), l = daily.map(bar => bar.low), c = daily.map(bar => bar.close), v = daily.map(bar => bar.volume);
+  const hi = (i, j) => { let m = -Infinity; for (let k = i; k <= j; k++) if (h[k] > m) m = h[k]; return m; };
+  const lo = (i, j) => { let m = Infinity; for (let k = i; k <= j; k++) if (l[k] < m) m = l[k]; return m; };
+  const pivotLows = [], pivotHighs = [];
+  for (let i = 3; i < n - 3; i++) {
+    let isLow = true, isHigh = true;
+    for (let k = 1; k <= 3; k++) {
+      if (!(l[i] < l[i - k] && l[i] < l[i + k])) isLow = false;
+      if (!(h[i] > h[i - k] && h[i] > h[i + k])) isHigh = false;
+    }
+    if (isLow) pivotLows.push(i);
+    if (isHigh) pivotHighs.push(i);
+  }
+  const detect = t => {
+    // Cup and handle: a 15-35% cup, then a shallow handle, closing above the handle high.
+    const cupLeft = hi(t - 100, t - 30); let leftIndex = t - 100;
+    for (let k = t - 100; k <= t - 30; k++) if (h[k] === cupLeft) { leftIndex = k; break; }
+    const cupBottom = lo(leftIndex, t - 8), cupDepth = 1 - cupBottom / cupLeft, handleHigh = hi(t - 12, t - 1), handleLow = lo(t - 12, t - 1);
+    if (cupDepth >= 0.15 && cupDepth <= 0.35 && handleHigh >= 0.95 * cupLeft && (handleHigh - handleLow) / handleHigh <= 0.12 && c[t] > handleHigh && c[t - 1] <= handleHigh) return "Cup and handle";
+    // Bull flag: a pole of 20% or more, then a tight 3 to 10 session flag, closing above the flag high.
+    for (let flag = 3; flag <= 10; flag++) {
+      const flagHigh = hi(t - flag, t - 1), flagLow = lo(t - flag, t - 1), poleLow = lo(t - flag - 15, t - flag), poleHigh = hi(t - flag - 15, t - flag), pole = poleHigh - poleLow;
+      if (pole / poleLow >= 0.20 && flagHigh - flagLow <= 0.5 * pole && flagLow >= poleHigh - 0.5 * pole && c[t] > flagHigh && c[t - 1] <= flagHigh) return "Bull flag";
+    }
+    // Flat base: a 25-session range within 12%, closing above it on volume 1.3x the 50-day average.
+    const baseHigh = hi(t - 25, t - 1), baseLow = lo(t - 25, t - 1), volumeAverage = mean(v.slice(t - 50, t));
+    if ((baseHigh - baseLow) / baseHigh <= 0.12 && c[t] > baseHigh && c[t - 1] <= baseHigh && volumeAverage > 0 && v[t] >= 1.3 * volumeAverage) return "Flat base";
+    // Ascending triangle: two or more flat highs, rising lows, closing above the flat top.
+    const highs = pivotHighs.filter(i => i + 3 <= t && i >= t - 40), lows = pivotLows.filter(i => i + 3 <= t && i >= t - 40);
+    if (highs.length >= 2 && lows.length >= 2) {
+      const top = Math.max(...highs.map(i => h[i]));
+      if (highs.every(i => Math.abs(h[i] / top - 1) <= 0.015) && l[lows.at(-1)] > l[lows[0]] * 1.01 && c[t] > top && c[t - 1] <= top) return "Ascending triangle";
+    }
+    return null;
+  };
+  let pattern = null, daysAgo = null;
+  for (let back = 0; back < CHART_LABEL_LOOKBACK && !pattern; back++) { pattern = detect(n - 1 - back); if (pattern) daysAgo = back; }
+  const runUp = hi(n - 26, n - 1) / lo(n - 26, n - 1) - 1;
+  return { pattern, days_ago: daysAgo, prior_run_up: runUp >= 0.20 };
+}
+
+// The market label: SPY at least 5% below its 252-session high is a "correction". In backtests (research/pattern-backtest/README.md, backtest26) Supertrend
+// flips that started in such a market did much better than flips with the market near its highs, but from only a few market episodes.
+const MARKET_CORRECTION_PCT = 5;
+function marketRegimeLabel(spy) {
+  const close = numeric(spy?.recent_daily?.at(-1)?.c), high = numeric(spy?.high_252);
+  if (!(close > 0) || !(high > 0)) return null;
+  const below = round((1 - close / high) * 100, 1);
+  return { regime: below >= MARKET_CORRECTION_PCT ? "CORRECTION" : "NEAR_HIGHS", spy_below_high_pct: Math.max(0, below) };
+}
+
 // Chart reference lines, shown beside the stop and targets so a position can be read against the chart. They do not set any
 // level: backtests (research/pattern-backtest, ml_chart.py) found swing-low stops and prior-high targets did worse than ATR levels.
 function chartRefs(closes, daily) {
@@ -828,7 +888,9 @@ function snapshotFromPayload(symbol, dailyItem, signalItem, quote, market = MARK
     exchange: market.label,
     price: round(price, 4),
     previous_close: round(numeric(quote?.adjusted_previous_close) || closes.at(-2), 4),
-    return_1d_pct: round(periodReturn(closes, 1), 3),
+    // Today's move so far: the live price against the previous session's close. The daily bars hold only finished sessions, so while the market is
+    // open the last bar is yesterday and a change taken from the bars alone would show yesterday's move as "today".
+    return_1d_pct: round(((numeric(quote?.adjusted_previous_close) || closes.at(-2)) > 0 ? (price / (numeric(quote?.adjusted_previous_close) || closes.at(-2)) - 1) * 100 : periodReturn(closes, 1)), 3),
     return_5d_pct: round(periodReturn(closes, 5), 3),
     return_20d_pct: round(periodReturn(closes, 20), 3),
     return_60d_pct: round(periodReturn(closes, 60), 3),
@@ -839,6 +901,8 @@ function snapshotFromPayload(symbol, dailyItem, signalItem, quote, market = MARK
     atr_14_pct: round(atr14 / price * 100, 3),
     dip: dipInputs(closes, daily),
     pattern: candlePatternInputs(daily),
+    chart_label: chartLabelInputs(daily),
+    high_252: round(Math.max(...highs.slice(-252)), 4),
     recent_daily: daily.slice(-12).map(bar => ({ d: String(bar.date).slice(0, 10), h: bar.high, l: bar.low, c: bar.close })),
     chart_refs: chartRefs(closes, daily),
     chart_daily: daily.slice(-60).map(bar => ({ d: String(bar.date).slice(0, 10), o: bar.open, h: bar.high, l: bar.low, c: bar.close })),
@@ -1566,6 +1630,8 @@ function pickFeatures(item, marketState) {
     from_entry_atr: item.from_entry_atr ?? null, stop_pct: item.stop_pct ?? null, rr_t1: item.rr_t1 ?? null, alignment: item.alignment_score ?? null, age_days: item.age_days ?? null,
     volume_ratio: item.volume_ratio ?? null, atr_pct: item.atr_pct ?? null, crowded: item.crowded === true, market_state: marketState || null,
     earnings_in_days: f?.earnings_in_days ?? null, cautions: (f?.cautions || []).length,
+    // Information-only labels, stored so the live track record can show whether they matter. No rule or score reads them.
+    chart_pattern: item.chart_pattern ?? null, prior_run_up: item.prior_run_up === true, market_regime: item.market_regime ?? null,
   };
 }
 
@@ -1656,7 +1722,7 @@ async function loadActiveLearnedRules(env) {
 async function refreshLearning(env) {
   if (!env.DB) return null;
   const rows = ((await env.DB.prepare(`SELECT strategy, action, strategy_return_pct, generated_at, features FROM recommendations
-    WHERE user_id = ? AND status = 'SETTLED' AND features IS NOT NULL ORDER BY generated_at ASC LIMIT 5000`).bind(SCANNER_USER_ID).all()).results || [])
+    WHERE user_id = ? AND status = 'SETTLED' AND market = 'US' AND features IS NOT NULL ORDER BY generated_at ASC LIMIT 5000`).bind(SCANNER_USER_ID).all()).results || [])
     .map(r => { try { return { strategy: r.strategy, action: r.action, ret: numeric(r.strategy_return_pct), date: String(r.generated_at).slice(0, 10), features: JSON.parse(r.features) }; } catch { return null; } }).filter(Boolean);
   const report = { ...buildLearningReport(rows), updated_at: new Date().toISOString() };
   const now = new Date().toISOString(), statements = [];
@@ -1840,8 +1906,9 @@ function rankRulesReason(item) {
   return parts.join(" · ");
 }
 
-function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, marketId = "US", filings = new Map(), learnedRules = [] }) {
+function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, marketId = "US", filings = new Map(), learnedRules = [], spy = null }) {
   const marketState = trend?.state || "UNKNOWN";
+  const regime = marketId === "US" ? marketRegimeLabel(spy) : null;
   const agrees = direction => marketState === "UP" ? (direction === "LONG" ? 100 : 25) : marketState === "DOWN" ? (direction === "SHORT" ? 100 : 25) : 55;
   const raw = [];
   for (const c of candidates || []) {
@@ -1860,6 +1927,12 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
       alignment_score: Math.round((agrees(c.direction) + (c.daily_aligned && c.daily_adx >= 20 ? 100 : 40)) / 2),
       alignment_note: `Daily Supertrend ${c.daily_supertrend_direction}, daily ADX ${c.daily_adx}${c.daily_adx_rising ? " and rising" : ""}; market ${marketState.toLowerCase()}.`,
       currency_symbol: c.currency_symbol, price_decimals: c.price_decimals,
+      // Information-only labels (US long ideas): not used by any score, filter or exit.
+      ...(us && c.direction === "LONG" ? {
+        chart_pattern: snapshots?.get(c.symbol)?.chart_label?.pattern ?? null, chart_pattern_days_ago: snapshots?.get(c.symbol)?.chart_label?.days_ago ?? null,
+        prior_run_up: snapshots?.get(c.symbol)?.chart_label?.prior_run_up === true,
+        market_regime: regime?.regime ?? null, spy_below_high_pct: regime?.spy_below_high_pct ?? null,
+      } : {}),
     });
   }
   if (dipScan?.available && dipScan.gate?.open) {
@@ -2378,11 +2451,11 @@ async function discover(market = MARKETS.US, env = {}, previous = null) {
   const patternScan = market.id === "US" ? buildPatternScan(snapshots, metadata) : null;
   const candidates = allCandidates.filter(candidate => candidate.entry_eligible);
   const learnedRules = await loadActiveLearnedRules(env);
-  let ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id, learnedRules });
+  let ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id, learnedRules, spy: indexSnapshots.get("SPY") });
   if (market.id === "US" && ranking.items.length) {
     // Second pass with the SEC filing flags for the ideas that survived the first one.
     const filings = await loadFilingFlags(env, [...new Set(ranking.items.map(item => item.symbol))]);
-    if (filings.size) ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id, filings, learnedRules });
+    if (filings.size) ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id, filings, learnedRules, spy: indexSnapshots.get("SPY") });
   }
   const lateCandidates = allCandidates.filter(candidate => !candidate.entry_eligible);
   // When each fresh setup was first seen. There is no closing time: a setup leaves the list when its price runs away or the trend fails, not when time runs out.
@@ -2637,7 +2710,36 @@ function scenarioLevels(direction, entry, atr, marketId = "US", dailyAtr = 0) {
 
 // Every fresh entry the scanner surfaces is logged once, under a system account, so the public track record
 // covers all picks the app showed rather than only the tickers users chose to analyze.
+// India and forex ideas are logged too, each under its own strategy (never mixed into the US figures), so they build a live record. Neither market has a backtest.
+// They exit like the app says: first of the stop, target 1 or day 10, so they are graded as a 10-day pick with ATR levels (see pickLevels).
+const FOREIGN_STRATEGIES = {
+  SUPERTREND_IN: { market: "IN", label: "India (BSE) Supertrend: not backtested, logged to build a record" },
+  SUPERTREND_FX: { market: "FX", label: "Forex Supertrend: not backtested, logged to build a record" },
+};
+async function recordForeignPicks(env, payload) {
+  const marketId = payload.market, strategy = marketId === "IN" ? "SUPERTREND_IN" : "SUPERTREND_FX";
+  const featuresById = new Map();
+  for (const item of payload.ranking?.items || []) featuresById.set(item.id, JSON.stringify(pickFeatures(item, payload.ranking.market_state)));
+  const statements = [];
+  for (const candidate of payload.candidates || []) {
+    const entry = numeric(candidate.signal_entry_price), atr = numeric(candidate.signal_atr);
+    if (!candidate.symbol || !(entry > 0) || !(atr > 0) || !candidate.signal_confirmed_at || !["LONG", "SHORT"].includes(candidate.direction)) continue;
+    const { stop, target1, target2 } = pickLevels(candidate.direction, entry, atr, marketId, numeric(candidate.daily_atr), candidate.daily_supertrend_value);
+    statements.push(env.DB.prepare(`INSERT OR IGNORE INTO recommendations (id, user_id, symbol, market, action, direction, generated_at,
+      signal_confirmed_at, entry_price, current_price, stop_price, target_1, target_2, confidence, entry_status, daily_adx,
+      horizon_trading_days, status, strategy, features) VALUES (?, ?, ?, ?, 'IDEA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 10, 'PENDING', ?, ?)`).bind(
+      crypto.randomUUID(), SCANNER_USER_ID, candidate.symbol, marketId, candidate.direction, payload.generated_at,
+      candidate.signal_confirmed_at, round(entry, 6), round(numeric(candidate.price), 6), round(stop, 6), round(target1, 6), round(target2, 6),
+      round(clamp(numeric(candidate.score) / 100, 0, 1), 3), candidate.entry_status, numeric(candidate.daily_adx), strategy,
+      featuresById.get(`SUPERTREND:${candidate.symbol}:${candidate.direction}`) ?? null,
+    ));
+  }
+  if (statements.length) await env.DB.batch(statements);
+  return statements.length;
+}
+
 async function recordScannerPicks(env, payload) {
+  if (env.DB && (payload?.market === "IN" || payload?.market === "FX")) return recordForeignPicks(env, payload);
   if (!env.DB || payload?.market !== "US") return 0;
   const statements = [];
   // What was known about each idea at this moment, kept with the pick so rules can be tested on its result later. Skipped ideas carry the filter that removed them.
@@ -2764,7 +2866,7 @@ function postMortemTags(row, { earnings = null, spyBars = null } = {}) {
 async function tagPostMortems(env) {
   if (!env.DB) return 0;
   const rows = (await env.DB.prepare(`SELECT id, symbol, direction, generated_at, settled_at, entry_price, stop_price, exit_price, strategy_return_pct, max_favorable_pct, stop_hit
-    FROM recommendations WHERE user_id = ? AND status = 'SETTLED' AND post_mortem IS NULL AND action != 'PASS' ORDER BY settled_at DESC LIMIT 8`).bind(SCANNER_USER_ID).all()).results || [];
+    FROM recommendations WHERE user_id = ? AND status = 'SETTLED' AND market = 'US' AND post_mortem IS NULL AND action != 'PASS' ORDER BY settled_at DESC LIMIT 8`).bind(SCANNER_USER_ID).all()).results || [];
   if (!rows.length) return 0;
   let spyBars = null;
   try { spyBars = (await fetchDailySettlementBars(["SPY"])).get("SPY") || null; } catch { /* the market tag is skipped this run */ }
@@ -2815,6 +2917,12 @@ async function publicTrackRecord(db) {
     const own = rows.filter(row => row.strategy === id);
     strategies.push({ id, label, since: own[0]?.generated_at || null, summary: summarizeTrackRecord(own, await pendingFor(id)) });
   }
+  // India and forex, listed apart from `strategies` so the US figures and the installed app's picker are untouched.
+  const other_markets = [];
+  for (const [id, info] of Object.entries(FOREIGN_STRATEGIES)) {
+    const own = rows.filter(row => row.strategy === id), pending = await pendingFor(id);
+    if (own.length || pending) other_markets.push({ id, market: info.market, label: info.label, since: own[0]?.generated_at || null, summary: summarizeTrackRecord(own, pending) });
+  }
   const supertrend = rows.filter(row => row.strategy === "SUPERTREND");
   // Results by the debate's lean, and what the settled picks have in common.
   const extra = (await db.prepare(`SELECT direction, status, strategy_return_pct, stop_hit, target_hit, generated_at, debate_leaning, post_mortem
@@ -2829,7 +2937,8 @@ async function publicTrackRecord(db) {
     horizon_trading_days: 10,
     summary: strategies[0].summary,
     strategies,
-    methodology: "Every fresh US entry a scanner surfaces is recorded once per ticker and signal close, at the price available when it first appeared, under the scanner that produced it. Supertrend picks are followed until a daily bar closes under the daily Supertrend line (over it for a short), and are graded at the next open; there is no target and no time limit beyond a 120-day safety limit. Dip picks exit at the first of their own stop, first target, or the close of the tenth trading day, and are graded as soon as a level is hit. Pattern picks (candlestick breakouts and breakdowns) use the same rule as dips: their own stop, first target (1R), or the close of day 10. Open picks, stopped picks and losers are all counted. Backtests are hypothetical; only these live results are a record."
+    other_markets,
+    methodology: "Every fresh US entry a scanner surfaces is recorded once per ticker and signal close (India and forex ideas are recorded the same way under their own labels, listed separately as other_markets, and graded at the first of their stop, first target or day 10), at the price available when it first appeared, under the scanner that produced it. Supertrend picks are followed until a daily bar closes under the daily Supertrend line (over it for a short), and are graded at the next open; there is no target and no time limit beyond a 120-day safety limit. Dip picks exit at the first of their own stop, first target, or the close of the tenth trading day, and are graded as soon as a level is hit. Pattern picks (candlestick breakouts and breakdowns) use the same rule as dips: their own stop, first target (1R), or the close of day 10. Open picks, stopped picks and losers are all counted. Backtests are hypothetical; only these live results are a record."
   };
 }
 
@@ -3545,6 +3654,27 @@ async function holdingSnapshotsFor(env, market, symbols) {
 // Tested on Supertrend entries (ml_st_exits.py): exiting on the line earned +1.8% per trade; adding an early-warning exit (close under a moving
 // average, ADX fading, the market under its 50-day average, a tighter trail) lowered the average each time, so those are shown as warnings only.
 const MONITOR_LINE_STEP_ATR = 0.5;   // a rise in the protective level smaller than this is applied silently, not logged as an event
+// A US Supertrend position that is up this much over the buy price gets a "consider taking profit" prompt (the owner's choice, 2026-11-10). It is advice only:
+// the targets are unchanged, the daily Supertrend line is still the exit, and a close under the line still takes priority. Backtests (research/pattern-backtest,
+// backtest32.mjs): selling everything at +5% wins more often (about 63% against 44%) but earns less per trade (+0.50% against +1.97%), so holding on stays a valid choice.
+const CONSIDER_PROFIT_PCT = 5;
+
+// Profit lock (advisory, shadow-mode): once a daily CLOSE is PROFIT_LOCK_ARM_PCT over the buy price, a lock sits PROFIT_LOCK_PCT over the buy price. If price comes back to it,
+// the holding says so and suggests locking the gain. It never replaces the daily Supertrend line, which stays the exit. Backtest (research/pattern-backtest, backtest36.mjs, all
+// 5,823 Supertrend flips): a stop at entry +1% after a close 3% up won 61.8% of trades against 38.7% when holding to the line, at +1.17% per trade against +1.45% (late half
+// +0.78% against +0.95%); after a 5% close 52.4% and +1.29%. A lock only 0.3% to 0.5% over the entry mostly ends in scratches, hence 1%. Armed and hit dates are stored on the
+// holding (lock_armed_at, lock_hit_at) so a lock stays armed once set, and both moments are logged as level events to compare with the backtest.
+const PROFIT_LOCK_ARM_PCT = 3, PROFIT_LOCK_PCT = 1;
+function profitLockState({ buy, boughtDate, bars = [], price, armedAt = null, hitAt = null, stop = 0 }) {
+  const level = buy * (1 + PROFIT_LOCK_PCT / 100), armPrice = buy * (1 + PROFIT_LOCK_ARM_PCT / 100);
+  const base = { arm_pct: PROFIT_LOCK_ARM_PCT, lock_pct: PROFIT_LOCK_PCT, arm_price: round(armPrice, 6), level: round(level, 6), superseded: stop >= level - 1e-9 };
+  const armBar = armedAt ? null : bars.find(bar => bar.d > boughtDate && numeric(bar.c) >= armPrice);
+  const armedOn = armedAt ? String(armedAt).slice(0, 10) : armBar?.d || null;
+  if (!armedOn) return { ...base, armed: false, armed_on: null, armed_close: null, hit: false, touched_on: null };
+  const touchedBar = bars.find(bar => bar.d > armedOn && numeric(bar.l) > 0 && numeric(bar.l) <= level);
+  const hit = Boolean(hitAt) || Boolean(touchedBar) || (numeric(price) > 0 && numeric(price) <= level);
+  return { ...base, armed: true, armed_on: armedOn, armed_close: armBar ? numeric(armBar.c) : null, hit, touched_on: hitAt ? String(hitAt).slice(0, 10) : touchedBar?.d || null };
+}
 
 function monitorLevels(row, snapshot) {
   const market = MARKETS[row.market] || MARKETS.US;
@@ -3567,9 +3697,13 @@ function monitorLevels(row, snapshot) {
   const events = [];
   if (firstRun) events.push({ kind: "INITIAL", reason: `Protective level set at ${fmt(stop)} (${line > 0 && stop === line ? "the daily Supertrend line" : "two daily ranges under your buy price, because the daily Supertrend line is not available"}). It rises with the trend and you exit if a day closes under it.` });
   else if (stop - persisted >= MONITOR_LINE_STEP_ATR * atr) events.push({ kind: "LINE_RAISED", reason: `The daily Supertrend line moved up to ${fmt(stop)}, so your protective level moved up with it.` });
+  // Profit lock: Supertrend-exit holdings only (dip and pattern buys keep their own levels).
+  const lock = row.exit_mode !== "LEVELS" && !ownLevels ? profitLockState({ buy, boughtDate, bars: snapshot.recent_daily || [], price, armedAt: row.lock_armed_at, hitAt: row.lock_hit_at, stop }) : null;
+  if (lock?.armed && !row.lock_armed_at) events.push({ kind: "LOCK_ARMED", reason: `${lock.armed_close ? `A daily close of ${fmt(lock.armed_close)} was ${PROFIT_LOCK_ARM_PCT}% or more over your buy price, so` : "Your position has closed"} the profit lock is on at ${fmt(lock.level)} (${PROFIT_LOCK_PCT}% over your buy price). If price comes back to it, the app will suggest locking the gain. This is advice only; the daily Supertrend line is still the exit.` });
+  if (lock?.armed && lock.hit && !lock.superseded && !row.lock_hit_at) events.push({ kind: "LOCK_HIT", reason: `Price ${fmt(price)} is at or under the profit lock ${fmt(lock.level)}${lock.touched_on ? ` (touched ${lock.touched_on})` : ""}. Selling here would lock about ${PROFIT_LOCK_PCT}% over your buy price.` });
   const basis = line > 0 && stop >= line - 1e-9 ? "LINE" : stop > buy + 1e-9 ? "RAISED" : "INITIAL";
   const stopText = basis === "LINE" ? "the daily Supertrend line, which rises as the trend continues; exit if a day closes under it" : basis === "RAISED" ? "raised with the daily Supertrend line" : "two daily ranges under your buy price until the daily Supertrend line is available";
-  return { stop, target1, target2, atr, peak, basis, stopText, events, line };
+  return { stop, target1, target2, atr, peak, basis, stopText, events, line, lock };
 }
 
 // Writes only what changed. MAX() in SQL keeps a stale read from ever lowering a level that another pass has already raised.
@@ -3577,9 +3711,11 @@ function monitorStatements(env, row, levels, price, now) {
   const statements = [];
   const changed = levels.events.length > 0 || row.monitor_atr == null || levels.peak > numeric(row.peak_high) * 1.0005 || levels.stop > numeric(row.stop_level) + 1e-9;
   if (!changed) return statements;
+  const lockArmed = levels.lock?.armed ? levels.lock.armed_on : null, lockHit = levels.lock?.armed && levels.lock.hit && !levels.lock.superseded ? (levels.lock.touched_on || now.slice(0, 10)) : null;
   statements.push(env.DB.prepare(`UPDATE holdings SET monitor_atr = COALESCE(monitor_atr, ?), stop_level = MAX(COALESCE(stop_level, 0), ?),
-    target_1 = MAX(COALESCE(target_1, 0), ?), target_2 = MAX(COALESCE(target_2, 0), ?), peak_high = MAX(COALESCE(peak_high, 0), ?), monitor_at = ?
-    WHERE id = ? AND closed_at IS NULL`).bind(round(levels.atr, 6), round(levels.stop, 6), round(levels.target1, 6), round(levels.target2, 6), round(levels.peak, 6), now, row.id));
+    target_1 = MAX(COALESCE(target_1, 0), ?), target_2 = MAX(COALESCE(target_2, 0), ?), peak_high = MAX(COALESCE(peak_high, 0), ?), monitor_at = ?,
+    lock_armed_at = COALESCE(lock_armed_at, ?), lock_hit_at = COALESCE(lock_hit_at, ?)
+    WHERE id = ? AND closed_at IS NULL`).bind(round(levels.atr, 6), round(levels.stop, 6), round(levels.target1, 6), round(levels.target2, 6), round(levels.peak, 6), now, lockArmed, lockHit, row.id));
   for (const event of levels.events) {
     statements.push(env.DB.prepare(`INSERT INTO holding_level_events (id, holding_id, user_id, symbol, at, kind, reason, price, stop_level, target_1, target_2)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(crypto.randomUUID(), row.id, row.user_id, row.symbol, now, event.kind, event.reason, round(price, 4),
@@ -3589,7 +3725,7 @@ function monitorStatements(env, row, levels, price, now) {
 }
 
 // Cron pass: watches every open US position against the shared, freshly refreshed snapshots and ratchets levels without anyone opening the app.
-const ALERT_ACTIONS = { EXIT: ["high", "Exit signal"], TAKE_PROFIT: ["high", "Profit target reached"], WATCH: ["info", "Weakening: watch it"] };
+const ALERT_ACTIONS = { EXIT: ["high", "Exit signal"], TAKE_PROFIT: ["high", "Consider taking profit"], WATCH: ["info", "Weakening: watch it"] };
 
 function alertStatement(env, row, now, { kind, severity, title, detail, key }) {
   return env.DB.prepare(`INSERT OR IGNORE INTO holding_alerts (id, user_id, holding_id, symbol, at, kind, severity, title, detail, dedupe_key, seen_at)
@@ -3725,6 +3861,19 @@ function evaluateHolding(holding, snapshot, levels = null) {
       headline = "The daily trend has turned down";
       reasons.push("A completed daily close is under the daily Supertrend line, which is the exit that tested best for Supertrend trades. Exit at the next open.");
       reasons.push(...warnings.filter(text => !text.startsWith("Price is at or under")));
+    } else if (levels.lock?.armed && levels.lock.hit && !levels.lock.superseded) {
+      // Advice only: the position was up at least 3% on a close and has come back to the profit lock. The daily trend is still up, so this is a prompt, not the exit.
+      action = "TAKE_PROFIT";
+      headline = "Back at your profit lock: consider locking the gain";
+      reasons.push(`Price ${fmt(price)} is at or under your profit lock ${fmt(levels.lock.level)} (${PROFIT_LOCK_PCT}% over your buy price ${fmt(buy)})${levels.lock.touched_on ? `, first touched ${levels.lock.touched_on}` : ""}. It was set after a daily close ${PROFIT_LOCK_ARM_PCT}% or more over your buy price${levels.lock.armed_on ? ` (${levels.lock.armed_on})` : ""}.`);
+      reasons.push(`The daily Supertrend is still up (exit line ${fmt(stopLevel)}), so this is advice, not an exit signal. In backtests, locking about ${PROFIT_LOCK_PCT}% after a ${PROFIT_LOCK_ARM_PCT}% gain won far more trades (about 62% against 39%) for a slightly lower average return (+1.17% against +1.45%).`);
+      reasons.push(...warnings.filter(text => !text.startsWith("Price is at or under")));
+    } else if (pnlPct >= CONSIDER_PROFIT_PCT) {
+      action = "TAKE_PROFIT";
+      headline = `Up ${pnlPct.toFixed(1)}%: consider taking profit`;
+      reasons.push(`Price ${fmt(price)} is ${pnlPct.toFixed(1)}% over your buy price ${fmt(buy)}, past the ${CONSIDER_PROFIT_PCT}% point where this app suggests considering a sale.`);
+      reasons.push(`The daily Supertrend is still up, with the exit line at ${fmt(stopLevel)}; the targets (${fmt(target1)} and ${fmt(target2)}) are unchanged. Selling here locks the gain. Staying in keeps the trend's larger winners but wins less often.`);
+      reasons.push(...warnings.filter(text => !text.startsWith("Price is at or under")));
     } else if (warnings.length) {
       action = "WATCH";
       headline = price <= stopLevel ? "Under the exit line: it only counts if the day closes there" : "The trend may be weakening";
@@ -3777,6 +3926,7 @@ function evaluateHolding(holding, snapshot, levels = null) {
     exit_mode: holding.exit_mode || "TREND",
     stop_basis: levels ? levels.basis : "INITIAL",
     stop_note: levels ? levels.stopText : stopText,
+    profit_lock: levels?.lock || null,
     trailing_level: round(trailing, 4),
     target_1: round(target1, 4),
     target_2: round(target2, 4),

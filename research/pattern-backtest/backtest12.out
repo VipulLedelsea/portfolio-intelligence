@@ -1,0 +1,60 @@
+swing legs learned: 298445 bar-labels; predictions start 2022-11-18; usable bars 208484; universe 557 stocks; k=2.5
+
+== 1. CALIBRATION on setup bars (retracement 35-80% of k, swing >= 2 ATR, first bar per leg; n = 12725) ==
+predicted-p quintile     mean predicted   actual 'low already in'   n
+  Q1 (lowest)                 34.7%                 35.3%      2545
+  Q2                          41.6%                 42.5%      2545
+  Q3                          45.0%                 43.1%      2545
+  Q4                          52.1%                 50.7%      2545
+  Q5 (highest)                62.1%                 60.7%      2545
+  p distribution: 10%=0.35 50%=0.45 90%=0.61; Wilson: 10%=0.34 50%=0.44 90%=0.60; share with Wilson>=0.60: 9.7%
+
+== 2. FORWARD RETURNS (long, entry next open, 0.1%/side, from 2022-11-18; thresholds: top-third p>=0.52, median 0.45, bottom-third p<=0.43) ==
+
+--- exit: 5d hold, no levels ---
+group                                          n   mean%   win%   1stH   2ndH      edge vs parent (t)    vs any-day (t)
+any stock-day (baseline)                  158167   -0.02
+A  SEF setup, no odds filter (control)     12755   -0.06     49  -0.07  -0.06                              -0.04 (-0.5)
+A1 setup + Wilson>=0.60                     1233   -0.19     46  -0.31  -0.12            -0.13 (-0.4)      -0.17 (-0.7)
+A2 setup + top-third odds                   4250   -0.00     49  -0.21   0.12              0.06 (0.5)        0.02 (0.0)
+A3 setup + bottom-third odds                4262   -0.11     49   0.01  -0.30            -0.05 (-0.4)      -0.09 (-0.7)
+A4 setup + liquidity sweep                  3516   -0.05     51  -0.01  -0.08             0.01 (-2.3)      -0.02 (-2.2)
+A5 setup + top-third odds + sweep           1340    0.04     51  -0.06   0.10             0.10 (-0.4)       0.06 (-0.5)
+D  current dip entry (control)              1617    0.33     52   0.15   0.45                                0.35 (1.7)
+D1 dip + Wilson>=0.60                         13    0.55     62   1.22  -0.23              0.22 (0.9)        0.57 (0.4)
+D2 dip + above-median odds                    66    0.17     58   0.90  -0.45             -0.16 (0.9)        0.19 (1.6)
+D3 dip + below-median odds                  1584    0.34     52   0.15   0.47             0.01 (-0.1)        0.36 (1.5)
+D4 dip + liquidity sweep                     175    0.25     51  -0.07   0.47             -0.07 (1.6)        0.27 (2.0)
+D5 dip + no sweep                           1515    0.30     52   0.17   0.39            -0.03 (-0.9)        0.32 (1.7)
+
+--- exit: 5d, stop 2 ATR, target 1 ATR ---
+group                                          n   mean%   win%   1stH   2ndH      edge vs parent (t)    vs any-day (t)
+any stock-day (baseline)                  158167   -0.05
+A  SEF setup, no odds filter (control)     12755   -0.10     58  -0.07  -0.12                              -0.05 (-0.9)
+A1 setup + Wilson>=0.60                     1233   -0.26     56  -0.31  -0.24            -0.17 (-0.7)      -0.22 (-1.2)
+A2 setup + top-third odds                   4250   -0.10     57  -0.19  -0.04            -0.00 (-0.3)      -0.05 (-0.9)
+A3 setup + bottom-third odds                4262   -0.14     57  -0.04  -0.31            -0.04 (-0.4)      -0.09 (-1.0)
+A4 setup + liquidity sweep                  3516   -0.15     57  -0.11  -0.18            -0.05 (-2.9)      -0.10 (-2.9)
+A5 setup + top-third odds + sweep           1340   -0.12     58  -0.12  -0.11            -0.02 (-0.9)      -0.07 (-1.2)
+D  current dip entry (control)              1617    0.30     60   0.21   0.37                                0.35 (2.1)
+D1 dip + Wilson>=0.60                         13   -0.41     62   0.19  -1.11             -0.71 (0.1)      -0.36 (-0.3)
+D2 dip + above-median odds                    66   -0.22     59   1.12  -1.33             -0.52 (1.0)       -0.17 (1.6)
+D3 dip + below-median odds                  1584    0.31     60   0.21   0.39              0.01 (0.3)        0.36 (2.0)
+D4 dip + liquidity sweep                     175   -0.09     58  -0.36   0.10             -0.39 (1.8)       -0.04 (2.2)
+D5 dip + no sweep                           1515    0.33     60   0.24   0.38             0.02 (-0.9)        0.37 (2.2)
+
+--- exit: 10d, stop 2 ATR, target 2 ATR ---
+group                                          n   mean%   win%   1stH   2ndH      edge vs parent (t)    vs any-day (t)
+any stock-day (baseline)                  157155    0.13
+A  SEF setup, no odds filter (control)     12393    0.02     51   0.11  -0.06                              -0.10 (-1.1)
+A1 setup + Wilson>=0.60                     1227    0.01     51  -0.06   0.05            -0.01 (-0.5)      -0.12 (-0.8)
+A2 setup + top-third odds                   4177    0.07     50  -0.00   0.12              0.05 (0.7)      -0.06 (-0.2)
+A3 setup + bottom-third odds                4207   -0.08     50   0.12  -0.42            -0.10 (-1.0)      -0.20 (-1.5)
+A4 setup + liquidity sweep                  3448    0.08     51   0.14   0.03             0.05 (-1.1)      -0.05 (-1.6)
+A5 setup + top-third odds + sweep           1322    0.24     52   0.16   0.28              0.21 (0.5)       0.11 (-0.1)
+D  current dip entry (control)              1561    0.37     52   0.33   0.40                                0.24 (0.9)
+D1 dip + Wilson>=0.60                         13   -0.40     54  -0.43  -0.36             -0.77 (0.4)      -0.53 (-0.5)
+D2 dip + above-median odds                    66   -0.26     47   2.09  -2.21             -0.63 (1.5)       -0.38 (1.0)
+D3 dip + below-median odds                  1529    0.41     53   0.34   0.46             0.04 (-0.1)        0.28 (1.0)
+D4 dip + liquidity sweep                     175   -0.51     47   0.01  -0.88            -0.89 (-0.0)       -0.64 (0.2)
+D5 dip + no sweep                           1462    0.46     53   0.42   0.50              0.09 (1.3)        0.34 (1.5)

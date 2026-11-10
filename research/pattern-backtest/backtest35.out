@@ -1,0 +1,59 @@
+all trades: 5823
+
+HOLD to the Supertrend line (current)                            win  40.3%  avg  1.45% (win 12.4 / loss -5.9)  PF 1.41  early 1.83 / late 0.95
+
+---- once the trade is up 3% ----
+  3894 trades (67%) ever reach +3% at a close; 39.8% of those still end as losses under HOLD
+  stop to breakeven at first close up 3% (no alert)              win  61.0%  avg  1.17% (win 6.2 / loss -6.7)  PF 1.45  early 1.54 / late 0.70
+  stop locked at half the gain at first close up 3% (no alert)   win  65.0%  avg  0.93% (win 5.3 / loss -7.2)  PF 1.37  early 1.24 / late 0.54
+  ALERT (any of gap down / giveback / high-volume down day) while up 3%: stop to breakeven win  48.1%  avg  1.40% (win 9.6 / loss -6.2)  PF 1.44  early 1.82 / late 0.86
+  ALERT (any of gap down / giveback / high-volume down day) while up 3%: exit half now, rest to the line win  47.5%  avg  1.07% (win 9.0 / loss -6.1)  PF 1.33  early 1.58 / late 0.41
+  ALERT (any of gap down / giveback / high-volume down day) while up 3%: exit ALL now win  51.0%  avg  0.69% (win 7.5 / loss -6.4)  PF 1.22  early 1.32 / late -0.14
+  ALERT (near the Supertrend line (0.5 ATR)) while up 3%: stop to breakeven win  40.8%  avg  1.46% (win 12.2 / loss -5.9)  PF 1.41  early 1.83 / late 0.97
+  ALERT (near the Supertrend line (0.5 ATR)) while up 3%: exit half now, rest to the line win  41.0%  avg  1.39% (win 12.0 / loss -5.9)  PF 1.40  early 1.77 / late 0.91
+  ALERT (near the Supertrend line (0.5 ATR)) while up 3%: exit ALL now win  41.2%  avg  1.34% (win 11.8 / loss -6.0)  PF 1.38  early 1.72 / late 0.86
+  ALERT (2+ of 5 warnings) while up 3%: stop to breakeven        win  43.2%  avg  1.41% (win 11.2 / loss -6.1)  PF 1.41  early 1.82 / late 0.88
+  ALERT (2+ of 5 warnings) while up 3%: exit half now, rest to the line win  43.3%  avg  1.35% (win 11.0 / loss -6.0)  PF 1.39  early 1.78 / late 0.80
+  ALERT (2+ of 5 warnings) while up 3%: exit ALL now             win  44.3%  avg  1.26% (win 10.5 / loss -6.1)  PF 1.37  early 1.73 / late 0.64
+
+---- once the trade is up 5% ----
+  3238 trades (56%) ever reach +5% at a close; 28.2% of those still end as losses under HOLD
+  stop to breakeven at first close up 5% (no alert)              win  52.1%  avg  1.31% (win 8.4 / loss -6.4)  PF 1.42  early 1.74 / late 0.75
+  stop locked at half the gain at first close up 5% (no alert)   win  55.0%  avg  1.06% (win 7.4 / loss -6.7)  PF 1.35  early 1.50 / late 0.49
+  ALERT (any of gap down / giveback / high-volume down day) while up 5%: stop to breakeven win  44.1%  avg  1.44% (win 11.0 / loss -6.1)  PF 1.42  early 1.84 / late 0.93
+  ALERT (any of gap down / giveback / high-volume down day) while up 5%: exit half now, rest to the line win  44.9%  avg  1.14% (win 10.0 / loss -6.1)  PF 1.34  early 1.66 / late 0.47
+  ALERT (any of gap down / giveback / high-volume down day) while up 5%: exit ALL now win  45.7%  avg  0.84% (win 9.1 / loss -6.2)  PF 1.25  early 1.50 / late -0.01
+  ALERT (near the Supertrend line (0.5 ATR)) while up 5%: stop to breakeven win  40.4%  avg  1.45% (win 12.3 / loss -5.9)  PF 1.41  early 1.83 / late 0.95
+  ALERT (near the Supertrend line (0.5 ATR)) while up 5%: exit half now, rest to the line win  40.5%  avg  1.40% (win 12.1 / loss -5.9)  PF 1.40  early 1.79 / late 0.89
+  ALERT (near the Supertrend line (0.5 ATR)) while up 5%: exit ALL now win  40.6%  avg  1.34% (win 12.0 / loss -5.9)  PF 1.38  early 1.75 / late 0.82
+  ALERT (2+ of 5 warnings) while up 5%: stop to breakeven        win  41.0%  avg  1.42% (win 12.0 / loss -5.9)  PF 1.41  early 1.82 / late 0.92
+  ALERT (2+ of 5 warnings) while up 5%: exit half now, rest to the line win  41.2%  avg  1.38% (win 11.8 / loss -6.0)  PF 1.39  early 1.81 / late 0.82
+  ALERT (2+ of 5 warnings) while up 5%: exit ALL now             win  41.5%  avg  1.31% (win 11.6 / loss -6.0)  PF 1.37  early 1.79 / late 0.69
+
+---- once the trade is up 8% ----
+  2503 trades (43%) ever reach +8% at a close; 14.1% of those still end as losses under HOLD
+  stop to breakeven at first close up 8% (no alert)              win  44.3%  avg  1.36% (win 10.7 / loss -6.1)  PF 1.40  early 1.79 / late 0.80
+  stop locked at half the gain at first close up 8% (no alert)   win  45.8%  avg  1.12% (win 9.7 / loss -6.2)  PF 1.33  early 1.64 / late 0.44
+  ALERT (any of gap down / giveback / high-volume down day) while up 8%: stop to breakeven win  41.5%  avg  1.43% (win 11.9 / loss -6.0)  PF 1.41  early 1.84 / late 0.91
+  ALERT (any of gap down / giveback / high-volume down day) while up 8%: exit half now, rest to the line win  42.1%  avg  1.19% (win 11.1 / loss -6.0)  PF 1.34  early 1.73 / late 0.50
+  ALERT (any of gap down / giveback / high-volume down day) while up 8%: exit ALL now win  42.2%  avg  0.93% (win 10.4 / loss -6.0)  PF 1.27  early 1.62 / late 0.05
+  ALERT (near the Supertrend line (0.5 ATR)) while up 8%: stop to breakeven win  40.3%  avg  1.45% (win 12.4 / loss -5.9)  PF 1.41  early 1.83 / late 0.95
+  ALERT (near the Supertrend line (0.5 ATR)) while up 8%: exit half now, rest to the line win  40.3%  avg  1.40% (win 12.2 / loss -5.9)  PF 1.40  early 1.79 / late 0.89
+  ALERT (near the Supertrend line (0.5 ATR)) while up 8%: exit ALL now win  40.4%  avg  1.35% (win 12.1 / loss -5.9)  PF 1.38  early 1.76 / late 0.82
+  ALERT (2+ of 5 warnings) while up 8%: stop to breakeven        win  40.4%  avg  1.44% (win 12.3 / loss -5.9)  PF 1.41  early 1.83 / late 0.95
+  ALERT (2+ of 5 warnings) while up 8%: exit half now, rest to the line win  40.5%  avg  1.39% (win 12.2 / loss -5.9)  PF 1.40  early 1.81 / late 0.86
+  ALERT (2+ of 5 warnings) while up 8%: exit ALL now             win  40.5%  avg  1.34% (win 12.0 / loss -5.9)  PF 1.38  early 1.79 / late 0.76
+
+---- once the trade is up 10% ----
+  2111 trades (36%) ever reach +10% at a close; 8.1% of those still end as losses under HOLD
+  stop to breakeven at first close up 10% (no alert)             win  42.1%  avg  1.42% (win 11.6 / loss -6.0)  PF 1.41  early 1.82 / late 0.91
+  stop locked at half the gain at first close up 10% (no alert)  win  42.9%  avg  1.15% (win 10.7 / loss -6.0)  PF 1.34  early 1.75 / late 0.39
+  ALERT (any of gap down / giveback / high-volume down day) while up 10%: stop to breakeven win  40.9%  avg  1.45% (win 12.1 / loss -5.9)  PF 1.41  early 1.84 / late 0.94
+  ALERT (any of gap down / giveback / high-volume down day) while up 10%: exit half now, rest to the line win  41.2%  avg  1.22% (win 11.4 / loss -6.0)  PF 1.35  early 1.77 / late 0.50
+  ALERT (any of gap down / giveback / high-volume down day) while up 10%: exit ALL now win  41.3%  avg  0.99% (win 10.9 / loss -6.0)  PF 1.28  early 1.71 / late 0.05
+  ALERT (near the Supertrend line (0.5 ATR)) while up 10%: stop to breakeven win  40.3%  avg  1.45% (win 12.4 / loss -5.9)  PF 1.41  early 1.83 / late 0.95
+  ALERT (near the Supertrend line (0.5 ATR)) while up 10%: exit half now, rest to the line win  40.3%  avg  1.40% (win 12.2 / loss -5.9)  PF 1.40  early 1.81 / late 0.88
+  ALERT (near the Supertrend line (0.5 ATR)) while up 10%: exit ALL now win  40.4%  avg  1.36% (win 12.1 / loss -5.9)  PF 1.39  early 1.78 / late 0.81
+  ALERT (2+ of 5 warnings) while up 10%: stop to breakeven       win  40.4%  avg  1.45% (win 12.3 / loss -5.9)  PF 1.41  early 1.83 / late 0.95
+  ALERT (2+ of 5 warnings) while up 10%: exit half now, rest to the line win  40.4%  avg  1.40% (win 12.2 / loss -5.9)  PF 1.40  early 1.83 / late 0.86
+  ALERT (2+ of 5 warnings) while up 10%: exit ALL now            win  40.4%  avg  1.36% (win 12.1 / loss -5.9)  PF 1.39  early 1.83 / late 0.76

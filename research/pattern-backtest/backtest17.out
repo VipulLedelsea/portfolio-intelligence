@@ -1,0 +1,27 @@
+Reference, current exit: flips 44.6% win / +2.14%; ALL rows 36.4% / +0.59%
+
+== top 15 by win rate on ALL rows with avg >= +1.0% on both halves of ALL rows ==
+
+== top 10 by avg on ALL rows with win >= 60% ==
+sell 50% at +4%, no hard stop, rest: be   | flips win  67.8 avg  0.63 (tr 73/1.89 te 62/-0.76) | ALL win  61.1 avg  0.30 (tr 62/0.49 te 60/0.02) days 26
+sell 50% at +4%, stop -15%, rest: be   | flips win  67.4 avg  0.59 (tr 72/1.84 te 62/-0.79) | ALL win  61.0 avg  0.30 (tr 62/0.48 te 60/0.01) days 26
+sell 50% at +4%, stop -12%, rest: be   | flips win  67.4 avg  0.65 (tr 72/1.87 te 62/-0.69) | ALL win  60.9 avg  0.29 (tr 62/0.49 te 60/-0.00) days 26
+sell 75% at +4%, no hard stop, rest: line | flips win  68.4 avg  0.83 (tr 73/1.64 te 63/-0.07) | ALL win  60.9 avg  0.27 (tr 62/0.44 te 60/0.00) days 32
+sell 75% at +4%, stop -15%, rest: line | flips win  68.0 avg  0.78 (tr 73/1.60 te 62/-0.11) | ALL win  60.9 avg  0.26 (tr 62/0.43 te 60/-0.01) days 32
+sell 75% at +4%, stop -12%, rest: line | flips win  68.0 avg  0.85 (tr 73/1.63 te 62/-0.01) | ALL win  60.8 avg  0.25 (tr 62/0.43 te 59/-0.02) days 32
+sell 50% at +3%, no hard stop, rest: be   | flips win  74.5 avg  0.38 (tr 78/1.49 te 70/-0.85) | ALL win  67.5 avg  0.24 (tr 68/0.41 te 67/-0.01) days 23
+sell 50% at +3%, stop -15%, rest: be   | flips win  74.1 avg  0.34 (tr 78/1.45 te 70/-0.88) | ALL win  67.5 avg  0.24 (tr 68/0.40 te 67/-0.01) days 23
+sell 75% at +4%, no hard stop, rest: be   | flips win  69.3 avg  0.51 (tr 74/1.56 te 64/-0.65) | ALL win  61.8 avg  0.23 (tr 62/0.43 te 61/-0.07) days 26
+sell 50% at +3%, stop -12%, rest: be   | flips win  74.1 avg  0.40 (tr 78/1.48 te 70/-0.78) | ALL win  67.4 avg  0.23 (tr 68/0.40 te 66/-0.03) days 23
+
+== top 10 by win rate overall ==
+sell 75% at +3%, no hard stop, rest: be   | flips win  76.4 avg  0.30 (tr 80/1.14 te 73/-0.64) | ALL win  68.7 avg  0.16 (tr 69/0.33 te 68/-0.10) days 23
+sell 75% at +3%, stop -15%, rest: be   | flips win  76.0 avg  0.26 (tr 79/1.10 te 73/-0.67) | ALL win  68.6 avg  0.15 (tr 69/0.32 te 68/-0.10) days 23
+sell 75% at +3%, stop -12%, rest: be   | flips win  76.0 avg  0.32 (tr 79/1.13 te 73/-0.57) | ALL win  68.5 avg  0.15 (tr 69/0.33 te 68/-0.12) days 23
+sell 50% at +3%, no hard stop, rest: be   | flips win  74.5 avg  0.38 (tr 78/1.49 te 70/-0.85) | ALL win  67.5 avg  0.24 (tr 68/0.41 te 67/-0.01) days 23
+sell 50% at +3%, stop -15%, rest: be   | flips win  74.1 avg  0.34 (tr 78/1.45 te 70/-0.88) | ALL win  67.5 avg  0.24 (tr 68/0.40 te 67/-0.01) days 23
+sell 75% at +3%, stop -8%, rest: be   | flips win  74.1 avg  0.31 (tr 77/0.97 te 71/-0.42) | ALL win  67.4 avg  0.12 (tr 68/0.30 te 66/-0.15) days 22
+sell 50% at +3%, stop -12%, rest: be   | flips win  74.1 avg  0.40 (tr 78/1.48 te 70/-0.78) | ALL win  67.4 avg  0.23 (tr 68/0.40 te 66/-0.03) days 23
+sell 50% at +3%, stop -8%, rest: be   | flips win  72.4 avg  0.39 (tr 76/1.29 te 69/-0.60) | ALL win  66.4 avg  0.20 (tr 67/0.37 te 65/-0.07) days 22
+sell 75% at +3%, no hard stop, rest: line | flips win  73.9 avg  0.70 (tr 78/1.31 te 70/0.02) | ALL win  65.8 avg  0.21 (tr 67/0.36 te 64/-0.02) days 32
+sell 75% at +3%, stop -15%, rest: line | flips win  73.5 avg  0.65 (tr 77/1.27 te 69/-0.03) | ALL win  65.7 avg  0.20 (tr 67/0.35 te 64/-0.02) days 32

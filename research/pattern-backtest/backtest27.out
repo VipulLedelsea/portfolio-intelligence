@@ -1,0 +1,48 @@
+
+################ exit: pattern stop + measured-move target, 30-day cap
+-- Supertrend up
+pattern               PATTERN trades                                        train / test win%, avg%     MATCHED CONTROL                             edge win / avg
+Bull flag             n=2847 win  41% avg  1.32% (win 10.6, loss -5.1)      38/44%  0.66/2.03%          win 38% avg 0.81%                           2.6 pts / 0.50%
+Flat base breakout    n= 687 win  54% avg  0.35% (win 5.3, loss -5.5)       58/48%  0.79/-0.37%         win 53% avg 0.27%                           1.6 pts / 0.07%
+Cup and handle        n=1619 win  49% avg  0.71% (win 7.1, loss -5.5)       49/48%  0.76/0.61%          win 50% avg 1.11%                           -1.0 pts / -0.40%
+Ascending triangle    n= 376 win  46% avg  0.15% (win 6.0, loss -4.8)       49/40%  0.48/-0.51%         win 49% avg 0.82%                           -3.1 pts / -0.67%
+Double bottom         n=7591 win  53% avg -0.02% (win 4.9, loss -5.5)       54/51%  0.14/-0.28%         win 54% avg 0.23%                           -1.6 pts / -0.25%
+-- Supertrend up + ADX gate
+pattern               PATTERN trades                                        train / test win%, avg%     MATCHED CONTROL                             edge win / avg
+Bull flag             n=1875 win  40% avg  0.75% (win 9.5, loss -5.0)       39/40%  0.62/0.91%          win 37% avg 0.72%                           2.3 pts / 0.03%
+Flat base breakout    n= 164 win  60% avg  0.65% (win 4.8, loss -5.5)       62/56%  0.77/0.39%          win 50% avg 0.15%                           9.8 pts / 0.50%
+Cup and handle        n= 910 win  53% avg  1.00% (win 6.6, loss -5.5)       54/52%  1.06/0.90%          win 51% avg 1.24%                           1.9 pts / -0.24%
+Ascending triangle    n=  69 win  52% avg  1.12% (win 6.6, loss -4.9)       47/64%  0.63/2.17%          win 46% avg 0.36%                           5.8 pts / 0.76%
+Double bottom         n=1240 win  54% avg  0.10% (win 5.0, loss -5.7)       57/49%  0.49/-0.52%         win 54% avg 0.15%                           -0.2 pts / -0.05%
+-- fresh Supertrend (<=10d)
+pattern               PATTERN trades                                        train / test win%, avg%     MATCHED CONTROL                             edge win / avg
+Bull flag             n= 769 win  46% avg  2.64% (win 11.6, loss -5.1)      38/52%  0.93/3.75%          win 40% avg 1.30%                           6.7 pts / 1.34%
+Flat base breakout    n= 282 win  57% avg  0.63% (win 5.5, loss -5.8)       60/52%  0.89/0.17%          win 54% avg 0.52%                           3.0 pts / 0.11%
+Cup and handle        n=  87 win  51% avg  1.15% (win 8.5, loss -6.3)       59/39%  2.34/-0.54%         win 46% avg 0.36%                           4.9 pts / 0.79%
+Ascending triangle    n=  90 win  52% avg  0.71% (win 5.6, loss -4.7)       52/52%  0.79/0.54%          win 49% avg 0.65%                           3.6 pts / 0.06%
+Double bottom         n=2945 win  55% avg  0.20% (win 4.9, loss -5.5)       59/49%  0.58/-0.36%         win 56% avg 0.37%                           -1.0 pts / -0.18%
+
+################ exit: pattern stop + Supertrend-line exit (no target)
+-- Supertrend up
+pattern               PATTERN trades                                        train / test win%, avg%     MATCHED CONTROL                             edge win / avg
+Bull flag             n=2847 win  35% avg  2.81% (win 16.8, loss -4.8)      33/38%  1.21/4.56%          win 31% avg 1.18%                           4.2 pts / 1.63%
+Flat base breakout    n= 687 win  37% avg  0.10% (win 7.3, loss -4.2)       40/33%  0.72/-0.90%         win 33% avg 0.06%                           4.7 pts / 0.04%
+Cup and handle        n=1619 win  38% avg  0.80% (win 10.0, loss -4.8)      37/40%  0.63/1.13%          win 36% avg 0.89%                           2.4 pts / -0.08%
+Ascending triangle    n= 376 win  34% avg -0.03% (win 7.4, loss -3.9)       36/31%  0.25/-0.60%         win 36% avg 0.95%                           -1.7 pts / -0.98%
+Double bottom         n=7591 win  34% avg -0.03% (win 8.4, loss -4.4)       36/30%  0.38/-0.68%         win 33% avg 0.35%                           0.7 pts / -0.38%
+-- Supertrend up + ADX gate
+pattern               PATTERN trades                                        train / test win%, avg%     MATCHED CONTROL                             edge win / avg
+Bull flag             n=1875 win  33% avg  2.25% (win 16.5, loss -4.7)      33/32%  1.30/3.44%          win 30% avg 0.83%                           2.3 pts / 1.42%
+Flat base breakout    n= 164 win  39% avg  0.79% (win 8.4, loss -4.1)       41/35%  0.85/0.67%          win 32% avg -0.08%                          7.0 pts / 0.87%
+Cup and handle        n= 910 win  42% avg  1.65% (win 10.5, loss -4.8)      41/44%  1.32/2.33%          win 37% avg 1.01%                           4.8 pts / 0.64%
+Ascending triangle    n=  69 win  41% avg  1.62% (win 9.7, loss -3.9)       38/45%  1.52/1.83%          win 32% avg 0.66%                           8.5 pts / 0.96%
+Double bottom         n=1240 win  35% avg  0.49% (win 9.6, loss -4.5)       39/30%  1.11/-0.49%         win 34% avg 0.29%                           1.6 pts / 0.20%
+-- fresh Supertrend (<=10d)
+pattern               PATTERN trades                                        train / test win%, avg%     MATCHED CONTROL                             edge win / avg
+Bull flag             n= 769 win  44% avg  5.33% (win 18.8, loss -5.0)      34/50%  2.37/7.26%          win 34% avg 2.27%                           10.0 pts / 3.07%
+Flat base breakout    n= 282 win  41% avg  0.56% (win 7.3, loss -4.2)       42/41%  0.96/-0.13%         win 34% avg 0.19%                           7.5 pts / 0.37%
+Cup and handle        n=  87 win  44% avg  0.38% (win 7.0, loss -4.7)       49/36%  1.40/-1.06%         win 37% avg 1.29%                           6.5 pts / -0.91%
+Ascending triangle    n=  90 win  37% avg  0.38% (win 7.9, loss -4.0)       38/34%  0.82/-0.56%         win 39% avg 2.67%                           -2.5 pts / -2.29%
+Double bottom         n=2945 win  36% avg  0.39% (win 9.1, loss -4.5)       39/30%  1.12/-0.70%         win 35% avg 0.75%                           0.5 pts / -0.36%
+
+raw pattern signals in Supertrend-up (risk 1-8%): {"Bull flag":2847,"Double bottom":7591,"Cup and handle":1619,"Ascending triangle":376,"Flat base breakout":687} | avg risk 5.9 % avg measured-move gain 10.6 %

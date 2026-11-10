@@ -1,0 +1,108 @@
+trades: 5823. Policy results are the average return per trade, net of 0.1% costs per side, for the trades where the alert fired in profit.
+
+################ alert counts only if the trade is up 0% or more at that close
+  gap down 1%+: 2925 trades alerted (50% of all); HOLD to the line: win 65%, avg 7.37%
+     exit ALL now                                 win  97%  avg   5.90%  vs hold  -1.47% (early -1.43 / late -1.52)  | same policy on a RANDOM day   2.20%  -> alert timing worth -3.67%
+     exit HALF now, rest to the line              win  76%  avg   6.63%  vs hold  -0.74% (early -0.71 / late -0.76)  | same policy on a RANDOM day   1.10%  -> alert timing worth -1.84%
+     keep it, stop locked at HALF the open gain   win  88%  avg   6.76%  vs hold  -0.61% (early -0.50 / late -0.73)  | same policy on a RANDOM day   1.15%  -> alert timing worth -1.76%
+     keep it, stop at breakeven                   win  87%  avg   7.04%  vs hold  -0.33% (early -0.38 / late -0.28)  | same policy on a RANDOM day   0.87%  -> alert timing worth -1.20%
+     continuing beats exiting at that close in 39% of alerts (avg regret if you exit: 1.47%; median -2.11%)
+  gave back half the gain: 1910 trades alerted (33% of all); HOLD to the line: win 59%, avg 4.15%
+     exit ALL now                                 win  99%  avg   3.08%  vs hold  -1.07% (early -0.97 / late -1.18)  | same policy on a RANDOM day   3.17%  -> alert timing worth -4.25%
+     exit HALF now, rest to the line              win  77%  avg   3.61%  vs hold  -0.54% (early -0.48 / late -0.59)  | same policy on a RANDOM day   1.59%  -> alert timing worth -2.12%
+     keep it, stop locked at HALF the open gain   win  92%  avg   3.45%  vs hold  -0.70% (early -0.53 / late -0.87)  | same policy on a RANDOM day   1.33%  -> alert timing worth -2.03%
+     keep it, stop at breakeven                   win  89%  avg   3.55%  vs hold  -0.60% (early -0.34 / late -0.89)  | same policy on a RANDOM day   0.65%  -> alert timing worth -1.26%
+     continuing beats exiting at that close in 32% of alerts (avg regret if you exit: 1.07%; median -2.01%)
+  high-volume down day: 1423 trades alerted (24% of all); HOLD to the line: win 77%, avg 11.38%
+     exit ALL now                                 win  98%  avg  10.85%  vs hold  -0.52% (early -0.24 / late -0.84)  | same policy on a RANDOM day   0.06%  -> alert timing worth -0.58%
+     exit HALF now, rest to the line              win  86%  avg  11.12%  vs hold  -0.26% (early -0.12 / late -0.42)  | same policy on a RANDOM day   0.03%  -> alert timing worth -0.29%
+     keep it, stop locked at HALF the open gain   win  92%  avg  11.25%  vs hold  -0.13% (early 0.05 / late -0.31)  | same policy on a RANDOM day  -0.17%  -> alert timing worth  0.04%
+     keep it, stop at breakeven                   win  93%  avg  11.40%  vs hold   0.02% (early 0.15 / late -0.12)  | same policy on a RANDOM day  -0.33%  -> alert timing worth  0.36%
+     continuing beats exiting at that close in 32% of alerts (avg regret if you exit: 0.52%; median -2.28%)
+  within 0.5 ATR of the Supertrend line: 1811 trades alerted (31% of all); HOLD to the line: win 81%, avg 10.29%
+     exit ALL now                                 win  97%  avg   9.92%  vs hold  -0.37% (early -0.45 / late -0.28)  | same policy on a RANDOM day   0.33%  -> alert timing worth -0.70%
+     exit HALF now, rest to the line              win  89%  avg  10.11%  vs hold  -0.19% (early -0.23 / late -0.14)  | same policy on a RANDOM day   0.16%  -> alert timing worth -0.35%
+     keep it, stop locked at HALF the open gain   win  92%  avg  10.37%  vs hold   0.08% (early 0.04 / late 0.12)  | same policy on a RANDOM day  -0.17%  -> alert timing worth  0.25%
+     keep it, stop at breakeven                   win  93%  avg  10.33%  vs hold   0.04% (early 0.03 / late 0.04)  | same policy on a RANDOM day  -0.42%  -> alert timing worth  0.45%
+     continuing beats exiting at that close in 25% of alerts (avg regret if you exit: 0.37%; median -1.23%)
+  any of: gap down / giveback / high-volume down day: 3437 trades alerted (59% of all); HOLD to the line: win 62%, avg 6.40%
+     exit ALL now                                 win  97%  avg   4.99%  vs hold  -1.40% (early -1.46 / late -1.34)  | same policy on a RANDOM day   2.59%  -> alert timing worth -4.00%
+     exit HALF now, rest to the line              win  75%  avg   5.70%  vs hold  -0.70% (early -0.73 / late -0.67)  | same policy on a RANDOM day   1.30%  -> alert timing worth -2.00%
+     keep it, stop locked at HALF the open gain   win  89%  avg   5.84%  vs hold  -0.55% (early -0.49 / late -0.63)  | same policy on a RANDOM day   1.33%  -> alert timing worth -1.88%
+     keep it, stop at breakeven                   win  88%  avg   6.07%  vs hold  -0.32% (early -0.40 / late -0.23)  | same policy on a RANDOM day   0.89%  -> alert timing worth -1.21%
+     continuing beats exiting at that close in 38% of alerts (avg regret if you exit: 1.40%; median -2.07%)
+  2+ of: gap down, giveback, vol-down day, near line, RSI<50 cross: 2368 trades alerted (41% of all); HOLD to the line: win 70%, avg 8.02%
+     exit ALL now                                 win  98%  avg   7.16%  vs hold  -0.86% (early -0.84 / late -0.88)  | same policy on a RANDOM day   1.73%  -> alert timing worth -2.59%
+     exit HALF now, rest to the line              win  82%  avg   7.59%  vs hold  -0.43% (early -0.42 / late -0.44)  | same policy on a RANDOM day   0.87%  -> alert timing worth -1.30%
+     keep it, stop locked at HALF the open gain   win  90%  avg   7.58%  vs hold  -0.44% (early -0.31 / late -0.59)  | same policy on a RANDOM day   0.64%  -> alert timing worth -1.09%
+     keep it, stop at breakeven                   win  90%  avg   7.64%  vs hold  -0.38% (early -0.21 / late -0.57)  | same policy on a RANDOM day   0.15%  -> alert timing worth -0.52%
+     continuing beats exiting at that close in 30% of alerts (avg regret if you exit: 0.86%; median -1.63%)
+################ alert counts only if the trade is up 5% or more at that close
+  gap down 1%+: 1947 trades alerted (33% of all); HOLD to the line: win 85%, avg 12.42%
+     exit ALL now                                 win 100%  avg  10.79%  vs hold  -1.63% (early -0.79 / late -2.61)  | same policy on a RANDOM day   2.36%  -> alert timing worth -3.99%
+     exit HALF now, rest to the line              win  97%  avg  11.61%  vs hold  -0.81% (early -0.39 / late -1.30)  | same policy on a RANDOM day   1.18%  -> alert timing worth -2.00%
+     keep it, stop locked at HALF the open gain   win  99%  avg  12.01%  vs hold  -0.40% (early -0.04 / late -0.83)  | same policy on a RANDOM day   0.58%  -> alert timing worth -0.99%
+     keep it, stop at breakeven                   win  95%  avg  12.40%  vs hold  -0.02% (early -0.00 / late -0.03)  | same policy on a RANDOM day   0.20%  -> alert timing worth -0.22%
+     continuing beats exiting at that close in 38% of alerts (avg regret if you exit: 1.63%; median -2.30%)
+  gave back half the gain: 460 trades alerted (8% of all); HOLD to the line: win 86%, avg 8.84%
+     exit ALL now                                 win 100%  avg   6.46%  vs hold  -2.38% (early -0.94 / late -3.58)  | same policy on a RANDOM day   3.97%  -> alert timing worth -6.36%
+     exit HALF now, rest to the line              win  97%  avg   7.65%  vs hold  -1.19% (early -0.47 / late -1.79)  | same policy on a RANDOM day   1.99%  -> alert timing worth -3.18%
+     keep it, stop locked at HALF the open gain   win  97%  avg   7.51%  vs hold  -1.33% (early -0.86 / late -1.73)  | same policy on a RANDOM day   0.70%  -> alert timing worth -2.04%
+     keep it, stop at breakeven                   win  95%  avg   8.46%  vs hold  -0.38% (early -0.23 / late -0.51)  | same policy on a RANDOM day  -0.06%  -> alert timing worth -0.32%
+     continuing beats exiting at that close in 29% of alerts (avg regret if you exit: 2.38%; median -1.80%)
+  high-volume down day: 972 trades alerted (17% of all); HOLD to the line: win 94%, avg 16.70%
+     exit ALL now                                 win 100%  avg  15.85%  vs hold  -0.85% (early -0.17 / late -1.60)  | same policy on a RANDOM day   0.18%  -> alert timing worth -1.03%
+     exit HALF now, rest to the line              win  99%  avg  16.27%  vs hold  -0.42% (early -0.08 / late -0.80)  | same policy on a RANDOM day   0.09%  -> alert timing worth -0.52%
+     keep it, stop locked at HALF the open gain   win  99%  avg  16.41%  vs hold  -0.29% (early 0.03 / late -0.65)  | same policy on a RANDOM day  -0.15%  -> alert timing worth -0.14%
+     keep it, stop at breakeven                   win  98%  avg  16.65%  vs hold  -0.05% (early 0.01 / late -0.11)  | same policy on a RANDOM day   0.05%  -> alert timing worth -0.10%
+     continuing beats exiting at that close in 35% of alerts (avg regret if you exit: 0.85%; median -2.25%)
+  within 0.5 ATR of the Supertrend line: 1144 trades alerted (20% of all); HOLD to the line: win 98%, avg 15.88%
+     exit ALL now                                 win 100%  avg  15.36%  vs hold  -0.52% (early -0.33 / late -0.74)  | same policy on a RANDOM day   0.40%  -> alert timing worth -0.92%
+     exit HALF now, rest to the line              win  99%  avg  15.62%  vs hold  -0.26% (early -0.17 / late -0.37)  | same policy on a RANDOM day   0.20%  -> alert timing worth -0.46%
+     keep it, stop locked at HALF the open gain   win  99%  avg  15.91%  vs hold   0.04% (early 0.04 / late 0.03)  | same policy on a RANDOM day  -0.65%  -> alert timing worth  0.68%
+     keep it, stop at breakeven                   win  99%  avg  15.88%  vs hold  -0.00% (early 0.01 / late -0.01)  | same policy on a RANDOM day  -0.19%  -> alert timing worth  0.19%
+     continuing beats exiting at that close in 26% of alerts (avg regret if you exit: 0.52%; median -1.25%)
+  any of: gap down / giveback / high-volume down day: 2123 trades alerted (36% of all); HOLD to the line: win 85%, avg 11.91%
+     exit ALL now                                 win 100%  avg  10.25%  vs hold  -1.66% (early -0.96 / late -2.51)  | same policy on a RANDOM day   2.53%  -> alert timing worth -4.19%
+     exit HALF now, rest to the line              win  98%  avg  11.08%  vs hold  -0.83% (early -0.48 / late -1.25)  | same policy on a RANDOM day   1.26%  -> alert timing worth -2.10%
+     keep it, stop locked at HALF the open gain   win  99%  avg  11.47%  vs hold  -0.44% (early -0.10 / late -0.84)  | same policy on a RANDOM day   0.59%  -> alert timing worth -1.02%
+     keep it, stop at breakeven                   win  95%  avg  11.89%  vs hold  -0.02% (early 0.02 / late -0.07)  | same policy on a RANDOM day   0.17%  -> alert timing worth -0.19%
+     continuing beats exiting at that close in 38% of alerts (avg regret if you exit: 1.66%; median -2.21%)
+  2+ of: gap down, giveback, vol-down day, near line, RSI<50 cross: 1251 trades alerted (21% of all); HOLD to the line: win 95%, avg 14.97%
+     exit ALL now                                 win 100%  avg  14.33%  vs hold  -0.64% (early -0.11 / late -1.23)  | same policy on a RANDOM day   0.83%  -> alert timing worth -1.47%
+     exit HALF now, rest to the line              win  99%  avg  14.65%  vs hold  -0.32% (early -0.06 / late -0.62)  | same policy on a RANDOM day   0.41%  -> alert timing worth -0.73%
+     keep it, stop locked at HALF the open gain   win  98%  avg  14.69%  vs hold  -0.28% (early -0.02 / late -0.58)  | same policy on a RANDOM day  -0.06%  -> alert timing worth -0.22%
+     keep it, stop at breakeven                   win  98%  avg  14.87%  vs hold  -0.10% (early -0.05 / late -0.16)  | same policy on a RANDOM day  -0.09%  -> alert timing worth -0.02%
+     continuing beats exiting at that close in 29% of alerts (avg regret if you exit: 0.64%; median -1.63%)
+################ alert counts only if the trade is up 10% or more at that close
+  gap down 1%+: 1295 trades alerted (22% of all); HOLD to the line: win 96%, avg 17.69%
+     exit ALL now                                 win 100%  avg  15.85%  vs hold  -1.85% (early -0.33 / late -3.52)  | same policy on a RANDOM day   2.00%  -> alert timing worth -3.85%
+     exit HALF now, rest to the line              win 100%  avg  16.77%  vs hold  -0.92% (early -0.16 / late -1.76)  | same policy on a RANDOM day   1.00%  -> alert timing worth -1.92%
+     keep it, stop locked at HALF the open gain   win  99%  avg  17.13%  vs hold  -0.56% (early 0.14 / late -1.34)  | same policy on a RANDOM day   0.32%  -> alert timing worth -0.88%
+     keep it, stop at breakeven                   win  99%  avg  17.70%  vs hold   0.01% (early 0.06 / late -0.04)  | same policy on a RANDOM day   0.08%  -> alert timing worth -0.07%
+     continuing beats exiting at that close in 38% of alerts (avg regret if you exit: 1.85%; median -2.78%)
+  gave back half the gain: only 42 alerts
+  high-volume down day: 640 trades alerted (11% of all); HOLD to the line: win 99%, avg 22.87%
+     exit ALL now                                 win 100%  avg  21.51%  vs hold  -1.36% (early -0.14 / late -2.58)  | same policy on a RANDOM day   0.15%  -> alert timing worth -1.51%
+     exit HALF now, rest to the line              win 100%  avg  22.19%  vs hold  -0.68% (early -0.07 / late -1.29)  | same policy on a RANDOM day   0.08%  -> alert timing worth -0.76%
+     keep it, stop locked at HALF the open gain   win 100%  avg  22.53%  vs hold  -0.34% (early 0.06 / late -0.74)  | same policy on a RANDOM day  -0.35%  -> alert timing worth  0.01%
+     keep it, stop at breakeven                   win 100%  avg  22.86%  vs hold  -0.02% (early 0.02 / late -0.05)  | same policy on a RANDOM day   0.01%  -> alert timing worth -0.03%
+     continuing beats exiting at that close in 37% of alerts (avg regret if you exit: 1.36%; median -2.27%)
+  within 0.5 ATR of the Supertrend line: 715 trades alerted (12% of all); HOLD to the line: win 99%, avg 21.77%
+     exit ALL now                                 win 100%  avg  21.06%  vs hold  -0.71% (early -0.32 / late -1.12)  | same policy on a RANDOM day   0.53%  -> alert timing worth -1.24%
+     exit HALF now, rest to the line              win 100%  avg  21.42%  vs hold  -0.35% (early -0.16 / late -0.56)  | same policy on a RANDOM day   0.26%  -> alert timing worth -0.62%
+     keep it, stop locked at HALF the open gain   win 100%  avg  21.82%  vs hold   0.05% (early 0.01 / late 0.10)  | same policy on a RANDOM day  -0.39%  -> alert timing worth  0.44%
+     keep it, stop at breakeven                   win 100%  avg  21.78%  vs hold   0.01% (early 0.01 / late 0.00)  | same policy on a RANDOM day   0.01%  -> alert timing worth  0.00%
+     continuing beats exiting at that close in 27% of alerts (avg regret if you exit: 0.71%; median -1.27%)
+  any of: gap down / giveback / high-volume down day: 1374 trades alerted (24% of all); HOLD to the line: win 96%, avg 17.40%
+     exit ALL now                                 win 100%  avg  15.46%  vs hold  -1.95% (early -0.52 / late -3.57)  | same policy on a RANDOM day   2.64%  -> alert timing worth -4.59%
+     exit HALF now, rest to the line              win 100%  avg  16.43%  vs hold  -0.97% (early -0.26 / late -1.79)  | same policy on a RANDOM day   1.32%  -> alert timing worth -2.29%
+     keep it, stop locked at HALF the open gain   win  99%  avg  16.77%  vs hold  -0.63% (early 0.15 / late -1.53)  | same policy on a RANDOM day   0.36%  -> alert timing worth -0.99%
+     keep it, stop at breakeven                   win  99%  avg  17.41%  vs hold   0.01% (early 0.06 / late -0.05)  | same policy on a RANDOM day   0.06%  -> alert timing worth -0.05%
+     continuing beats exiting at that close in 39% of alerts (avg regret if you exit: 1.95%; median -2.53%)
+  2+ of: gap down, giveback, vol-down day, near line, RSI<50 cross: 731 trades alerted (13% of all); HOLD to the line: win 99%, avg 22.10%
+     exit ALL now                                 win 100%  avg  21.43%  vs hold  -0.67% (early 0.05 / late -1.40)  | same policy on a RANDOM day   0.72%  -> alert timing worth -1.39%
+     exit HALF now, rest to the line              win 100%  avg  21.77%  vs hold  -0.33% (early 0.02 / late -0.70)  | same policy on a RANDOM day   0.36%  -> alert timing worth -0.70%
+     keep it, stop locked at HALF the open gain   win 100%  avg  21.81%  vs hold  -0.29% (early -0.01 / late -0.58)  | same policy on a RANDOM day  -0.18%  -> alert timing worth -0.11%
+     keep it, stop at breakeven                   win 100%  avg  22.10%  vs hold  -0.01% (early 0.01 / late -0.02)  | same policy on a RANDOM day   0.02%  -> alert timing worth -0.03%
+     continuing beats exiting at that close in 29% of alerts (avg regret if you exit: 0.67%; median -1.68%)

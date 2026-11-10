@@ -1,0 +1,24 @@
+################ B1 pullback (5d<0) + Supertrend up + SPY 5d<=-1.5% | stop 2 ATR / target 1 ATR (avg stop 5.2% of price)
+  earnings flag (covered trades 2526):
+   report inside hold             n=  411 win  75.4% avg  0.58% avg win  3.01 loss -6.88 worst5% -9.3%
+   no report in hold              n= 2115 win  72.0% avg  0.55% avg win  2.68 loss -4.94 worst5% -7.3%
+################ B2 RSI2<10 above 200d + SPY 5d<=-1.5% | stop 2 ATR / target 1 ATR (avg stop 5.4% of price)
+  earnings flag (covered trades 1183):
+   report inside hold             n=  193 win  75.1% avg  0.47% avg win  3.47 loss -8.61 worst5% -11.3%
+   no report in hold              n=  990 win  76.7% avg  1.19% avg win  3.09 loss -5.05 worst5% -6.7%
+################ B3 pullback + above 50d + SPY 5d<=-1.5% | stop 2 ATR / target 1 ATR (avg stop 5.2% of price)
+  earnings flag (covered trades 2391):
+   report inside hold             n=  363 win  74.7% avg  0.61% avg win  3.05 loss -6.57 worst5% -9.0%
+   no report in hold              n= 2028 win  73.2% avg  0.66% avg win  2.70 loss -4.92 worst5% -7.2%
+################ B1 pullback (5d<0) + Supertrend up + SPY 5d<=-1.5% | stop 1.5 ATR / target 0.75 ATR (avg stop 3.9% of price)
+  earnings flag (covered trades 2526):
+   report inside hold             n=  411 win  78.6% avg  0.58% avg win  2.20 loss -5.38 worst5% -6.4%
+   no report in hold              n= 2115 win  74.8% avg  0.34% avg win  2.02 loss -4.63 worst5% -5.9%
+################ B2 RSI2<10 above 200d + SPY 5d<=-1.5% | stop 1.5 ATR / target 0.75 ATR (avg stop 4.0% of price)
+  earnings flag (covered trades 1183):
+   report inside hold             n=  193 win  80.3% avg  0.68% avg win  2.53 loss -6.86 worst5% -8.3%
+   no report in hold              n=  990 win  79.0% avg  0.81% avg win  2.31 loss -4.83 worst5% -5.9%
+################ B3 pullback + above 50d + SPY 5d<=-1.5% | stop 1.5 ATR / target 0.75 ATR (avg stop 3.9% of price)
+  earnings flag (covered trades 2391):
+   report inside hold             n=  363 win  77.7% avg  0.55% avg win  2.23 loss -5.31 worst5% -6.7%
+   no report in hold              n= 2028 win  75.6% avg  0.41% avg win  2.04 loss -4.63 worst5% -5.7%
