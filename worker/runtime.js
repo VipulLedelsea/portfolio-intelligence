@@ -828,7 +828,9 @@ function snapshotFromPayload(symbol, dailyItem, signalItem, quote, market = MARK
     exchange: market.label,
     price: round(price, 4),
     previous_close: round(numeric(quote?.adjusted_previous_close) || closes.at(-2), 4),
-    return_1d_pct: round(periodReturn(closes, 1), 3),
+    // Today's move so far: the live price against the previous session's close. The daily bars hold only finished sessions, so while the market is
+    // open the last bar is yesterday and a change taken from the bars alone would show yesterday's move as "today".
+    return_1d_pct: round(((numeric(quote?.adjusted_previous_close) || closes.at(-2)) > 0 ? (price / (numeric(quote?.adjusted_previous_close) || closes.at(-2)) - 1) * 100 : periodReturn(closes, 1)), 3),
     return_5d_pct: round(periodReturn(closes, 5), 3),
     return_20d_pct: round(periodReturn(closes, 20), 3),
     return_60d_pct: round(periodReturn(closes, 60), 3),
