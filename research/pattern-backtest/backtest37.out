@@ -1,0 +1,46 @@
+open-trade days: 193277; base: 6%+ drop within 10 sessions 22.0% (train 18.5 / test 26.2); Supertrend exit within 5 sessions 14.6%
+
+== selling-volume flags ==
+flag                                                                     fires  P(drop)    not  lift   train/test  P(exit<=5d)  vs not
+down-day volume 30%+ higher than on earlier down days                    22753    20.5%  22.2%  0.93      17%/25%  16% vs 14%
+sellers' volume (by close location) up 30%+ vs 10 days earlier           63350    21.6%  22.1%  0.98      18%/26%  18% vs 13%
+sellers' volume above 60% of the 5-day total                             32649    23.0%  21.8%  1.06      20%/27%  26% vs 12%
+3 down closes in a row, each on more volume                               3503    21.6%  22.0%  0.98      19%/25%  33% vs 14%
+net volume balance negative over 5 days and worse than before            72480    22.1%  21.9%  1.01      19%/26%  21% vs 10%
+net volume balance below -30% over 5 days                                33834    22.0%  22.0%  1.00      18%/26%  26% vs 12%
+5-day sellers' volume 20%+ above the 50-day average volume                 789    22.7%  22.0%  1.03      15%/34%  19% vs 15%
+up-volume faded: up days below 80% of average while sellers rose         50795    21.6%  22.1%  0.98      18%/26%  20% vs 13%
+any heavy selling day (1.5x volume on a down close)                      27561    20.6%  22.2%  0.93      16%/26%  17% vs 14%
+
+== continuous measures: AUC for predicting a 6%+ drop (train / test) and the Supertrend exit within 5d; 0.50 = no information ==
+  ratioDown      drop: 0.476 / 0.488   exit<=5d: 0.513 / 0.516
+  sellShare5     drop: 0.524 / 0.501   exit<=5d: 0.657 / 0.635
+  sellGrowth     drop: 0.501 / 0.499   exit<=5d: 0.580 / 0.566
+  sell5vsAvg     drop: 0.501 / 0.505   exit<=5d: 0.600 / 0.605
+  balance5       drop: 0.511 / 0.497   exit<=5d: 0.664 / 0.651
+  balanceChange  drop: 0.504 / 0.494   exit<=5d: 0.611 / 0.596
+  sell20         drop: 0.501 / 0.518   exit<=5d: 0.541 / 0.572
+
+== does it add anything beyond price weakness? Same flag, among days that ALREADY closed down / sit under the 10-day EMA ==
+  closed down today: base P(drop) 22.0% (n 90254)
+     down-day volume 30%+ higher than on earlier down days          with: 20.7% (n 12638, test 25%)  without: 22.2%
+     sellers' volume (by close location) up 30%+ vs 10 days earlier with: 21.5% (n 33492, test 26%)  without: 22.3%
+     net volume balance negative over 5 days and worse than before  with: 22.1% (n 49100, test 26%)  without: 21.9%
+  closed under the 10-day EMA: base P(drop) 23.3% (n 50081)
+     down-day volume 30%+ higher than on earlier down days          with: 21.0% (n 7417, test 24%)  without: 23.7%
+     sellers' volume (by close location) up 30%+ vs 10 days earlier with: 22.5% (n 21115, test 26%)  without: 23.8%
+     net volume balance negative over 5 days and worse than before  with: 23.2% (n 34801, test 26%)  without: 23.5%
+  within 0.5 ATR of the Supertrend line: base P(drop) 24.3% (n 8088)
+     down-day volume 30%+ higher than on earlier down days          with: 22.9% (n 1710, test 26%)  without: 24.7%
+     sellers' volume (by close location) up 30%+ vs 10 days earlier with: 23.2% (n 4323, test 27%)  without: 25.6%
+     net volume balance negative over 5 days and worse than before  with: 23.9% (n 6474, test 28%)  without: 25.8%
+
+== first time each flag fires in a trade ==
+  down-day volume 30%+ higher than on earlier down days
+     fires in 69% of trades; after it: 6%+ drop in 10d 22.2% (base 22.0%); Supertrend exit within 5d 18%; median sessions to the exit 21; eventual exit price vs that close: avg 0.90%
+  sellers' volume (by close location) up 30%+ vs 10 days earlier
+     fires in 94% of trades; after it: 6%+ drop in 10d 21.9% (base 22.0%); Supertrend exit within 5d 15%; median sessions to the exit 23; eventual exit price vs that close: avg 1.22%
+  net volume balance negative over 5 days and worse than before
+     fires in 96% of trades; after it: 6%+ drop in 10d 22.4% (base 22.0%); Supertrend exit within 5d 15%; median sessions to the exit 22; eventual exit price vs that close: avg 1.29%
+  3 down closes in a row, each on more volume
+     fires in 41% of trades; after it: 6%+ drop in 10d 22.2% (base 22.0%); Supertrend exit within 5d 32%; median sessions to the exit 13; eventual exit price vs that close: avg 0.64%
