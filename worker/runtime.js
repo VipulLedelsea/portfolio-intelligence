@@ -1922,7 +1922,7 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
       strategy: "SUPERTREND", evidence_key: us ? "SUPERTREND" : marketId === "FX" ? "SUPERTREND_FX" : "SUPERTREND_IN", symbol: c.symbol, company: c.company, sector: c.sector, direction: c.direction, price: c.price,
       entry: round(entry, 4), stop: round(levels.stop, 4), target_1: us ? null : round(levels.target1, 6), target_2: us ? null : round(levels.target2, 6), atr, atr_pct: atr > 0 ? round(atr / entry * 100, 2) : null,
       volume_ratio: null, age_days: rankDaysOld(c.signal_confirmed_at), scanner_score: c.score, tag: "Supertrend", detail: c.label, buy_range: c.buy_range || null, signal_at: c.signal_confirmed_at || null,
-      exit_rule: us ? (levels.stop_kind === "SUPERTREND_LINE" ? "" : `The protective level shown is two daily ranges from the entry, because the daily Supertrend line is not yet on the safe side of it. `) + "Leave when a day closes " + (c.direction === "SHORT" ? "over" : "under") + " the daily Supertrend line, at the next open." + (c.direction === "SHORT" ? " No fixed target and no time limit." : ` Profit points sit ${HOLDING_PROFIT_1_PCT}% and ${HOLDING_PROFIT_2_PCT}% over the entry; the line exit still applies and there is no time limit.`)
+      exit_rule: us ? (levels.stop_kind === "SUPERTREND_LINE" ? "" : `The protective level shown is two daily ranges from the entry, because the daily Supertrend line is not yet on the safe side of it. `) + "Leave when a day closes " + (c.direction === "SHORT" ? "over" : "under") + " the daily Supertrend line, at the next open. No fixed target and no time limit."
         : "Leave at the stop, at target 1 or 2, or at the close of day 10, whichever comes first.",
       alignment_score: Math.round((agrees(c.direction) + (c.daily_aligned && c.daily_adx >= 20 ? 100 : 40)) / 2),
       alignment_note: `Daily Supertrend ${c.daily_supertrend_direction}, daily ADX ${c.daily_adx}${c.daily_adx_rising ? " and rising" : ""}; market ${marketState.toLowerCase()}.`,
@@ -3650,15 +3650,10 @@ async function holdingSnapshotsFor(env, market, symbols) {
 //   Protective level: the daily Supertrend line while the daily trend is up, and it rises as the trend continues. Before the line exists (or if it
 //                     is unavailable) it is 2 ATR under the buy price.
 //   Exit:             when a daily bar CLOSES under the line (the daily trend turns down). The exit is not a price touch, and no time limit applies.
-//   Profit points:    +5% and +10% over the buy price (HOLDING_PROFIT_1_PCT / _2_PCT); reaching target 1 raises a take-profit alert, the line exit still applies.
+//   Profit zones:     +1 and +2 ATR over the buy price, for reference only; reaching them does not mean sell.
 // Tested on Supertrend entries (ml_st_exits.py): exiting on the line earned +1.8% per trade; adding an early-warning exit (close under a moving
 // average, ADX fading, the market under its 50-day average, a tighter trail) lowered the average each time, so those are shown as warnings only.
 const MONITOR_LINE_STEP_ATR = 0.5;   // a rise in the protective level smaller than this is applied silently, not logged as an event
-// Profit points for US positions that do not carry their own idea levels (the owner's choice, 2026-11-10): target 1 at +5% and target 2 at +10% over the buy
-// price, instead of 1 and 2 daily ranges. Backtest (research/pattern-backtest, backtest14.mjs): selling at +5% (or the line break) won 63% of trades at +0.55% each,
-// at +10% 47% at +0.93%, against 45% at +2.14% when holding to the line alone, so the line exit still protects the rest and holding earns more per trade.
-// Dip and pattern buys keep their own idea targets; scanner picks and their track-record grading are unchanged.
-const HOLDING_PROFIT_1_PCT = 5, HOLDING_PROFIT_2_PCT = 10;
 
 function monitorLevels(row, snapshot) {
   const market = MARKETS[row.market] || MARKETS.US;
@@ -3677,7 +3672,7 @@ function monitorLevels(row, snapshot) {
   let stop = Math.max(persisted, line > 0 && line < price ? line : 0, firstRun ? fallbackStop : 0);
   stop = Math.max(stop, persisted);
   const ownLevels = (row.idea_strategy === "PATTERN" || row.idea_strategy === "DIP") && numeric(row.target_1) > 0;   // a pattern or dip buy keeps its idea's own targets
-  const target1 = ownLevels ? numeric(row.target_1) : buy * (1 + HOLDING_PROFIT_1_PCT / 100), target2 = ownLevels ? numeric(row.target_2) : buy * (1 + HOLDING_PROFIT_2_PCT / 100);
+  const target1 = ownLevels ? numeric(row.target_1) : Math.max(numeric(row.target_1), buy + TARGET_1_ATR * atr), target2 = ownLevels ? numeric(row.target_2) : Math.max(numeric(row.target_2), buy + TARGET_2_ATR * atr);
   const events = [];
   if (firstRun) events.push({ kind: "INITIAL", reason: `Protective level set at ${fmt(stop)} (${line > 0 && stop === line ? "the daily Supertrend line" : "two daily ranges under your buy price, because the daily Supertrend line is not available"}). It rises with the trend and you exit if a day closes under it.` });
   else if (stop - persisted >= MONITOR_LINE_STEP_ATR * atr) events.push({ kind: "LINE_RAISED", reason: `The daily Supertrend line moved up to ${fmt(stop)}, so your protective level moved up with it.` });
@@ -3689,7 +3684,7 @@ function monitorLevels(row, snapshot) {
 // Writes only what changed. MAX() in SQL keeps a stale read from ever lowering a level that another pass has already raised.
 function monitorStatements(env, row, levels, price, now) {
   const statements = [];
-  const changed = levels.events.length > 0 || row.monitor_atr == null || levels.peak > numeric(row.peak_high) * 1.0005 || levels.stop > numeric(row.stop_level) + 1e-9 || levels.target1 > numeric(row.target_1) + 1e-9 || levels.target2 > numeric(row.target_2) + 1e-9;
+  const changed = levels.events.length > 0 || row.monitor_atr == null || levels.peak > numeric(row.peak_high) * 1.0005 || levels.stop > numeric(row.stop_level) + 1e-9;
   if (!changed) return statements;
   statements.push(env.DB.prepare(`UPDATE holdings SET monitor_atr = COALESCE(monitor_atr, ?), stop_level = MAX(COALESCE(stop_level, 0), ?),
     target_1 = MAX(COALESCE(target_1, 0), ?), target_2 = MAX(COALESCE(target_2, 0), ?), peak_high = MAX(COALESCE(peak_high, 0), ?), monitor_at = ?
@@ -3754,8 +3749,8 @@ async function monitorHoldings(env, market) {
 }
 
 // A hold / watch / take-profit / exit read on a long position, from the same engine that ranks the scanner.
-// The protective level sits 2 daily ATRs (at least 1%) below the buy price; for US positions target 1 is +5% and target 2 is +10% over it
-// (HOLDING_PROFIT_1_PCT / _2_PCT; other markets keep 1 and 2 daily ATRs, see STOP_ATR). US positions pass `levels` from the position monitor, which ratchets the stop up
+// The protective level sits 2 daily ATRs (at least 1%) below the buy price; target 1 is 1 daily ATR above it and
+// target 2 is 2 daily ATRs above (see STOP_ATR). US positions pass `levels` from the position monitor, which ratchets the stop up
 // and the targets out as the trade and the market develop; other markets use the fixed levels.
 function evaluateHolding(holding, snapshot, levels = null) {
   const market = MARKETS[holding.market] || MARKETS.US;
@@ -3839,12 +3834,6 @@ function evaluateHolding(holding, snapshot, levels = null) {
       headline = "The daily trend has turned down";
       reasons.push("A completed daily close is under the daily Supertrend line, which is the exit that tested best for Supertrend trades. Exit at the next open.");
       reasons.push(...warnings.filter(text => !text.startsWith("Price is at or under")));
-    } else if (price >= target1) {
-      // The owner's profit points (+5% and +10% over the buy price): the daily trend is still up, so this is a take-profit prompt, not an exit signal.
-      action = "TAKE_PROFIT";
-      headline = price >= target2 ? `Profit point 2 reached (+${HOLDING_PROFIT_2_PCT}%)` : `Profit point 1 reached (+${HOLDING_PROFIT_1_PCT}%)`;
-      reasons.push(`Price ${fmt(price)} is ${pnlPct.toFixed(1)}% over your buy price ${fmt(buy)}. Your profit points are ${fmt(target1)} (+${HOLDING_PROFIT_1_PCT}%) and ${fmt(target2)} (+${HOLDING_PROFIT_2_PCT}%).`);
-      reasons.push(`The daily Supertrend is still up, with the exit line at ${fmt(stopLevel)}. Staying in keeps the trend's larger gains but wins less often; selling here locks the gain.`);
     } else if (warnings.length) {
       action = "WATCH";
       headline = price <= stopLevel ? "Under the exit line: it only counts if the day closes there" : "The trend may be weakening";
@@ -3852,8 +3841,9 @@ function evaluateHolding(holding, snapshot, levels = null) {
       reasons.push("These are warnings only. Exiting on them lowered returns in tests; the exit is the daily Supertrend line.");
     } else {
       action = "HOLD";
-      headline = "Trend is intact";
+      headline = price >= target1 ? "Trend is intact (profit zone reached, stay with the trend)" : "Trend is intact";
       reasons.push(`The daily trend is up and the exit line is ${fmt(stopLevel)}. There is no time limit: stay in while the daily Supertrend holds.`);
+      if (price >= target1) reasons.push(`The first profit zone ${fmt(target1)} has been reached. Reaching it does not mean sell; selling early lowered returns in tests.`);
     }
   } else if (price <= stopLevel) {
     action = "EXIT";
