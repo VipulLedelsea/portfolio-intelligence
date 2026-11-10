@@ -1658,7 +1658,7 @@ async function loadActiveLearnedRules(env) {
 async function refreshLearning(env) {
   if (!env.DB) return null;
   const rows = ((await env.DB.prepare(`SELECT strategy, action, strategy_return_pct, generated_at, features FROM recommendations
-    WHERE user_id = ? AND status = 'SETTLED' AND features IS NOT NULL ORDER BY generated_at ASC LIMIT 5000`).bind(SCANNER_USER_ID).all()).results || [])
+    WHERE user_id = ? AND status = 'SETTLED' AND market = 'US' AND features IS NOT NULL ORDER BY generated_at ASC LIMIT 5000`).bind(SCANNER_USER_ID).all()).results || [])
     .map(r => { try { return { strategy: r.strategy, action: r.action, ret: numeric(r.strategy_return_pct), date: String(r.generated_at).slice(0, 10), features: JSON.parse(r.features) }; } catch { return null; } }).filter(Boolean);
   const report = { ...buildLearningReport(rows), updated_at: new Date().toISOString() };
   const now = new Date().toISOString(), statements = [];
@@ -2639,7 +2639,36 @@ function scenarioLevels(direction, entry, atr, marketId = "US", dailyAtr = 0) {
 
 // Every fresh entry the scanner surfaces is logged once, under a system account, so the public track record
 // covers all picks the app showed rather than only the tickers users chose to analyze.
+// India and forex ideas are logged too, each under its own strategy (never mixed into the US figures), so they build a live record. Neither market has a backtest.
+// They exit like the app says: first of the stop, target 1 or day 10, so they are graded as a 10-day pick with ATR levels (see pickLevels).
+const FOREIGN_STRATEGIES = {
+  SUPERTREND_IN: { market: "IN", label: "India (BSE) Supertrend: not backtested, logged to build a record" },
+  SUPERTREND_FX: { market: "FX", label: "Forex Supertrend: not backtested, logged to build a record" },
+};
+async function recordForeignPicks(env, payload) {
+  const marketId = payload.market, strategy = marketId === "IN" ? "SUPERTREND_IN" : "SUPERTREND_FX";
+  const featuresById = new Map();
+  for (const item of payload.ranking?.items || []) featuresById.set(item.id, JSON.stringify(pickFeatures(item, payload.ranking.market_state)));
+  const statements = [];
+  for (const candidate of payload.candidates || []) {
+    const entry = numeric(candidate.signal_entry_price), atr = numeric(candidate.signal_atr);
+    if (!candidate.symbol || !(entry > 0) || !(atr > 0) || !candidate.signal_confirmed_at || !["LONG", "SHORT"].includes(candidate.direction)) continue;
+    const { stop, target1, target2 } = pickLevels(candidate.direction, entry, atr, marketId, numeric(candidate.daily_atr), candidate.daily_supertrend_value);
+    statements.push(env.DB.prepare(`INSERT OR IGNORE INTO recommendations (id, user_id, symbol, market, action, direction, generated_at,
+      signal_confirmed_at, entry_price, current_price, stop_price, target_1, target_2, confidence, entry_status, daily_adx,
+      horizon_trading_days, status, strategy, features) VALUES (?, ?, ?, ?, 'IDEA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 10, 'PENDING', ?, ?)`).bind(
+      crypto.randomUUID(), SCANNER_USER_ID, candidate.symbol, marketId, candidate.direction, payload.generated_at,
+      candidate.signal_confirmed_at, round(entry, 6), round(numeric(candidate.price), 6), round(stop, 6), round(target1, 6), round(target2, 6),
+      round(clamp(numeric(candidate.score) / 100, 0, 1), 3), candidate.entry_status, numeric(candidate.daily_adx), strategy,
+      featuresById.get(`SUPERTREND:${candidate.symbol}:${candidate.direction}`) ?? null,
+    ));
+  }
+  if (statements.length) await env.DB.batch(statements);
+  return statements.length;
+}
+
 async function recordScannerPicks(env, payload) {
+  if (env.DB && (payload?.market === "IN" || payload?.market === "FX")) return recordForeignPicks(env, payload);
   if (!env.DB || payload?.market !== "US") return 0;
   const statements = [];
   // What was known about each idea at this moment, kept with the pick so rules can be tested on its result later. Skipped ideas carry the filter that removed them.
@@ -2766,7 +2795,7 @@ function postMortemTags(row, { earnings = null, spyBars = null } = {}) {
 async function tagPostMortems(env) {
   if (!env.DB) return 0;
   const rows = (await env.DB.prepare(`SELECT id, symbol, direction, generated_at, settled_at, entry_price, stop_price, exit_price, strategy_return_pct, max_favorable_pct, stop_hit
-    FROM recommendations WHERE user_id = ? AND status = 'SETTLED' AND post_mortem IS NULL AND action != 'PASS' ORDER BY settled_at DESC LIMIT 8`).bind(SCANNER_USER_ID).all()).results || [];
+    FROM recommendations WHERE user_id = ? AND status = 'SETTLED' AND market = 'US' AND post_mortem IS NULL AND action != 'PASS' ORDER BY settled_at DESC LIMIT 8`).bind(SCANNER_USER_ID).all()).results || [];
   if (!rows.length) return 0;
   let spyBars = null;
   try { spyBars = (await fetchDailySettlementBars(["SPY"])).get("SPY") || null; } catch { /* the market tag is skipped this run */ }
@@ -2817,6 +2846,12 @@ async function publicTrackRecord(db) {
     const own = rows.filter(row => row.strategy === id);
     strategies.push({ id, label, since: own[0]?.generated_at || null, summary: summarizeTrackRecord(own, await pendingFor(id)) });
   }
+  // India and forex, listed apart from `strategies` so the US figures and the installed app's picker are untouched.
+  const other_markets = [];
+  for (const [id, info] of Object.entries(FOREIGN_STRATEGIES)) {
+    const own = rows.filter(row => row.strategy === id), pending = await pendingFor(id);
+    if (own.length || pending) other_markets.push({ id, market: info.market, label: info.label, since: own[0]?.generated_at || null, summary: summarizeTrackRecord(own, pending) });
+  }
   const supertrend = rows.filter(row => row.strategy === "SUPERTREND");
   // Results by the debate's lean, and what the settled picks have in common.
   const extra = (await db.prepare(`SELECT direction, status, strategy_return_pct, stop_hit, target_hit, generated_at, debate_leaning, post_mortem
@@ -2831,7 +2866,8 @@ async function publicTrackRecord(db) {
     horizon_trading_days: 10,
     summary: strategies[0].summary,
     strategies,
-    methodology: "Every fresh US entry a scanner surfaces is recorded once per ticker and signal close, at the price available when it first appeared, under the scanner that produced it. Supertrend picks are followed until a daily bar closes under the daily Supertrend line (over it for a short), and are graded at the next open; there is no target and no time limit beyond a 120-day safety limit. Dip picks exit at the first of their own stop, first target, or the close of the tenth trading day, and are graded as soon as a level is hit. Pattern picks (candlestick breakouts and breakdowns) use the same rule as dips: their own stop, first target (1R), or the close of day 10. Open picks, stopped picks and losers are all counted. Backtests are hypothetical; only these live results are a record."
+    other_markets,
+    methodology: "Every fresh US entry a scanner surfaces is recorded once per ticker and signal close (India and forex ideas are recorded the same way under their own labels, listed separately as other_markets, and graded at the first of their stop, first target or day 10), at the price available when it first appeared, under the scanner that produced it. Supertrend picks are followed until a daily bar closes under the daily Supertrend line (over it for a short), and are graded at the next open; there is no target and no time limit beyond a 120-day safety limit. Dip picks exit at the first of their own stop, first target, or the close of the tenth trading day, and are graded as soon as a level is hit. Pattern picks (candlestick breakouts and breakdowns) use the same rule as dips: their own stop, first target (1R), or the close of day 10. Open picks, stopped picks and losers are all counted. Backtests are hypothetical; only these live results are a record."
   };
 }
 
