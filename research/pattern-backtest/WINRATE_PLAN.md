@@ -19,6 +19,8 @@ Goal from the owner: lift the Supertrend flip win rate (43%, +1.73% per trade, a
 
 - backtest27/27b (owner chose Supertrend + patterns as main): patterns in a Supertrend uptrend with own stop/measured target: win 33-60%, mostly no edge vs matched controls; bull flag edge is mostly the prior surge. Best cells: bull flag in fresh Supertrend (line exit 44% wins, +5.3%), flat base + ADX gate (60% wins vs 50% control, n=164).
 
+- backtest33-36 (downturn warnings): chart/volume warnings predict a 6% drop weakly (model AUC 0.57) and exit-on-alert loses money on average; a profit lock (stop to entry +1% once a close is up 3% to 5%) lifts wins from 39% to 52-62% for -0.16 to -0.28 points of average. Candidate build: advisory profit-lock level on US Supertrend holdings, shadow-mode first.
+
 ## Original status
 - `lib14.mjs` written (syntax-checked only, NOT yet run): point-in-time data, ~75 binary indicator conditions (trend, location, momentum, relative strength, volatility, volume, candle, market regime, breadth, sector), and an exit simulator (Supertrend line, target, hard stop, break-even lock, ATR trail, time stop).
 - Nothing else built yet. No results from the combination search yet.
