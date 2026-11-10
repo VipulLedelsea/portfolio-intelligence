@@ -1,0 +1,47 @@
+observations (open-trade days, Supertrend still up): 193277 from 5823 trades. P(drop >= 6% within 10 sessions) = 22.0% (train 18.5%, test 26.2%); P(Supertrend exit within 5 sessions) = 14.6%
+
+== each warning flag alone: P(drop 6%+ in 10d) when it fires vs when it does not; P(Supertrend exit within 5d) when it fires ==
+flag                                                                    fires  P(drop)    not  lift    train/test  P(exit<=5d)
+chart: gap down 1% or more                                              13068    31.0%  21.3%  1.45       26%/36%  21%
+chart: gave back 50%+ of the open gain (after +5%)                      11876    28.0%  21.6%  1.30       26%/30%  32%
+volume: high-volume down day (1.5x avg, -1.5%)                           2994    26.0%  21.9%  1.19       20%/32%  32%
+volume: climax (2.5x avg on an up day, 3+ ATR extended)                   451    24.8%  22.0%  1.13       18%/34%  3%
+chart: close within 1 ATR of the Supertrend line                        21581    24.3%  21.7%  1.12       21%/28%  49%
+chart: close within 0.5 ATR of the Supertrend line                       8088    24.3%  21.9%  1.11       21%/28%  61%
+momentum: RSI14 crossed under 50                                        11292    24.2%  21.8%  1.11       21%/27%  35%
+chart: close under 20-day EMA (first day)                               13983    23.7%  21.8%  1.09       21%/27%  32%
+trend: -DI crossed over +DI                                              9598    23.6%  21.9%  1.08       21%/27%  34%
+volume: money flow (CMF 20) below zero                                  48183    23.1%  21.6%  1.07       20%/27%  21%
+chart: close under 10-day EMA (first day)                               20591    23.0%  21.8%  1.05       20%/26%  23%
+chart: close under the last swing low (pivot)                            8906    23.1%  21.9%  1.05       20%/26%  44%
+momentum: price at a 20-day high but RSI lower than at the prior high    9762    22.6%  21.9%  1.03       19%/28%  6%
+volume: down-day volume 25%+ above up-day volume (10 days)              39469    22.5%  21.8%  1.03       19%/27%  26%
+chart: 3+ ATR below the trade's peak close                               4600    22.5%  22.0%  1.02       24%/21%  49%
+volume: breakdown under the 10-day low on above-average volume           2859    22.2%  22.0%  1.01       17%/28%  50%
+chart: close under the lowest low of the last 5 days                    15396    21.9%  22.0%  1.00       19%/25%  36%
+chart: bearish engulfing                                                 8629    21.8%  22.0%  0.99       18%/26%  18%
+trend: ADX 25+ and falling for 3 days                                   29563    21.7%  22.0%  0.99       17%/28%  18%
+chart: wide-range down day closing near the low                          1030    21.7%  22.0%  0.99       15%/29%  38%
+momentum: MACD histogram crossed under 0                                10223    21.4%  22.0%  0.97       18%/25%  24%
+volume: 3+ distribution days in the last 10                             13096    21.4%  22.0%  0.97       16%/27%  23%
+chart: shooting star after a run                                         3357    20.6%  22.0%  0.94       17%/26%  6%
+volume: price at a 20-day high but OBV is not                           14928    20.6%  22.1%  0.93       16%/26%  5%
+chart: extended 3+ ATR over the 20-day avg and a reversal candle          204    18.6%  22.0%  0.85       14%/26%  4%
+
+== logistic model on all flags and numbers (trained before 2024-11-05, judged after) ==
+  drop >= 6% within 10 sessions: AUC train 0.600, TEST 0.571 (distance-to-line alone: 0.509); base rate 26.3%; top 10% of scores: 40.7%; top 5%: 48.4%; top 1%: 64.0%
+  Supertrend exit within 5 sessions: AUC train 0.771, TEST 0.755 (distance-to-line alone: 0.755); base rate 15.3%; top 10% of scores: 51.6%; top 5%: 58.8%; top 1%: 62.6%
+
+== alert rules: first alert in each trade (5823 trades; 14.6% base chance of a 5-day Supertrend exit, 22.0% base chance of a 6% drop in 10 sessions) ==
+  VOLUME: distribution (3+ days) or a high-volume down day, with the close under the 10-day EMA zone
+     fires in 49% of trades; after the alert: 6%+ drop within 10d 23.2% (train 19% (n 1494) / test 28% (n 1360)); Supertrend exit within 5d 35%; median days to the Supertrend exit 12; price at the eventual exit vs the alert close: avg 0.50%, lower in 69% of alerts
+  STRUCTURE: close under the last swing low or the 5-day low
+     fires in 90% of trades; after the alert: 6%+ drop within 10d 22.2% (train 20% (n 2915) / test 26% (n 2304)); Supertrend exit within 5d 29%; median days to the Supertrend exit 14; price at the eventual exit vs the alert close: avg 0.96%, lower in 68% of alerts
+  GIVEBACK: gave back half the gain, or 3 ATR from the peak
+     fires in 49% of trades; after the alert: 6%+ drop within 10d 23.1% (train 19% (n 1510) / test 28% (n 1340)); Supertrend exit within 5d 38%; median days to the Supertrend exit 11; price at the eventual exit vs the alert close: avg 0.91%, lower in 70% of alerts
+  REVERSAL: bearish engulfing, shooting star or exhaustion candle after a run
+     fires in 74% of trades; after the alert: 6%+ drop within 10d 21.6% (train 18% (n 2414) / test 26% (n 1897)); Supertrend exit within 5d 13%; median days to the Supertrend exit 23; price at the eventual exit vs the alert close: avg 1.07%, lower in 63% of alerts
+  MOMENTUM: RSI under 50 and MACD histogram under 0 and -DI over +DI
+     fires in 49% of trades; after the alert: 6%+ drop within 10d 21.8% (train 18% (n 1523) / test 27% (n 1332)); Supertrend exit within 5d 40%; median days to the Supertrend exit 9; price at the eventual exit vs the alert close: avg 0.64%, lower in 72% of alerts
+  ANY TWO of: volume warning, structure break, giveback, reversal candle
+     fires in 81% of trades; after the alert: 6%+ drop within 10d 22.9% (train 20% (n 2618) / test 27% (n 2099)); Supertrend exit within 5d 31%; median days to the Supertrend exit 13; price at the eventual exit vs the alert close: avg 0.82%, lower in 69% of alerts
