@@ -37,6 +37,10 @@ export const recommendations = sqliteTable("recommendations", {
   postMortem: text("post_mortem"),
   // JSON snapshot of what was known when the pick was logged (score, distance from entry, stop size, alignment, earnings, market state), used to test rules on results.
   features: text("features"),
+  // JSON: what the ranking advisor (the AI model plus the code guardrails) decided about this idea the first time it saw it: KEPT or REJECTED, who rejected it,
+  // its rank, score, confidence and stated win probability, the price at that moment, the model and the prompt version. Used to measure the advisor on results.
+  advisorVerdict: text("advisor_verdict"),
+  advisorAt: text("advisor_at"),
 }, table => [
   uniqueIndex("recommendations_user_signal_unique").on(table.userId, table.symbol, table.signalConfirmedAt, table.action),
   index("recommendations_user_status_idx").on(table.userId, table.status, table.generatedAt),
