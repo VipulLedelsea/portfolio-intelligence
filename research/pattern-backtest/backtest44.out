@@ -1,0 +1,85 @@
+=== A. HTF Sweep CISD Setups, default long setup (sweep of a higher-timeframe low, then a displacement close over the last swing high = breaker; stop at the swept low) ===
+
+-- monthly HTF (the script's own pairing for a daily chart), script default entry (limit at the breaker candle's close, cancelled after 60 bars): 9943 setups, 2589 never filled (26%), 0 entered at once, average wait for a fill 11.2 days
+   fills that opened below the stop (sold at once for the cost only): 76
+   all: 7354 trades, 2964 dates
+   all out at 1R                                    win 53.4%  avg 0.38%  avg R 0.05  | vs random same-day stocks 0.35% (t 3.9)  2006-16 0.52%  2017-26 0.19%
+   all out at 2R                                    win 40.5%  avg 0.73%  avg R 0.11  | vs random same-day stocks 0.48% (t 3.8)  2006-16 0.53%  2017-26 0.44%
+   all out at 3R                                    win 35.5%  avg 0.79%  avg R 0.13  | vs random same-day stocks 0.34% (t 2.4)  2006-16 0.50%  2017-26 0.19%
+   thirds at 1R/2R/3R, break-even after 1R (script) win 52.7%  avg 0.56%  avg R 0.08  | vs random same-day stocks 0.39% (t 3.8)  2006-16 0.49%  2017-26 0.30%
+   FAIR CONTROL (same resting order on random stocks) all out at 1R: control avg 0.61% (fill rate 79%), difference -0.07% (t -0.7)  2006-16 -0.10%  2017-26 -0.03%
+   FAIR CONTROL (same resting order on random stocks) all out at 2R: control avg 1.00% (fill rate 79%), difference -0.06% (t -0.5)  2006-16 -0.26%  2017-26 0.12%
+   FAIR CONTROL (same resting order on random stocks) all out at 3R: control avg 1.35% (fill rate 79%), difference -0.31% (t -2.0)  2006-16 -0.43%  2017-26 -0.19%
+   FAIR CONTROL (same resting order on random stocks) thirds at 1R/2R/3R, break-even after 1R (script): control avg 0.77% (fill rate 79%), difference 0.01% (t 0.1)  2006-16 -0.17%  2017-26 0.17%
+   PORTFOLIO, 10 slots, all out at 2R: 10.3% a year, worst drop 54%, 2562 trades, win 41.8%, invested 90%
+      by year: 06: 14  07: -8  08: -35  09: 55  10: 9  11: -5  12: 43  13: 17  14: 8  15: 4  16: 18  17: 20  18: -10  19: 27  20: 15  21: 33  22: -8  23: 24  24: 5  25: 7  26: 20
+   PORTFOLIO, 10 slots, all out at 3R: 7.3% a year, worst drop 51%, 2094 trades, win 35.4%, invested 92%
+      by year: 06: 3  07: 1  08: -34  09: 45  10: 22  11: -6  12: 33  13: 19  14: -1  15: 4  16: 4  17: 21  18: -2  19: 28  20: 8  21: 37  22: -18  23: 24  24: -5  25: -7  26: 14
+   by year, all out at 2R (n / avg %): 06: 228 / 0.8  07: 313 / -0.7  08: 435 / -2.1  09: 178 / 6.0  10: 238 / 0.7  11: 378 / 1.4  12: 298 / 2.6  13: 226 / 1.7  14: 266 / 0.9  15: 354 / -0.4  16: 357 / 1.2  17: 326 / 1.5  18: 357 / -0.6  19: 273 / 2.3  20: 288 / 2.4  21: 400 / 1.7  22: 589 / -0.9  23: 566 / 0.4  24: 394 / 0.5  25: 535 / 0.5  26: 355 / 1.0
+   only while SPY is above its 200-day: 5638 trades, 2388 dates
+   all out at 1R                                    win 54.1%  avg 0.38%  avg R 0.06  | vs random same-day stocks 0.23% (t 2.4)  2006-16 0.34%  2017-26 0.13%
+   all out at 2R                                    win 40.9%  avg 0.70%  avg R 0.13  | vs random same-day stocks 0.24% (t 1.9)  2006-16 0.22%  2017-26 0.26%
+   all out at 3R                                    win 36.0%  avg 0.85%  avg R 0.16  | vs random same-day stocks 0.18% (t 1.3)  2006-16 0.25%  2017-26 0.13%
+   thirds at 1R/2R/3R, break-even after 1R (script) win 53.5%  avg 0.58%  avg R 0.10  | vs random same-day stocks 0.25% (t 2.4)  2006-16 0.34%  2017-26 0.17%
+
+-- monthly HTF (the script's own pairing for a daily chart), market entry at the next open
+   fills that opened below the stop (sold at once for the cost only): 0
+   all: 3016 trades, 1557 dates
+   all out at 1R                                    win 53.7%  avg 0.21%  avg R 0.04  | vs random same-day stocks -0.40% (t -2.5)  2006-16 -0.49%  2017-26 -0.32%
+   all out at 2R                                    win 42.1%  avg 0.50%  avg R 0.11  | vs random same-day stocks -0.23% (t -1.1)  2006-16 -0.21%  2017-26 -0.24%
+   all out at 3R                                    win 39.3%  avg 0.62%  avg R 0.14  | vs random same-day stocks -0.28% (t -1.2)  2006-16 0.00%  2017-26 -0.52%
+   thirds at 1R/2R/3R, break-even after 1R (script) win 53.0%  avg 0.33%  avg R 0.08  | vs random same-day stocks -0.36% (t -2.1)  2006-16 -0.17%  2017-26 -0.52%
+   only while SPY is above its 200-day: 2271 trades, 1274 dates
+   all out at 1R                                    win 54.6%  avg 0.25%  avg R 0.05  | vs random same-day stocks -0.16% (t -1.0)  2006-16 -0.21%  2017-26 -0.13%
+   all out at 2R                                    win 42.9%  avg 0.69%  avg R 0.14  | vs random same-day stocks -0.26% (t -1.2)  2006-16 -0.32%  2017-26 -0.21%
+   all out at 3R                                    win 40.0%  avg 0.90%  avg R 0.18  | vs random same-day stocks -0.21% (t -0.9)  2006-16 -0.07%  2017-26 -0.33%
+   thirds at 1R/2R/3R, break-even after 1R (script) win 53.7%  avg 0.47%  avg R 0.10  | vs random same-day stocks -0.30% (t -1.7)  2006-16 -0.17%  2017-26 -0.40%
+
+-- weekly HTF, script default entry (limit at the breaker candle's close, cancelled after 60 bars): 38391 setups, 8778 never filled (23%), 0 entered at once, average wait for a fill 10.5 days
+   fills that opened below the stop (sold at once for the cost only): 421
+   all: 29613 trades, 4612 dates
+   all out at 1R                                    win 52.0%  avg 0.19%  avg R -1.13  | vs random same-day stocks 0.24% (t 5.1)  2006-16 0.31%  2017-26 0.16%
+   all out at 2R                                    win 38.8%  avg 0.48%  avg R -1.07  | vs random same-day stocks 0.27% (t 4.1)  2006-16 0.32%  2017-26 0.21%
+   all out at 3R                                    win 33.2%  avg 0.61%  avg R -1.04  | vs random same-day stocks 0.27% (t 3.6)  2006-16 0.40%  2017-26 0.12%
+   thirds at 1R/2R/3R, break-even after 1R (script) win 51.1%  avg 0.34%  avg R -1.10  | vs random same-day stocks 0.24% (t 4.5)  2006-16 0.32%  2017-26 0.16%
+   FAIR CONTROL (same resting order on random stocks) all out at 1R: control avg 0.47% (fill rate 81%), difference -0.06% (t -1.2)  2006-16 0.01%  2017-26 -0.13%
+   FAIR CONTROL (same resting order on random stocks) all out at 2R: control avg 0.86% (fill rate 81%), difference -0.04% (t -0.5)  2006-16 -0.04%  2017-26 -0.03%
+   FAIR CONTROL (same resting order on random stocks) all out at 3R: control avg 1.08% (fill rate 81%), difference -0.05% (t -0.6)  2006-16 -0.08%  2017-26 -0.01%
+   FAIR CONTROL (same resting order on random stocks) thirds at 1R/2R/3R, break-even after 1R (script): control avg 0.68% (fill rate 81%), difference -0.04% (t -0.6)  2006-16 -0.01%  2017-26 -0.06%
+   PORTFOLIO, 10 slots, all out at 2R: 7.7% a year, worst drop 62%, 3798 trades, win 38.8%, invested 96%
+      by year: 06: 18  07: 2  08: -47  09: 39  10: 19  11: -3  12: 15  13: 31  14: 9  15: -3  16: 10  17: 12  18: -7  19: 21  20: 24  21: 34  22: -25  23: 22  24: -1  25: 8  26: 25
+   PORTFOLIO, 10 slots, all out at 3R: 3.1% a year, worst drop 70%, 2912 trades, win 32.2%, invested 97%
+      by year: 06: 13  07: -9  08: -50  09: 18  10: 10  11: -7  12: 19  13: 23  14: 4  15: 6  16: 14  17: 10  18: -7  19: 17  20: 9  21: 18  22: -24  23: 11  24: 8  25: 17  26: -1
+   by year, all out at 2R (n / avg %): 06: 983 / 0.9  07: 1138 / -0.6  08: 1108 / -2.1  09: 1132 / 3.4  10: 1275 / 1.1  11: 1290 / 0.2  12: 1400 / 1.2  13: 1296 / 1.5  14: 1385 / 0.3  15: 1405 / -0.7  16: 1384 / 0.7  17: 1477 / 1.0  18: 1583 / -0.6  19: 1387 / 0.9  20: 1541 / 1.9  21: 1705 / 0.9  22: 1649 / -1.2  23: 1696 / -0.0  24: 1740 / 0.3  25: 1792 / 0.7  26: 1247 / 0.6
+   only while SPY is above its 200-day: 24586 trades, 3771 dates
+   all out at 1R                                    win 52.2%  avg 0.18%  avg R 0.01  | vs random same-day stocks 0.15% (t 3.5)  2006-16 0.21%  2017-26 0.09%
+   all out at 2R                                    win 39.2%  avg 0.50%  avg R 0.08  | vs random same-day stocks 0.17% (t 2.6)  2006-16 0.20%  2017-26 0.13%
+   all out at 3R                                    win 33.5%  avg 0.66%  avg R 0.13  | vs random same-day stocks 0.18% (t 2.4)  2006-16 0.34%  2017-26 0.02%
+   thirds at 1R/2R/3R, break-even after 1R (script) win 51.3%  avg 0.36%  avg R 0.05  | vs random same-day stocks 0.15% (t 2.8)  2006-16 0.21%  2017-26 0.09%
+
+-- weekly HTF, market entry at the next open
+   fills that opened below the stop (sold at once for the cost only): 0
+   all: 18686 trades, 4022 dates
+   all out at 1R                                    win 54.3%  avg 0.21%  avg R 0.04  | vs random same-day stocks -0.13% (t -2.0)  2006-16 -0.04%  2017-26 -0.22%
+   all out at 2R                                    win 41.6%  avg 0.57%  avg R 0.11  | vs random same-day stocks -0.09% (t -1.1)  2006-16 -0.02%  2017-26 -0.17%
+   all out at 3R                                    win 37.6%  avg 0.64%  avg R 0.14  | vs random same-day stocks -0.17% (t -1.7)  2006-16 -0.04%  2017-26 -0.30%
+   thirds at 1R/2R/3R, break-even after 1R (script) win 53.6%  avg 0.34%  avg R 0.07  | vs random same-day stocks -0.14% (t -1.9)  2006-16 0.01%  2017-26 -0.30%
+   only while SPY is above its 200-day: 15594 trades, 3378 dates
+   all out at 1R                                    win 54.6%  avg 0.22%  avg R 0.04  | vs random same-day stocks -0.09% (t -1.3)  2006-16 -0.02%  2017-26 -0.16%
+   all out at 2R                                    win 41.9%  avg 0.61%  avg R 0.13  | vs random same-day stocks -0.02% (t -0.2)  2006-16 0.09%  2017-26 -0.13%
+   all out at 3R                                    win 37.7%  avg 0.70%  avg R 0.16  | vs random same-day stocks -0.15% (t -1.5)  2006-16 -0.06%  2017-26 -0.24%
+   thirds at 1R/2R/3R, break-even after 1R (script) win 53.8%  avg 0.37%  avg R 0.08  | vs random same-day stocks -0.11% (t -1.5)  2006-16 -0.00%  2017-26 -0.22%
+
+=== B. Daily double bottom, own stop (the lower of the two lows) and measured-move target, 40-day limit, entry next open ===
+all                                            n  1144  win 62.6%  avg 1.57%  avgWin 7.84%  avgLoss -8.93%  reward:risk 0.81  | random same-day stocks, same levels: win 67% of sets positive, avg 1.22%  | difference 0.29% (t 1.1)
+2006-2016                                      n   472  win 63.1%  avg 2.05%  avgWin 7.97%  avgLoss -8.11%  reward:risk 0.83  | random same-day stocks, same levels: win 67% of sets positive, avg 1.39%  | difference 0.63% (t 1.6)
+2017-2026                                      n   672  win 62.2%  avg 1.23%  avgWin 7.75%  avgLoss -9.49%  reward:risk 0.80  | random same-day stocks, same levels: win 66% of sets positive, avg 1.21%  | difference -0.02% (t -0.1)
+SPY above its 200-day                          n   902  win 62.4%  avg 1.57%  avgWin 7.82%  avgLoss -8.80%  reward:risk 0.81  | random same-day stocks, same levels: win 65% of sets positive, avg 1.15%  | difference 0.48% (t 1.5)
+SPY below its 200-day                          n   242  win 63.2%  avg 1.55%  avgWin 7.94%  avgLoss -9.44%  reward:risk 0.84  | random same-day stocks, same levels: win 73% of sets positive, avg 1.53%  | difference -0.11% (t -0.2)
+reward:risk 1.0 or better                      n   194  win 52.6%  avg 1.39%  avgWin 10.07%  avgLoss -8.23%  reward:risk 1.16  | random same-day stocks, same levels: win 68% of sets positive, avg 1.35%  | difference 0.27% (t 0.4)
+reward:risk under 1.0                          n   950  win 64.6%  avg 1.60%  avgWin 7.47%  avgLoss -9.12%  reward:risk 0.74  | random same-day stocks, same levels: win 69% of sets positive, avg 1.41%  | difference 0.16% (t 0.5)
+by year (n / avg % / avg of matched random): 06: 20 / 0.5 / 3.2  07: 22 / -3.8 / -2.0  08: 30 / 0.3 / -0.7  09: 51 / 2.4 / 0.4  10: 100 / 3.2 / 2.6  11: 24 / -0.7 / -2.8  12: 53 / 7.0 / 3.7  13: 34 / 1.7 / 2.6  14: 19 / -2.3 / 0.9  15: 60 / -1.2 / -0.9  16: 59 / 4.9 / 3.6  17: 26 / 3.5 / 1.7  18: 68 / -2.2 / -0.8  19: 60 / 3.6 / 3.0  20: 66 / 4.1 / 4.4  21: 68 / -0.7 / 1.6  22: 96 / -1.0 / -0.2  23: 93 / 3.1 / 1.7  24: 61 / 2.1 / 0.6  25: 73 / -0.2 / 1.0  26: 61 / 2.2 / 1.7
+same entries with +5% / -3% / 10d: win 44.5%  avg 0.04%  random same-day -0.01%
+same entries with +9% / -3% / 20d: win 35.1%  avg 0.16%  random same-day 0.24%
+portfolio, 10 equal slots, every double bottom taken while a slot is free: 5.3% a year, worst drop 25%, 917 trades, win 61.0%, invested 42% of the time on average  (SPY 10.7% a year)
+signals per year: 55 across the whole index
