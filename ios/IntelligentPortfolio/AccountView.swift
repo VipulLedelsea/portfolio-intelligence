@@ -16,9 +16,7 @@ struct AccountView: View {
                     Text("This device can request market research and, when connected, view your private learning history. It cannot access a brokerage account, positions, or orders.")
                         .foregroundStyle(AppTheme.muted)
                         .panel()
-                    Text("Research and education only. Nothing here is investment, financial, tax or legal advice.")
-                        .font(.footnote)
-                        .foregroundStyle(AppTheme.muted)
+                    ResearchFootnote()
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Desk display").font(.headline)
                         Picker("Desk display", selection: $model.deskSetting) {

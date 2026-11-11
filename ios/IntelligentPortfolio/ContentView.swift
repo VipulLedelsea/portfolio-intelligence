@@ -20,11 +20,11 @@ struct ContentView: View {
                     TodayView()
                         .tabItem { Label("Today", systemImage: "sun.max") }
                     ScannerView()
-                        .tabItem { Label("Scanner", systemImage: "chart.xyaxis.line") }
+                        .tabItem { Label("Ideas", systemImage: "chart.xyaxis.line") }
                     HoldingsView()
                         .tabItem { Label("Holdings", systemImage: "briefcase") }
                     MemoryView()
-                        .tabItem { Label("Memory", systemImage: "brain.head.profile") }
+                        .tabItem { Label("Track record", systemImage: "checklist") }
                     AccountView()
                         .tabItem { Label("Account", systemImage: "person.crop.circle") }
                 }
