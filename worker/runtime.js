@@ -2044,6 +2044,7 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
     item.reason = rankRulesReason(item);
     item.sources = ["rules"];
     if (index < 12) item.bars = snapshots.get(item.symbol)?.chart_daily || [];
+    item.evidence_id = item.evidence_key; // kept on the item: a ranking read back from storage no longer holds the RANK_EVIDENCE object itself
     delete item.evidence_key;
   });
   const positive = kept.filter(item => item.evidence.ev_pct > 0), unknown = kept.filter(item => item.evidence.ev_pct === null);
@@ -2122,12 +2123,26 @@ function rankInputHash(items) {
   return h.toString(36);
 }
 
+// Which RANK_EVIDENCE entry an idea rests on. The ranking model is called with a ranking read back from storage, where item.evidence is a parsed copy,
+// so the entry is found by its stored id, then by identity, then by content (for rankings stored before the id existed).
+function evidenceKeyOf(item) {
+  const keys = Object.keys(RANK_EVIDENCE), e = item.evidence;
+  if (item.evidence_id && RANK_EVIDENCE[item.evidence_id]) return item.evidence_id;
+  const same = keys.find(key => RANK_EVIDENCE[key] === e);
+  if (same || !e) return same;
+  const byNumbers = keys.filter(key => RANK_EVIDENCE[key].label === e.label && RANK_EVIDENCE[key].n === e.n && RANK_EVIDENCE[key].ev_pct === e.ev_pct && RANK_EVIDENCE[key].win_rate_pct === e.win_rate_pct);
+  if (byNumbers.length === 1) return byNumbers[0];
+  const byNote = byNumbers.filter(key => RANK_EVIDENCE[key].note === e.note);
+  if (byNote.length === 1) return byNote[0];
+  const byMarket = byNumbers.find(key => key.endsWith(`_${item.market}`));
+  return byMarket || byNumbers[0];
+}
 function rankModelInput(ranking, market, live) {
   const slim = item => ({ id: item.id, symbol: item.symbol, company: item.company, sector: item.sector, strategy: item.strategy, tag: item.tag, detail: item.detail, direction: item.direction,
     price: item.price, entry: item.entry, stop: item.stop, target_1: item.target_1, target_2: item.target_2, exit_rule: item.exit_rule, stop_pct: item.stop_pct, stop_atr: item.stop_atr,
     rr_to_target_1: item.rr_t1, rr_to_target_2: item.rr_t2, rr_to_target_1_from_now: item.rr_t1_now, rr_to_target_2_from_now: item.rr_t2_now, stop_distance_now_atr: item.stop_distance_now_atr, buy_range_state: item.buy_range?.label || null, from_entry_atr: item.from_entry_atr, age_days: item.age_days, atr_pct: item.atr_pct, volume_ratio: item.volume_ratio,
     alignment: item.alignment_note, scanner_rank_within_its_list: item.scanner_rank_in_list, scanner_score: item.scanner_score, rules_score: item.rules_score, rules_rank: item.rank,
-    same_sector_crowded: item.crowded, sec_filings: item.filing ? { earnings_in_days: item.filing.earnings_in_days, earnings_date: item.filing.earnings_estimate, earnings_date_is_confirmed: item.filing.earnings_confirmed === true, earnings_timing: item.filing.earnings_timing, caution_filings_last_30_days: item.filing.cautions } : undefined, evidence: Object.keys(RANK_EVIDENCE).find(key => RANK_EVIDENCE[key] === item.evidence) });
+    same_sector_crowded: item.crowded, sec_filings: item.filing ? { earnings_in_days: item.filing.earnings_in_days, earnings_date: item.filing.earnings_estimate, earnings_date_is_confirmed: item.filing.earnings_confirmed === true, earnings_timing: item.filing.earnings_timing, caution_filings_last_30_days: item.filing.cautions } : undefined, evidence: evidenceKeyOf(item) });
   const setups = ranking.items.map(slim);
   const used = new Set(setups.map(setup => setup.evidence));
   return {

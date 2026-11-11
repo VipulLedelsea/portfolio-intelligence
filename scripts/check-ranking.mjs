@@ -151,4 +151,16 @@ assert.equal(rt.mergeAiRanking(ranking, { ...ai([row("SUPERTREND:AAA:LONG", 80, 
 assert.ok(/veteran NYSE trader/.test(rt.RANKING_SYSTEM_PROMPT));
 assert.ok(!/3 to 8/.test(rt.RANKING_SYSTEM_PROMPT) && !/not all one strategy/.test(rt.RANKING_SYSTEM_PROMPT));
 assert.ok(/win_probability_pct/.test(rt.RANKING_SYSTEM_PROMPT) && /live_track_record/.test(rt.RANKING_SYSTEM_PROMPT));
+// the model must get the backtest evidence when the ranking was read back from storage (the live path), with or without the stored id
+for (const name of ["quiet", "unproven", "mixed"]) {
+  const { ranking: fresh, market: mk } = rt.exampleInput(name), direct = rt.rankModelInput(fresh, mk);
+  assert.ok(Object.keys(direct.strategy_evidence).length > 0, `${name}: evidence is sent`);
+  const roundTrip = JSON.parse(JSON.stringify(fresh)), old = JSON.parse(JSON.stringify(fresh));
+  for (const item of old.items) delete item.evidence_id;
+  for (const [label, copy] of [["stored", roundTrip], ["stored before the id existed", old]]) {
+    const again = rt.rankModelInput(copy, mk);
+    assert.deepEqual(again.strategy_evidence, direct.strategy_evidence, `${name}: ${label} ranking sends the same evidence`);
+    assert.deepEqual(again.setups.map(x => x.evidence), direct.setups.map(x => x.evidence), `${name}: ${label} ranking names the same evidence per setup`);
+  }
+}
 console.log("Ranking guardrail checks passed");
