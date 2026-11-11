@@ -203,7 +203,7 @@ async function scan(manual=false){
     if(requested!==market)return;
     if(!response.ok)throw new Error(d.error||'Discovery failed');
     if(d.warming_up){scanStatus.textContent=d.message;clearTimeout(autoTimer);autoTimer=setTimeout(scan,15000);return}
-    discoveryData=d;renderRecent(d.recent_setups);renderTopIdeas(d.ranking);setTrends(d.all_market_trends&&d.all_market_trends.length?d.all_market_trends:d.market_trends&&d.market_trends.length?d.market_trends:[d.market_trend]);
+    discoveryData=d;renderRecent(d.recent_setups);renderTopIdeas(d.ranking);if(window.__renderBriefing)window.__renderBriefing();setTrends(d.all_market_trends&&d.all_market_trends.length?d.all_market_trends:d.market_trends&&d.market_trends.length?d.market_trends:[d.market_trend]);
     renderCandidates(d.candidates,'all');
     document.getElementById('method').textContent=d.method+' '+d.next_step;
     discovery.classList.remove('hidden');
