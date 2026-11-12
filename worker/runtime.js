@@ -37,7 +37,9 @@ const EXTERNAL_ANALYSIS_CACHE_SECONDS = 15 * 60;
 const YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/";
 const TWELVE_DATA = "https://api.twelvedata.com/time_series";
 
-const SENSEX_30 = [
+// India: the Sensex 30 plus 14 more of the largest Nifty 50 stocks. One data request per stock, so 44 stocks and the index stay under
+// the free plan's 50 requests per run; a wider list needs the paid plan or a rotating scan.
+const INDIA_LARGE_CAPS = [
   ["ADANIPORTS", "Adani Ports & SEZ", "Industrials"], ["ASIANPAINT", "Asian Paints", "Materials"],
   ["AXISBANK", "Axis Bank", "Financials"], ["BAJAJ-AUTO", "Bajaj Auto", "Consumer Discretionary"],
   ["BAJFINANCE", "Bajaj Finance", "Financials"], ["BAJAJFINSV", "Bajaj Finserv", "Financials"],
@@ -53,6 +55,13 @@ const SENSEX_30 = [
   ["SUNPHARMA", "Sun Pharmaceutical", "Health Care"], ["TMPV", "Tata Motors Passenger Vehicles", "Consumer Discretionary"],
   ["TATASTEEL", "Tata Steel", "Materials"], ["TCS", "Tata Consultancy Services", "Information Technology"],
   ["TECHM", "Tech Mahindra", "Information Technology"], ["TITAN", "Titan Company", "Consumer Discretionary"],
+  ["ULTRACEMCO", "UltraTech Cement", "Materials"], ["WIPRO", "Wipro", "Information Technology"],
+  ["JSWSTEEL", "JSW Steel", "Materials"], ["COALINDIA", "Coal India", "Energy"],
+  ["EICHERMOT", "Eicher Motors", "Consumer Discretionary"], ["TATACONSUM", "Tata Consumer Products", "Consumer Staples"],
+  ["APOLLOHOSP", "Apollo Hospitals", "Health Care"], ["ADANIENT", "Adani Enterprises", "Industrials"],
+  ["DIVISLAB", "Divi's Laboratories", "Health Care"], ["HDFCLIFE", "HDFC Life Insurance", "Financials"],
+  ["SBILIFE", "SBI Life Insurance", "Financials"], ["HINDALCO", "Hindalco Industries", "Materials"],
+  ["CIPLA", "Cipla", "Health Care"], ["DRREDDY", "Dr. Reddy's Laboratories", "Health Care"],
 ].map(([symbol, company, sector]) => ({ symbol, company, sector }));
 
 const FOREX_PAIRS = [
@@ -62,7 +71,7 @@ const FOREX_PAIRS = [
 
 const MARKETS = {
   US: { id: "US", name: "S&P 500", label: "US stocks", provider: "robinhood", auto: true, tz: "America/New_York", dailyCloseMinutes: 16 * 60, currency: "USD", symbolPrefix: "$", decimals: () => 2 },
-  IN: { id: "IN", name: "Sensex 30", label: "India (BSE)", provider: "external", auto: true, tz: "Asia/Kolkata", dailyCloseMinutes: 15 * 60 + 35, currency: "INR", symbolPrefix: "₹", decimals: () => 2, universe: SENSEX_30, yahoo: symbol => symbol.startsWith("^") ? symbol : `${symbol}.BO`, twelve: symbol => symbol, twelveExchange: "BSE", tradingView: symbol => `BSE:${symbol.replace(/[^A-Z0-9_-]/g, "_")}` },
+  IN: { id: "IN", name: "India large caps", label: "India (BSE)", provider: "external", auto: true, tz: "Asia/Kolkata", dailyCloseMinutes: 15 * 60 + 35, currency: "INR", symbolPrefix: "₹", decimals: () => 2, universe: INDIA_LARGE_CAPS, yahoo: symbol => symbol.startsWith("^") ? symbol : `${symbol}.BO`, twelve: symbol => symbol, twelveExchange: "BSE", tradingView: symbol => `BSE:${symbol.replace(/[^A-Z0-9_-]/g, "_")}` },
   FX: { id: "FX", name: "Major forex pairs", label: "Forex", provider: "external", auto: true, tz: "UTC", dailyCloseMinutes: Infinity, currency: "", symbolPrefix: "", decimals: value => value >= 20 ? 3 : 5, universe: FOREX_PAIRS, yahoo: symbol => symbol.includes("-") ? symbol : `${symbol}=X`, twelve: symbol => `${symbol.slice(0, 3)}/${symbol.slice(3)}`, tradingView: symbol => `FX:${symbol}` },
 };
 
@@ -1634,6 +1643,8 @@ function pickFeatures(item, marketState) {
     earnings_in_days: f?.earnings_in_days ?? null, cautions: (f?.cautions || []).length,
     // Information-only labels, stored so the live track record can show whether they matter. No rule or score reads them.
     chart_pattern: item.chart_pattern ?? null, prior_run_up: item.prior_run_up === true, market_regime: item.market_regime ?? null,
+    lorentzian: item.lorentzian?.prediction ?? null, signals_for: item.signal_tally?.for ?? null, signals_against: item.signal_tally?.against ?? null,
+    signals: item.signals?.length ? Object.fromEntries(item.signals.map(signal => [signal.key, signal.reading])) : null,
   };
 }
 
@@ -1770,7 +1781,9 @@ async function refreshLearning(env) {
       const adv_ret = advisor && exit > 0 && at > 0 ? round(((r.direction === "SHORT" ? at / exit : exit / at) - 1) * 100 - 0.2, 2) : null;
       return { strategy: r.strategy, action: r.action, ret: numeric(r.strategy_return_pct), date: String(r.generated_at).slice(0, 10), features: JSON.parse(r.features), advisor, adv_ret };
     } catch { return null; } }).filter(Boolean);
-  const report = { ...buildLearningReport(rows), updated_at: new Date().toISOString() };
+  // Finished ideas logged before evidence was recorded cannot be measured; the count is reported so "0 measured" is not read as "nothing finished".
+  const unlogged = Number((await env.DB.prepare("SELECT COUNT(*) AS n FROM recommendations WHERE user_id = ? AND status = 'SETTLED' AND market = 'US' AND action != 'PASS' AND features IS NULL").bind(SCANNER_USER_ID).first().catch(() => null))?.n || 0);
+  const report = { ...buildLearningReport(rows), settled_without_evidence: unlogged, updated_at: new Date().toISOString() };
   const now = new Date().toISOString(), statements = [];
   for (const rule of report.rules) {
     const evidence = JSON.stringify({ n_flagged: rule.n_flagged, n_clear: rule.n_clear, mean_flagged: rule.mean_flagged, mean_clear: rule.mean_clear, diff: rule.diff, ci: rule.ci, halves: rule.halves, at: now });
@@ -1834,7 +1847,7 @@ const RANK_EVIDENCE = {
   PATTERN_SHORT: { label: "Pattern", n: 379, win_rate_pct: 57, avg_win_pct: null, avg_loss_pct: null, ev_pct: -0.61, experimental: true,
     note: "Bearish candlestick pattern on a 20-day-low breakdown with volume 1.4x average, 5-day hold. Beat breakdowns without a pattern by about +0.6% but still lost money in absolute terms, and the edge sat mostly in the first half." },
 };
-// Supertrend on the Sensex 30 and on forex pairs has not been backtested, so there is no figure to score: the evidence is marked unknown,
+// Supertrend on Indian large caps and on forex pairs has not been backtested, so there is no figure to score: the evidence is marked unknown,
 // confidence stays Low, and the scores lean on reward to risk, alignment and entry quality only.
 // Where price stands when the idea is acted on matters as much as the idea. Measured by replaying real S&P 500 history (2021 to 2026): every dip while SPY was down 1.5% or more over 5 days
 // (31,508 entries, bought at the close of day 1 to 4 after the signal, graded on the idea's own stop, first target and day 10, net of 0.2% cost) and the Supertrend research in
@@ -1844,7 +1857,7 @@ RANK_EVIDENCE.DIP.entry_timing = DIP_ENTRY_TIMING;
 RANK_EVIDENCE.DIP_SHARP.entry_timing = DIP_ENTRY_TIMING;
 RANK_EVIDENCE.SUPERTREND.entry_timing = "Distance from the buy point mattered more than age: within 0.5 ATR over it +1.25% per trade (1,901 days), pulled back under it +0.93% to +1.29%, 0.5 to 2 ATR over +0.63%, over 2 ATR +0.71%. By age: flip day +2.44%, 1 to 3 days +0.72%, 4 to 10 days +1.04%, 11 to 30 days +0.60%. Being extended is a weak warning for Supertrend.";
 RANK_EVIDENCE.SUPERTREND_IN = { label: "Supertrend", n: 0, win_rate_pct: null, avg_win_pct: null, avg_loss_pct: null, ev_pct: null, experimental: false,
-  note: "Not backtested on the Sensex 30. The US result does not carry over automatically: this market, its hours and its costs differ. Ideas exit at the first of the stop, target 1 or the tenth daily close." };
+  note: "Not backtested on Indian stocks. The US result does not carry over automatically: this market, its hours and its costs differ. Ideas exit at the first of the stop, target 1 or the tenth daily close." };
 RANK_EVIDENCE.SUPERTREND_FX = { label: "Supertrend", n: 0, win_rate_pct: null, avg_win_pct: null, avg_loss_pct: null, ev_pct: null, experimental: false,
   note: "Not backtested on forex pairs. The only forex test (chart patterns) found nothing that beat random entries. Ideas exit at the first of the stop, target 1 or the tenth daily close." };
 const RANK_MAX_STOP_PCT = 12, RANK_MAX_CHASE_ATR = 1.5, RANK_STALE_DAYS = 6, RANK_MIN_PROVEN_TRADES = 100, RANK_MAX_ITEMS = 30;
@@ -2047,6 +2060,8 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
     item.sources = ["rules"];
     if (index < 12) item.bars = snapshots.get(item.symbol)?.chart_daily || [];
     if (index < 12) item.lorentzian = lorentzianReading(DAILY_OHLC.get(`${item.market || "US"}:${item.symbol}`));
+    item.signals = ideaSignals(item, snapshots.get(item.symbol), trend);
+    item.signal_tally = { for: item.signals.filter(x => x.reading === "for").length, against: item.signals.filter(x => x.reading === "against").length, neutral: item.signals.filter(x => x.reading === "neutral").length };
     item.evidence_id = item.evidence_key; // kept on the item: a ranking read back from storage no longer holds the RANK_EVIDENCE object itself
     delete item.evidence_key;
   });
@@ -2085,6 +2100,12 @@ YOUR JOB, IN ORDER
 2. Reject every setup you doubt. A setup is a doubt if any of these is true: the strategy's backtest expected value is zero, negative or unknown; the strategy is experimental or has a small sample; price has already moved well away from the entry so the stated risk and reward no longer hold (check from_entry_atr and reward_to_risk against where price is now); little of the reward is left from where price is now (rr_to_target_1_from_now under 0.2 for dips and patterns), or the strategy's entry_timing shows that spot earned about nothing; the signal is old; the market trend is against the direction; earnings or a caution filing sits inside the hold; it is the same bet as a better setup (same sector and direction: keep the best one, reject the rest).
 A high win rate alone is never a reason to keep a setup. Judge win rate and average return together, which is what entry_timing in strategy_evidence shows: a spot with 84% wins and a tiny average return is worse than one with 70% wins and a larger one. Stops are set in ATRs, so a wide stop is not a reason to reject by itself; the code already removes stops wider than 12%.
 3. Rank what is left, best first, and list only the ones you would put in front of a client with your name on them. There is no target number: one, several or none are all fine answers, and the count must follow from the evidence. Never pad the list to look useful. Every setup you do not list must appear in rejected with a one-line reason.
+
+SIGNALS
+Most setups carry a signals list: every indicator we hold on that stock, each already read by code as "for", "against" or "neutral" for the setup's direction, with an evidence note saying whether that indicator has been backtested here, and signal_tally with the counts. Use all of them together; no single signal decides.
+- Weigh by evidence, not by count. A signal marked as part of the backtested rule or "Backtested: see entry_timing" carries real weight. One marked "Not backtested here" is a weak hint. One marked as backtested with no edge (chart patterns, the Lorentzian Classification reading) is close to no information: note it if you like, never keep or reject a setup because of it.
+- Several signals against, especially backtested ones, is a reason to lower the score or reject. Most signals for is support, not proof: the strategy's own backtest and entry_timing still come first.
+- Name the one or two signals that mattered most in the reason, with their values exactly as given.
 
 HOW TO SCORE THE ONES YOU KEEP (0-100)
 - 35% expected value: use the strategy's own backtest figures and its entry_timing (what the idea earned at the spot where price is now) (ev_pct per trade, win rate, sample size). Dips and Pattern ideas are graded on their own stop and first target within 10 days; Supertrend ideas have no target and exit on a daily close under the trend line, so judge them by their average win versus average loss, not by reward to the first target. Do not apply a single reward-to-risk cutoff across strategies: dips use a 2 ATR stop with a 1 ATR first target by design.
@@ -2145,13 +2166,14 @@ function rankModelInput(ranking, market, live) {
     price: item.price, entry: item.entry, stop: item.stop, target_1: item.target_1, target_2: item.target_2, exit_rule: item.exit_rule, stop_pct: item.stop_pct, stop_atr: item.stop_atr,
     rr_to_target_1: item.rr_t1, rr_to_target_2: item.rr_t2, rr_to_target_1_from_now: item.rr_t1_now, rr_to_target_2_from_now: item.rr_t2_now, stop_distance_now_atr: item.stop_distance_now_atr, buy_range_state: item.buy_range?.label || null, from_entry_atr: item.from_entry_atr, age_days: item.age_days, atr_pct: item.atr_pct, volume_ratio: item.volume_ratio,
     alignment: item.alignment_note, scanner_rank_within_its_list: item.scanner_rank_in_list, scanner_score: item.scanner_score, rules_score: item.rules_score, rules_rank: item.rank,
-    same_sector_crowded: item.crowded, sec_filings: item.filing ? { earnings_in_days: item.filing.earnings_in_days, earnings_date: item.filing.earnings_estimate, earnings_date_is_confirmed: item.filing.earnings_confirmed === true, earnings_timing: item.filing.earnings_timing, caution_filings_last_30_days: item.filing.cautions } : undefined, evidence: evidenceKeyOf(item) });
+    same_sector_crowded: item.crowded, sec_filings: item.filing ? { earnings_in_days: item.filing.earnings_in_days, earnings_date: item.filing.earnings_estimate, earnings_date_is_confirmed: item.filing.earnings_confirmed === true, earnings_timing: item.filing.earnings_timing, caution_filings_last_30_days: item.filing.cautions } : undefined, evidence: evidenceKeyOf(item),
+    signals: item.signals?.length ? item.signals.map(signal => ({ name: signal.label, value: signal.display, reading: signal.reading, evidence: signal.evidence })) : undefined, signal_tally: item.signal_tally });
   const setups = ranking.items.map(slim);
   const used = new Set(setups.map(setup => setup.evidence));
   return {
     as_of: new Date().toISOString().slice(0, 10), market: market || "US", market_trend: ranking.market_state,
     market_note: market === "FX" ? "Forex pairs: no volume data, no backtest for Supertrend here, ideas exit at the stop, a target or day 10. Where evidence is unknown, say so and keep confidence Low; do not borrow the US figures."
-      : market === "IN" ? "Sensex 30 (BSE) stocks in rupees: no backtest for Supertrend here, ideas exit at the stop, a target or day 10. Where evidence is unknown, say so and keep confidence Low; do not borrow the US figures." : undefined,
+      : market === "IN" ? "Large Indian (BSE) stocks in rupees: no backtest for Supertrend here, ideas exit at the stop, a target or day 10. Where evidence is unknown, say so and keep confidence Low; do not borrow the US figures." : undefined,
     strategy_evidence: Object.fromEntries(Object.entries(RANK_EVIDENCE).filter(([key]) => used.has(key))),
     live_track_record: live || undefined,
     hard_filters_applied_by_code: { sec_red_flag_filings: true, dip_and_pattern_with_earnings_within_days: EDGAR_EARNINGS_SKIP_DAYS, stop_wider_than_pct: RANK_MAX_STOP_PCT, chase_beyond_atr: RANK_MAX_CHASE_ATR, stale_after_days: RANK_STALE_DAYS, stop_already_hit: true },
@@ -2365,7 +2387,10 @@ async function ensureAiRanking(env, payload, ctx) {
   const rowId = rankRowId(payload.market);
   const stored = await readAiRanking(env, payload.market);
   const age = stored ? (Date.now() - Date.parse(stored.generated_at)) / 1000 : Infinity;
-  if (stored && stored.input_hash === hash && age < 3 * 3600) return;
+  // The free AI allowance is a daily budget, so it is spent where it changes something: a new list of ideas is ranked at once, an unchanged
+  // list is re-read every three hours while its market is open (prices move) and once a day while it is closed (nothing has changed).
+  const open = marketIsOpen(MARKETS[payload.market] || MARKETS.US, new Date(Date.now()));
+  if (stored && stored.input_hash === hash && age < (open ? 3 : 24) * 3600) return;
   if (age < AI_RANKING_MIN_GAP_SECONDS) return;
   try {
     await env.DB.prepare("INSERT OR IGNORE INTO scan_cache (market, payload, generated_at, refreshing_until) VALUES (?, NULL, ?, NULL)").bind(rowId, new Date(0).toISOString()).run();
@@ -2384,10 +2409,16 @@ async function ensureAiRanking(env, payload, ctx) {
       record.model = model;
       if (!record.result) record.error = "The model's answer had no usable ranking";
     } catch (error) { record.error = cleanError(error); console.error(`AI ranking failed: ${record.error}`); }
+    // A failed call (for example the daily AI allowance running out) must not wipe the last good answer: it keeps serving, with its own time,
+    // for up to a day. Ideas it never saw are ordered by the rules, as they always are.
+    const lastGoodAt = stored?.result_at || (stored?.result ? stored.generated_at : null);
+    if (record.result) record.result_at = new Date().toISOString();
+    else if (stored?.result && lastGoodAt && Date.now() - Date.parse(lastGoodAt) < 24 * 3600 * 1000) Object.assign(record, { result: stored.result, model: stored.model, live: stored.live, result_at: lastGoodAt, input_hash: stored.input_hash });
+    const fresh = Boolean(record.result) && !record.error;
     try {
       await env.DB.prepare("UPDATE scan_cache SET payload = ?, generated_at = ?, refreshing_until = NULL WHERE market = ?").bind(JSON.stringify(record), new Date().toISOString(), rowId).run();
     } catch { /* the rules ranking still serves */ }
-    await logAdvisorVerdicts(env, ranking, { ...record, generated_at: new Date().toISOString() }, payload.market).catch(error => console.error(`Advisor verdict log failed: ${cleanError(error)}`));
+    if (fresh) await logAdvisorVerdicts(env, ranking, { ...record, generated_at: new Date().toISOString() }, payload.market).catch(error => console.error(`Advisor verdict log failed: ${cleanError(error)}`));
   })();
   if (ctx?.waitUntil) ctx.waitUntil(work); else await work;
 }
@@ -2406,9 +2437,10 @@ function allowedNumbers(item) {
   const e = item.evidence || {}, f = item.filing || {};
   return [item.price, item.entry, item.stop, item.target_1, item.target_2, item.stop_pct, item.stop_atr, item.rr_t1, item.rr_t2, item.rr_t1_now, item.rr_t2_now, item.stop_distance_now_atr,
     item.from_entry_atr, item.age_days, item.atr_pct, item.volume_ratio, item.rules_score, item.scanner_score, item.rank, item.scanner_rank_in_list,
-    e.ev_pct, e.win_rate_pct, e.n, e.avg_win_pct, e.avg_loss_pct, f.earnings_in_days, item.buy_range?.price, item.buy_range?.entry]
+    e.ev_pct, e.win_rate_pct, e.n, e.avg_win_pct, e.avg_loss_pct, f.earnings_in_days, item.buy_range?.price, item.buy_range?.entry,
+    item.signal_tally?.for, item.signal_tally?.against, item.signal_tally?.neutral, item.lorentzian?.neighbors, ...(item.signals || []).map(signal => signal.value)]
     .filter(v => typeof v === "number" && Number.isFinite(v)).map(Math.abs)
-    .concat([item.alignment_note, item.detail, item.exit_rule, e.note, e.entry_timing].flatMap(text => [...String(text || "").matchAll(/\d[\d,]*(?:\.\d+)?/g)].map(m => Number(m[0].replace(/,/g, "")))).filter(Number.isFinite));
+    .concat([item.alignment_note, item.detail, item.exit_rule, e.note, e.entry_timing, ...(item.signals || []).map(signal => signal.display)].flatMap(text => [...String(text || "").matchAll(/\d[\d,]*(?:\.\d+)?/g)].map(m => Number(m[0].replace(/,/g, "")))).filter(Number.isFinite));
 }
 // Window lengths and counts people write without a data field (10-day hold, 200-day average, 2 ATR stop, 4-hour bars).
 const RANK_FREE_NUMBERS = new Set([1, 2, 3, 4, 5, 10, 14, 20, 50, 100, 200]);
@@ -2495,7 +2527,7 @@ function mergeAiRanking(ranking, stored) {
   const items = ordered.sort((a, b) => b.score - a.score).map((item, index) => ({ ...item, rank: index + 1 }));
   const dives = new Map(ai.deep_dives.filter(row => keptIds.has(row.id) && [row.bull, row.bear, row.invalidation].every(text => numbersInText(text, ranking.items.find(i => i.id === row.id), extra))).map(row => [row.id, row]));
   return {
-    ...ranking, source: "ai", model: stored.model, ai_generated_at: stored.generated_at,
+    ...ranking, source: "ai", model: stored.model, ai_generated_at: stored.result_at || stored.generated_at, ai_error: stored.error || undefined,
     headline: plainHeadline(ai.headline) || ranking.headline, nothing_compelling: items.length ? false : true,
     items: items.map(item => dives.has(item.id) ? { ...item, bull: dives.get(item.id).bull, bear: dives.get(item.id).bear, invalidation: dives.get(item.id).invalidation } : item),
     rejected: [...ranking.rejected, ...extraRejected],
@@ -2904,6 +2936,63 @@ function lorentzianReading(dailyBars) {
   try { return lorentzianClassification(dailyBars); } catch { return null; }
 }
 
+// ---- Signals: every indicator we hold on an idea, each read by code as for, against or neutral for the idea's direction ----
+// The ranking model and the bull and bear debate both receive this list. Each signal carries an `evidence` note saying whether the indicator
+// has been backtested here and what the test found, so an untested or no-edge indicator is weighed as such instead of being taken on faith.
+// Nothing here changes the rules score, a stop or an exit.
+const SIGNAL_UNTESTED = "Not backtested here: a weak signal.";
+function ideaSignals(item, snapshot, trend) {
+  const long = item.direction === "LONG", sign = long ? 1 : -1, s = snapshot || {}, out = [];
+  const add = (key, label, value, display, reading, evidence, meaning) => {
+    if (value === null || value === undefined || (typeof value === "number" && !Number.isFinite(value))) return;
+    out.push({ key, label, value, display, reading, evidence, meaning });
+  };
+  const way = (good, bad) => good ? "for" : bad ? "against" : "neutral";
+  const pct = (v, digits = 1) => `${v > 0 ? "+" : ""}${round(v, digits)}%`;
+  const withTrend = v => way(sign * v > 0, sign * v < 0);
+  const dir = d => d === "LONG" ? "up" : d === "SHORT" ? "down" : null;
+  const price = numeric(item.price) || numeric(s.price);
+
+  const daily = dir(s.daily_supertrend?.direction);
+  if (daily) add("daily_trend", "Daily trend", daily, daily, way((daily === "up") === long, (daily === "up") !== long), "Part of the backtested trend rule.", "Direction of the daily trend line.");
+  const adx = Number(s.daily_adx?.value);
+  if (Number.isFinite(adx) && adx > 0) add("trend_strength", "Trend strength (ADX 14)", round(adx, 1), `${round(adx, 1)}, ${s.daily_adx?.rising ? "rising" : "not rising"}`, way(adx >= 20 && Boolean(s.daily_adx?.rising), adx < 20),
+    "Part of the backtested trend rule: at least 20 and rising.", "ADX measures how strong a trend is, in either direction.");
+  const short = dir(s.supertrend?.direction);
+  if (short) add("short_term_trend", "Short-term trend (4-hour)", short, short, way((short === "up") === long, (short === "up") !== long), "Part of the backtested trend rule.", "Direction of the 4-hour trend line.");
+  if (price > 0 && numeric(s.sma_20) > 0) { const v = round((price / s.sma_20 - 1) * 100, 1); add("price_vs_20d_pct", "Price versus 20-day average", v, pct(v), withTrend(v), SIGNAL_UNTESTED, "Above the average supports a long, below it supports a short."); }
+  if (price > 0 && numeric(s.sma_50) > 0) { const v = round((price / s.sma_50 - 1) * 100, 1); add("price_vs_50d_pct", "Price versus 50-day average", v, pct(v), withTrend(v), SIGNAL_UNTESTED, "Above the average supports a long, below it supports a short."); }
+  if (Number.isFinite(Number(s.return_20d_pct))) { const v = round(Number(s.return_20d_pct), 1); add("momentum_20d_pct", "20-day price change", v, pct(v), withTrend(v), SIGNAL_UNTESTED, "Recent momentum in the idea's direction is support."); }
+  if (Number.isFinite(Number(s.return_60d_pct))) { const v = round(Number(s.return_60d_pct), 1); add("momentum_60d_pct", "60-day price change", v, pct(v), withTrend(v), SIGNAL_UNTESTED, "Longer momentum in the idea's direction is support."); }
+  const bars = DAILY_OHLC.get(`${item.market || "US"}:${item.symbol}`);
+  if (bars && bars.length >= 30) {
+    const rsi = rsiWilder(bars.slice(-120).map(bar => bar.close), 14);
+    if (rsi !== null) { const v = round(rsi, 0); add("rsi_14", "RSI (14)", v, String(v), long ? way(v >= 50 && v < 75, v >= 75 || v < 50) : way(v <= 50 && v > 25, v <= 25 || v > 50), SIGNAL_UNTESTED,
+      "0 to 100. For a long, 50 to 75 is healthy momentum and 75 or more is stretched. For a short, 25 to 50 is healthy and 25 or less is stretched."); }
+  }
+  if (price > 0 && numeric(s.high_252) > 0 && bars && bars.length >= 200) { const v = round(Math.max(0, (1 - price / s.high_252) * 100), 1); add("below_52w_high_pct", "Below the 52-week high", v, `${v}%`, long ? way(v <= 5, v >= 25) : way(v >= 25, v <= 5), SIGNAL_UNTESTED,
+    "A long within 5% of its high is a leader; one 25% or more below is damaged. The reverse for a short."); }
+  const volume = item.volume_ratio ?? s.volume_ratio_5d_to_20d;
+  if (Number.isFinite(Number(volume)) && item.market !== "FX") add("volume_ratio", "Volume versus average", round(Number(volume), 2), `${round(Number(volume), 2)}x`, way(volume >= 1.15, volume <= 0.8), SIGNAL_UNTESTED, "Above 1 means more interest than usual.");
+  const range = item.atr_pct ?? s.atr_14_pct;
+  if (Number.isFinite(Number(range))) add("daily_range_pct", "Typical daily range", round(Number(range), 2), `${round(Number(range), 2)}%`, way(false, range >= 4), SIGNAL_UNTESTED, "4% or more is a volatile stock, so the same stop is hit more easily.");
+  if (item.buy_range?.label) add("entry_position", "Price versus the signal price", String(item.buy_range.label).toLowerCase(), String(item.buy_range.label).toLowerCase(), way(item.buy_range.state === "IN_BUY_RANGE", item.buy_range.state !== "IN_BUY_RANGE"),
+    "Backtested: see entry_timing for what each spot earned.", "Whether the price is still near where the signal fired.");
+  if (Number.isFinite(Number(item.age_days))) add("signal_age_days", "Signal age", Number(item.age_days), `${item.age_days} days`, way(item.age_days <= 3, item.age_days >= 11), "Backtested: see entry_timing by age.", "Days since the signal. Older means more of the move is gone.");
+  const state = trend?.state;
+  if (state) add("market_trend", "Market trend", state.toLowerCase(), state.toLowerCase(), state === "MIXED" ? "neutral" : way((state === "UP") === long, (state === "UP") !== long), SIGNAL_UNTESTED, "Direction of the broad market index. Against the idea's direction is a headwind.");
+  if (Number.isFinite(Number(trend?.breadth_daily_pct))) { const v = Number(trend.breadth_daily_pct); add("market_breadth_pct", "Stocks in a daily uptrend", v, `${v}%`, long ? way(v >= 60, v <= 40) : way(v <= 40, v >= 60), SIGNAL_UNTESTED, "Share of scanned stocks in an uptrend. Broad strength supports longs."); }
+  const f = item.filing;
+  if (f?.earnings_in_days != null && f.earnings_in_days >= 0 && f.earnings_in_days <= 21) add("earnings_in_days", "Days to earnings", f.earnings_in_days, `${f.earnings_in_days} days`, way(false, f.earnings_in_days <= 14), "A report inside the hold can gap the price either way.", "Days until the next earnings report.");
+  if ((f?.cautions || []).length) add("filing_cautions", "Recent cautionary filings", f.cautions.length, String(f.cautions.length), "against", "The code already takes points off for these.", "Cautionary SEC filings in the last 30 days.");
+  if (item.crowded === true) add("same_sector_crowded", "Same bet as a higher-ranked idea", "yes", "yes", "against", "A rule, not a test.", "Another idea in the same sector and direction ranks higher.");
+  if (item.chart_pattern) add("chart_pattern", "Chart pattern", String(item.chart_pattern).toLowerCase(), String(item.chart_pattern).toLowerCase(), "neutral", "Backtested: chart patterns showed no reliable edge.", "A classic chart pattern seen in the last few sessions.");
+  const z = item.lorentzian;
+  if (z && Number.isFinite(Number(z.prediction))) add("lorentzian", "Lorentzian Classification reading", z.prediction, `${z.prediction > 0 ? "+" : ""}${z.prediction} of ${z.neighbors}`, way(sign * z.prediction > 0, sign * z.prediction < 0),
+    "Backtested on 20 years of S&P 500 daily bars: it did not predict the next 4 to 10 days. A very weak signal.", "From -8 (leans short) to +8 (leans long): votes of 8 similar past days.");
+  return out;
+}
+
 // The model writes the ranking headline and names the scanner; the pages say "trend" for the same thing.
 function plainHeadline(text) {
   return text ? String(text).replace(/\bSupertrend\b/g, "trend").replace(/\bsupertrend\b/g, "trend") : text;
@@ -3308,13 +3397,30 @@ async function recommendationMemory(db, userId, env = {}) {
 
 const scanMemory = new Map();
 
+// Scans run on fixed clock slots, not "so many minutes after the last one": US on the quarter hour (9:30, 9:45, 10:00 New York time),
+// India at five past each hour and forex at ten past, which is when their cron jobs fire. A scan is due when the stored one was made
+// before the current slot began, so a visitor's request can never pull a scan off the beat.
+function scanSlot(market) { return market.id === "US" ? [US_REFRESH_OPEN_SECONDS, 0] : [3600, market.id === "IN" ? 300 : 600]; }
+function scanSlotStart(market, nowMs = Date.now()) {
+  const [interval, offset] = scanSlot(market);
+  return (Math.floor((nowMs / 1000 - offset) / interval) * interval + offset) * 1000;
+}
+function scanIsDue(market, generatedAt, now = new Date(Date.now())) {
+  const at = Date.parse(generatedAt);
+  if (!Number.isFinite(at)) return true;
+  if (marketIsOpen(market, now)) return at < scanSlotStart(market, now.getTime());
+  // Closed: one scan after the close picks up the final prices, then only every few hours.
+  return marketIsOpen(market, new Date(at)) || (now.getTime() - at) / 1000 >= AUTO_REFRESH_CLOSED_SECONDS;
+}
+
 function refreshInterval(market, now = new Date()) {
   if (!marketIsOpen(market, now)) return AUTO_REFRESH_CLOSED_SECONDS;
   return market.id === "US" ? US_REFRESH_OPEN_SECONDS : AUTO_REFRESH_OPEN_SECONDS;
 }
 
 function withRefreshInfo(payload, generatedAt, market) {
-  const nextAt = new Date(Date.parse(generatedAt) + refreshInterval(market) * 1000).toISOString();
+  const open = marketIsOpen(market, new Date(Date.now()));
+  const nextAt = new Date(open ? scanSlotStart(market) + scanSlot(market)[0] * 1000 : Date.parse(generatedAt) + refreshInterval(market) * 1000).toISOString();
   return { ...payload, refreshed_at: generatedAt, next_refresh_at: nextAt, auto_refresh: market.auto, refresh_interval_seconds: refreshInterval(market) };
 }
 
@@ -3370,7 +3476,7 @@ async function refreshScan(env, market, ctx) {
 // the score: there is no evidence yet that a model's lean predicts returns.
 const DEBATE_TOP_N = 5, DEBATE_MIN_GAP_SECONDS = 50 * 60, DEBATE_MAX_AGE_SECONDS = 24 * 3600, DEBATE_LEASE_SECONDS = 10 * 60, DEBATE_BUDGET_SECONDS = 4 * 60;
 // The bigger model argues too: the small one passed the number check but made weak points (a long backtest called "overfitting", an earnings date 87 days away called a risk).
-const DEBATE_MODEL = WORKERS_AI_RANKING_MODEL, DEBATE_VERSION = "v2", DEBATE_EARNINGS_WINDOW_DAYS = 21;
+const DEBATE_MODEL = WORKERS_AI_RANKING_MODEL, DEBATE_VERSION = "v3", DEBATE_EARNINGS_WINDOW_DAYS = 21;
 const FACT_DEFS = {
   backtest_ev_pct: { label: "Backtest average return per trade", hint: "Average percent return per trade in this scanner's backtest. Above zero is a plus, below zero a minus.", unit: "%", signed: true },
   backtest_win_rate_pct: { label: "Backtest win rate", hint: "Share of backtested trades that made money. Good strategies can win less than half the time if wins are bigger than losses.", unit: "%" },
@@ -3408,9 +3514,25 @@ function debateFacts(item, marketState) {
   return facts;
 }
 
-function debateFactDisplay(key, value) {
-  const d = FACT_DEFS[key];
+// The idea's signals as debate facts, so both sides argue from this stock's own readings and not only the scanner's overall record.
+// Signals that repeat an existing fact (market trend, age, volume, range, earnings, filings, crowding) are left to that fact.
+const DEBATE_SIGNAL_SKIP = new Set(["market_trend", "signal_age_days", "volume_ratio", "daily_range_pct", "earnings_in_days", "filing_cautions", "same_sector_crowded"]);
+function debateSignalFacts(item) {
+  const facts = {}, defs = {};
+  for (const signal of item.signals || []) {
+    if (DEBATE_SIGNAL_SKIP.has(signal.key)) continue;
+    const key = `sig_${signal.key}`;
+    facts[key] = signal.value;
+    defs[key] = { label: signal.label, display: signal.display, str: typeof signal.value === "string",
+      hint: `${signal.meaning} Read for this ${item.direction === "LONG" ? "long" : "short"} idea: ${signal.reading}. ${signal.evidence}` };
+  }
+  return { facts, defs };
+}
+
+function debateFactDisplay(key, value, defs = FACT_DEFS) {
+  const d = defs[key];
   if (!d) return String(value);
+  if (d.display) return d.display;
   if (d.bool) return value ? "yes" : "no";
   if (d.str) return String(value).toLowerCase();
   const n = Number(value), text = Math.abs(n) >= 100 ? String(Math.round(n)) : String(round(n, 2));
@@ -3422,7 +3544,7 @@ const DEBATE_FREE_NUMBERS = new Set([1, 2, 3, 5, 10, 14, 20, 50, 100, 200]); // 
 
 // Code-side check. A claim survives only if every cited key is allowed for that side and its value matches the real figure, at least one fact is cited,
 // the text has no banned wording, and every number written in the text equals a real figure of this idea (or a common window length).
-function verifyDebateClaims(rawClaims, allFacts, allowedKeys, max = 3) {
+function verifyDebateClaims(rawClaims, allFacts, allowedKeys, max = 3, defs = FACT_DEFS) {
   const kept = []; let dropped = 0;
   const numbers = Object.values(allFacts).filter(v => typeof v === "number").map(Math.abs);
   const near = (a, b) => Math.abs(a - b) <= Math.max(0.051, Math.abs(b) * 0.01);
@@ -3437,7 +3559,7 @@ function verifyDebateClaims(rawClaims, allFacts, allowedKeys, max = 3) {
       if (!allowedKeys.includes(key) || real === undefined) { ok = false; break; }
       const match = typeof real === "number" ? near(Number(said), real) : typeof real === "boolean" ? (said === real || String(said).toLowerCase() === String(real)) : String(said).toLowerCase() === String(real).toLowerCase();
       if (!match) { ok = false; break; }
-      facts.push({ key, label: FACT_DEFS[key]?.label || key, display: debateFactDisplay(key, real) });
+      facts.push({ key, label: defs[key]?.label || key, display: debateFactDisplay(key, real, defs) });
     }
     if (ok) for (const match of text.matchAll(/\d+(?:\.\d+)?/g)) {
       const n = Number(match[0]);
@@ -3455,33 +3577,34 @@ async function debateCall(env, model, system, user, maxTokens = 700) {
   return typeof out === "string" ? parseModelJson(out) : out;
 }
 
-const DEBATE_RULES = `Use ONLY the facts listed, and read each by its "meaning" note: a larger backtest sample is a strength, never a sign of overfitting, and a fact is a strength or a risk only if its meaning says so. Say what the figure implies for this trade, not just that it exists. Each claim is ONE sentence of at most 160 characters and cites 1 to 3 facts by key, with the exact value from the list. Do not write any number that is not one of the cited facts. Do not say buy or sell and do not predict prices. Reply with one JSON object and nothing else.`;
+const DEBATE_RULES = `Use ONLY the facts listed, and read each by its "meaning" note: a larger backtest sample is a strength, never a sign of overfitting, and a fact is a strength or a risk only if its meaning says so. Say what the figure implies for this trade, not just that it exists. Each claim is ONE sentence of at most 160 characters and cites 1 to 3 facts by key, with the exact value from the list. Do not write any number that is not one of the cited facts. Do not say buy or sell and do not predict prices. Prefer facts about this stock and this entry (keys starting with sig_, the stop, the entry position) over the scanner's overall backtest record: use backtest facts in at most one claim, because they are the same for every idea from that scanner. Only use a fact for your side if its meaning reads that way for this idea, and if its meaning says it was backtested with no edge or was not backtested, say that it is weak support. Do not repeat a point in different words. Reply with one JSON object and nothing else.`;
 const BULL_SYSTEM = `You are the BULL analyst in a research tool. Make the strongest honest case FOR this trade idea, in at most 3 claims. ${DEBATE_RULES} Format: {"claims":[{"text":"...","facts":[{"key":"...","value":0}]}]}`;
 const BEAR_SYSTEM = `You are the BEAR analyst in a research tool. Make the strongest honest case AGAINST this trade idea, or for caution, in at most 3 claims. ${DEBATE_RULES} Format: {"claims":[{"text":"...","facts":[{"key":"...","value":0}]}]}`;
 const REBUT_SYSTEM = `You answer the opposing side of a trade-idea debate. You are given the opposing claims with ids and your own side's claims. Write at most 2 rebuttals, each aimed at one opposing claim id. ${DEBATE_RULES} Format: {"rebuttals":[{"to":"B1","text":"...","facts":[{"key":"...","value":0}]}]}`;
-const JUDGE_SYSTEM = `You are the judge of a bull versus bear debate on one trade idea in a research tool. You see only claims that were checked against the data, with ids. Weigh them. Do not say buy or sell, do not predict prices, and do not write numbers that are not in the claims. Reply with one JSON object and nothing else: {"leaning":"bull"|"bear"|"even","verdict":"one or two sentences, at most 220 characters, naming the single most decisive fact and what it implies; no generic summary","strongest_bull":"id","strongest_bear":"id","would_change_my_mind":"one sentence, at most 160 characters"}`;
+const JUDGE_SYSTEM = `You are the judge of a bull versus bear debate on one trade idea in a research tool. You see only claims that were checked against the data, with ids. Weigh them. Do not say buy or sell, do not predict prices, and do not write numbers that are not in the claims. Reply with one JSON object and nothing else: {"leaning":"bull"|"bear"|"even","verdict":"one or two sentences, at most 220 characters, naming the single most decisive fact about this stock and what it implies; no generic summary, and do not decide on the scanner's overall backtest record alone","strongest_bull":"id","strongest_bear":"id","would_change_my_mind":"one sentence, at most 160 characters"}`;
 
-function debatePack(item, marketState, keys, allFacts) {
-  return { symbol: item.symbol, direction: item.direction, scanner: item.tag, facts: Object.fromEntries(keys.filter(k => allFacts[k] !== undefined).map(k => [k, { label: FACT_DEFS[k].label, value: allFacts[k], meaning: FACT_DEFS[k].hint }])) };
+function debatePack(item, marketState, keys, allFacts, defs = FACT_DEFS) {
+  return { symbol: item.symbol, direction: item.direction, scanner: item.tag, facts: Object.fromEntries(keys.filter(k => allFacts[k] !== undefined).map(k => [k, { label: defs[k].label, value: allFacts[k], meaning: defs[k].hint }])) };
 }
 
 async function runDebate(env, item, marketState) {
-  const facts = debateFacts(item, marketState), model = env.DEBATE_MODEL || DEBATE_MODEL, judgeModel = env.RANKING_MODEL || WORKERS_AI_RANKING_MODEL;
-  const bullKeys = BULL_KEYS.filter(k => facts[k] !== undefined), bearKeys = BEAR_KEYS.filter(k => facts[k] !== undefined);
+  const signalFacts = debateSignalFacts(item), defs = { ...FACT_DEFS, ...signalFacts.defs };
+  const facts = { ...debateFacts(item, marketState), ...signalFacts.facts }, model = env.DEBATE_MODEL || DEBATE_MODEL, judgeModel = env.RANKING_MODEL || WORKERS_AI_RANKING_MODEL;
+  const bullKeys = [...BULL_KEYS, ...Object.keys(signalFacts.facts)].filter(k => facts[k] !== undefined), bearKeys = [...BEAR_KEYS, ...Object.keys(signalFacts.facts)].filter(k => facts[k] !== undefined);
   const ask = (system, payload, tokens) => debateCall(env, model, system, JSON.stringify(payload), tokens).catch(() => debateCall(env, judgeModel, system, JSON.stringify(payload), tokens));
-  const [bullRaw, bearRaw] = await Promise.all([ask(BULL_SYSTEM, debatePack(item, marketState, bullKeys, facts)), ask(BEAR_SYSTEM, debatePack(item, marketState, bearKeys, facts))]);
-  const bull = verifyDebateClaims(bullRaw?.claims, facts, bullKeys), bear = verifyDebateClaims(bearRaw?.claims, facts, bearKeys);
+  const [bullRaw, bearRaw] = await Promise.all([ask(BULL_SYSTEM, debatePack(item, marketState, bullKeys, facts, defs)), ask(BEAR_SYSTEM, debatePack(item, marketState, bearKeys, facts, defs))]);
+  const bull = verifyDebateClaims(bullRaw?.claims, facts, bullKeys, 3, defs), bear = verifyDebateClaims(bearRaw?.claims, facts, bearKeys, 3, defs);
   const tag = (side, list) => list.map((claim, i) => ({ id: `${side}${i + 1}`, ...claim }));
   const bullClaims = tag("B", bull.kept), bearClaims = tag("R", bear.kept);
   let dropped = bull.dropped + bear.dropped;
   const result = { bull: bullClaims, bear: bearClaims, rebuttals: { bull: [], bear: [] }, judge: null, dropped_claims: 0, model, judge_model: judgeModel };
   if (bullClaims.length && bearClaims.length) {
     // Round 2: each side answers the other's claims.
-    const rebut = (system, own, other, keys) => ask(system, { ...debatePack(item, marketState, keys, facts), your_claims: own.map(c => ({ id: c.id, text: c.text })), opposing_claims: other.map(c => ({ id: c.id, text: c.text, facts: c.facts.map(f => `${f.label}: ${f.display}`) })) }, 500);
+    const rebut = (system, own, other, keys) => ask(system, { ...debatePack(item, marketState, keys, facts, defs), your_claims: own.map(c => ({ id: c.id, text: c.text })), opposing_claims: other.map(c => ({ id: c.id, text: c.text, facts: c.facts.map(f => `${f.label}: ${f.display}`) })) }, 500);
     const [bullRe, bearRe] = await Promise.all([rebut(REBUT_SYSTEM, bullClaims, bearClaims, bullKeys), rebut(REBUT_SYSTEM, bearClaims, bullClaims, bearKeys)]);
     const clean = (raw, validTargets, keys) => {
       const rows = (Array.isArray(raw?.rebuttals) ? raw.rebuttals : []).filter(r => validTargets.has(String(r?.to)));
-      const { kept, dropped: d } = verifyDebateClaims(rows, facts, keys, 2);
+      const { kept, dropped: d } = verifyDebateClaims(rows, facts, keys, 2, defs);
       dropped += d + (Array.isArray(raw?.rebuttals) ? raw.rebuttals.length : 0) - rows.length;
       return kept;
     };
@@ -3490,7 +3613,7 @@ async function runDebate(env, item, marketState) {
     // Judge: sees only verified text.
     try {
       const view = list => list.map(c => ({ id: c.id, text: c.text, facts: c.facts.map(f => `${f.label}: ${f.display}`) }));
-      const judged = await debateCall(env, judgeModel, JUDGE_SYSTEM, JSON.stringify({ symbol: item.symbol, direction: item.direction, bull_claims: view(bullClaims), bear_claims: view(bearClaims),
+      const judged = await debateCall(env, judgeModel, JUDGE_SYSTEM, JSON.stringify({ symbol: item.symbol, direction: item.direction, signal_tally: item.signal_tally || undefined, bull_claims: view(bullClaims), bear_claims: view(bearClaims),
         bull_rebuttals: result.rebuttals.bull.map(r => ({ to: r.to, text: r.text })), bear_rebuttals: result.rebuttals.bear.map(r => ({ to: r.to, text: r.text })) }), 500);
       const str = (v, max) => typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "";
       const verdict = str(judged?.verdict, 240), change = str(judged?.would_change_my_mind, 180);
@@ -3584,8 +3707,7 @@ async function refreshScanIfDue(env, market, ctx, { wait = false } = {}) {
   const age = stored ? (Date.now() - Date.parse(stored.generatedAt)) / 1000 : Infinity;
   // A stored US scan from before the ranking existed is rebuilt once (and at most every 5 minutes), even while the market is closed.
   const outdated = stored && !stored.payload?.ranking && age > 5 * 60;
-  if (!outdated && age < refreshInterval(market)) return stored;
-  if (!outdated && !marketIsOpen(market) && stored && age < AUTO_REFRESH_CLOSED_SECONDS) return stored;
+  if (!outdated && stored && !scanIsDue(market, stored.generatedAt)) return stored;
   if (await claimScanRefresh(env, market)) {
     const work = refreshScan(env, market, ctx).catch(error => { console.error(`scan refresh failed for ${market.id}: ${cleanError(error)}`); return backOffScan(env, market); });
     ctx.waitUntil(work);

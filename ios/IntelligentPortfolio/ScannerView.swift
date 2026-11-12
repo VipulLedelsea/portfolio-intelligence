@@ -166,6 +166,7 @@ struct ScannerView: View {
                     if let ranking = discovery.ranking, ranking.available {
                         RankedIdeasSection(ranking: ranking)
                     }
+                    if discovery.ranking?.items.isEmpty ?? discovery.candidates.isEmpty { ClosestSetups(candidates: discovery.lateCandidates) }
 
                     // The separate scanner lists stay available, closed by default, now that the ranked list above covers all of them.
                     Button {
@@ -656,6 +657,39 @@ private struct RankedIdeasSection: View {
             }
         }
         .sheet(item: $selected) { idea in RankedDetailSheet(idea: idea) }
+    }
+}
+
+/// Shown when a market has no ideas: the setups that came closest, each with the check it fails. They are not ideas.
+private struct ClosestSetups: View {
+    let candidates: [Candidate]
+    private var closest: [Candidate] {
+        candidates.filter { $0.closeness != nil }.sorted { ($0.closeness ?? 9, -$0.score) < ($1.closeness ?? 9, -$1.score) }.prefix(4).map { $0 }
+    }
+
+    var body: some View {
+        if !closest.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("The closest today").font(.title3.weight(.semibold)).accessibilityAddTraits(.isHeader)
+                    Text("These are not ideas. Each one fails a check, shown beside it.").font(.footnote).foregroundStyle(AppTheme.muted)
+                }
+                ForEach(closest) { candidate in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(candidate.company.isEmpty ? candidate.symbol : candidate.company).font(.headline).lineLimit(1)
+                            if !candidate.company.isEmpty, candidate.company != candidate.symbol { Text(candidate.symbol).font(.caption).foregroundStyle(AppTheme.muted) }
+                            Spacer(minLength: 8)
+                            SideTag(direction: candidate.direction)
+                        }
+                        Text(candidate.missReason).font(.subheadline).foregroundStyle(.white.opacity(0.85)).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .panel()
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
     }
 }
 

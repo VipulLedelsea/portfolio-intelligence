@@ -62,7 +62,7 @@ enum Market: String, CaseIterable, Identifiable, Sendable {
     var scanTitle: String {
         switch self {
         case .us: "S&P 500"
-        case .india: "Sensex 30"
+        case .india: "India large caps"
         case .forex: "Major forex pairs"
         }
     }
@@ -94,6 +94,8 @@ struct DiscoveryResponse: Decodable, Sendable {
     let ranking: RankedIdeas?
     let autoRefresh: Bool?
     let refreshedAt: String?
+    /// When the server's next scan slot begins (9:30, 9:45, 10:00 for US). Absent on older server data.
+    let nextRefreshAt: String?
     let warmingUp: Bool?
     let message: String?
     let candidates: [Candidate]
@@ -209,6 +211,8 @@ struct LearningReport: Decodable, Sendable {
     let filters: [LearningFilter]
     let note: String?
     let updatedAt: String?
+    /// Finished ideas recorded before the evidence behind each idea was logged, which the report cannot measure. Absent on older server data.
+    let settledWithoutEvidence: Int?
 }
 
 struct LearningEvidence: Decodable, Sendable {
@@ -322,6 +326,23 @@ extension RankedIdea {
         default: break
         }
         return chips
+    }
+}
+
+extension Candidate {
+    /// How close a setup that fails a check is to being an idea; lower is closer. Nil for statuses that are not near misses.
+    var closeness: Int? { ["EXTENDED_DO_NOT_CHASE", "SIGNAL_WEAKENING", "WEAK_TREND_REGIME", "DAILY_CONFLICT", "LATE_TREND", "TARGET_REACHED"].firstIndex(of: entryStatus) }
+    /// The check it fails, in plain words.
+    var missReason: String {
+        switch entryStatus {
+        case "EXTENDED_DO_NOT_CHASE": "Moved too far past the signal price to chase."
+        case "SIGNAL_WEAKENING": "Slipped back past the signal price. Waiting for it to recover."
+        case "WEAK_TREND_REGIME": "The trend is not strong enough yet."
+        case "DAILY_CONFLICT": "The short-term trend turned \(direction == "LONG" ? "up" : "down"), but the daily trend disagrees."
+        case "LATE_TREND": "The trend is running, but the entry point has passed."
+        case "TARGET_REACHED": "Already reached its first target, so the entry is closed."
+        default: "Does not pass the checks today."
+        }
     }
 }
 
