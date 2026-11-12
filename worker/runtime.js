@@ -1075,9 +1075,13 @@ async function fetchExternalSnapshots(symbols, market, env) {
   const snapshots = new Map();
   for (const [symbol, item] of series) {
     try {
-      const closes = normalizeBars(item.daily, "day", market).map(bar => bar.close);
+      const finished = normalizeBars(item.daily, "day", market), closes = finished.map(bar => bar.close);
       const hourly = item.signal.historicals;
-      const quote = { last_trade_price: hourly.at(-1)?.close_price, adjusted_previous_close: closes.at(-2), venue_last_trade_time: hourly.at(-1)?.begins_at };
+      // The finished daily bars leave out a session still in progress. When the live price belongs to a later day than the last finished bar
+      // (the market is open), that bar is the previous close; otherwise the price is that bar's own close and the previous close is the one before it.
+      const lastBegins = Date.parse(hourly.at(-1)?.begins_at), lastFinished = String(finished.at(-1)?.date || "").slice(0, 10);
+      const inSession = Number.isFinite(lastBegins) && lastFinished && marketDayFormatter(market.tz).format(new Date(lastBegins)) > lastFinished;
+      const quote = { last_trade_price: hourly.at(-1)?.close_price, adjusted_previous_close: inSession ? closes.at(-1) : closes.at(-2), venue_last_trade_time: hourly.at(-1)?.begins_at };
       snapshots.set(symbol, snapshotFromPayload(symbol, item.daily, item.signal, quote, market));
     } catch (error) { errors.push({ symbol, error: cleanError(error) }); }
   }
@@ -1224,6 +1228,17 @@ const MARKET_INDEXES = {
 // Share of scanned stocks in a daily uptrend at or above this reads as a strong majority, at or below the lower bound as a weak one.
 const BREADTH_STRONG_PCT = 60, BREADTH_WEAK_PCT = 40;
 
+// The forex "market" is the US Dollar Index, so what its trend means depends on which side of the pair the dollar sits: a rising dollar
+// lifts USD/xxx and pushes xxx/USD down, and says nothing about a cross with no dollar in it (read as mixed, which every caller treats as neutral).
+// Stocks pass through unchanged.
+function marketStateFor(state, symbol, marketId) {
+  if (marketId !== "FX" || (state !== "UP" && state !== "DOWN")) return state;
+  const pair = String(symbol || "").toUpperCase();
+  if (pair.startsWith("USD")) return state;
+  if (pair.endsWith("USD")) return state === "UP" ? "DOWN" : "UP";
+  return "MIXED";
+}
+
 function marketTrend(info, index, snapshots, withBreadth = true, marketId = null) {
   if (!info || !index) return null;
   const daily = index.daily_supertrend?.direction === "LONG" ? "UP" : "DOWN";
@@ -1250,6 +1265,13 @@ function marketTrend(info, index, snapshots, withBreadth = true, marketId = null
     state = "MIXED";
     headline = "Mixed: the index is rising, but few stocks are";
     note = `The index is in an uptrend, but only ${breadthDaily}% of stocks are in uptrends. A narrow rally is less reliable.`;
+  }
+  if (marketId === "FX") {
+    headline = indexState === "UP" ? "The US dollar is in an uptrend" : indexState === "DOWN" ? "The US dollar is in a downtrend"
+      : daily === "UP" ? "The US dollar is in an uptrend, with a short-term pullback" : "The US dollar is in a downtrend, with a short-term bounce";
+    note = indexState === "UP" ? "A rising dollar supports long ideas in pairs that start with USD and works against long ideas in pairs that end with USD. It says little about crosses."
+      : indexState === "DOWN" ? "A falling dollar supports long ideas in pairs that end with USD and works against long ideas in pairs that start with USD. It says little about crosses."
+      : "The dollar's daily and 4-hour trends disagree, so it is not a clear help or headwind for any pair.";
   }
   return {
     state, index_state: indexState, headline, note,
@@ -1668,7 +1690,7 @@ function pickFeatures(item, marketState) {
   return {
     score: item.score ?? item.rules_score ?? null, strategy: item.strategy, direction: item.direction, sector: item.sector || null,
     from_entry_atr: item.from_entry_atr ?? null, stop_pct: item.stop_pct ?? null, rr_t1: item.rr_t1 ?? null, alignment: item.alignment_score ?? null, age_days: item.age_days ?? null,
-    volume_ratio: item.volume_ratio ?? null, atr_pct: item.atr_pct ?? null, crowded: item.crowded === true, market_state: marketState || null,
+    volume_ratio: item.volume_ratio ?? null, atr_pct: item.atr_pct ?? null, crowded: item.crowded === true, market_state: marketStateFor(marketState, item.symbol, item.market) || null,
     earnings_in_days: f?.earnings_in_days ?? null, cautions: (f?.cautions || []).length,
     // Information-only labels, stored so the live track record can show whether they matter. No rule or score reads them.
     chart_pattern: item.chart_pattern ?? null, prior_run_up: item.prior_run_up === true, market_regime: item.market_regime ?? null,
@@ -1999,7 +2021,8 @@ function rankRulesReason(item) {
 function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, marketId = "US", filings = new Map(), learnedRules = [], spy = null }) {
   const marketState = trend?.state || "UNKNOWN";
   const regime = marketId === "US" ? marketRegimeLabel(spy) : null;
-  const agrees = direction => marketState === "UP" ? (direction === "LONG" ? 100 : 25) : marketState === "DOWN" ? (direction === "SHORT" ? 100 : 25) : 55;
+  const agrees = (direction, symbol) => { const state = marketStateFor(marketState, symbol, marketId); return state === "UP" ? (direction === "LONG" ? 100 : 25) : state === "DOWN" ? (direction === "SHORT" ? 100 : 25) : 55; };
+  const marketNote = marketId === "FX" ? `US dollar index ${marketState.toLowerCase()}` : `market ${marketState.toLowerCase()}`;
   const raw = [];
   for (const c of candidates || []) {
     const entry = numeric(c.signal_entry_price), atr = numeric(c.daily_atr) || numeric(c.signal_atr);
@@ -2014,8 +2037,8 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
       volume_ratio: null, age_days: rankDaysOld(c.signal_confirmed_at), scanner_score: c.score, tag: "Supertrend", detail: c.label, buy_range: c.buy_range || null, signal_at: c.signal_confirmed_at || null,
       exit_rule: us ? (levels.stop_kind === "SUPERTREND_LINE" ? "" : `The protective level shown is two daily ranges from the entry, because the daily Supertrend line is not yet on the safe side of it. `) + "Leave when a day closes " + (c.direction === "SHORT" ? "over" : "under") + " the daily Supertrend line, at the next open. No fixed target and no time limit."
         : "Leave at the stop, at target 1 or 2, or at the close of day 10, whichever comes first.",
-      alignment_score: Math.round((agrees(c.direction) + (c.daily_aligned && c.daily_adx >= 20 ? 100 : 40)) / 2),
-      alignment_note: `Daily Supertrend ${c.daily_supertrend_direction}, daily ADX ${c.daily_adx}${c.daily_adx_rising ? " and rising" : ""}; market ${marketState.toLowerCase()}.`,
+      alignment_score: Math.round((agrees(c.direction, c.symbol) + (c.daily_aligned && c.daily_adx >= 20 ? 100 : 40)) / 2),
+      alignment_note: `Daily Supertrend ${c.daily_supertrend_direction}, daily ADX ${c.daily_adx}${c.daily_adx_rising ? " and rising" : ""}; ${marketNote}.`,
       currency_symbol: c.currency_symbol, price_decimals: c.price_decimals,
       // Information-only labels (US long ideas): not used by any score, filter or exit.
       ...(us && c.direction === "LONG" ? {
@@ -2044,7 +2067,7 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
         entry: p.signal_close, stop: p.stop_price, target_1: p.target_1, target_2: p.target_2, atr: p.atr_14, atr_pct: p.atr_14_pct,
         volume_ratio: p.volume_ratio, age_days: rankDaysOld(p.signal_as_of), scanner_score: p.score, tag: "Pattern", detail: p.label, signal_at: p.signal_as_of || null, buy_range: buyRange(p.direction, p.signal_close, p.atr_14, p.price),
         exit_rule: `Leave at the stop, at target 1 or 2, when a day closes back ${p.direction === "LONG" ? "under" : "over"} ${p.failure_level}, or at the close of day 10.`,
-        alignment_score: agrees(p.direction), alignment_note: `Close beyond the 20-day ${p.direction === "LONG" ? "high" : "low"} on ${p.volume_ratio}x volume; market ${marketState.toLowerCase()}.`,
+        alignment_score: agrees(p.direction, p.symbol), alignment_note: `Close beyond the 20-day ${p.direction === "LONG" ? "high" : "low"} on ${p.volume_ratio}x volume; market ${marketState.toLowerCase()}.`,
         currency_symbol: p.currency_symbol, price_decimals: p.price_decimals,
       });
     }
@@ -2203,7 +2226,7 @@ function rankModelInput(ranking, market, live) {
   const used = new Set(setups.map(setup => setup.evidence));
   return {
     as_of: new Date().toISOString().slice(0, 10), market: market || "US", market_trend: ranking.market_state,
-    market_note: market === "FX" ? "Forex pairs: no volume data, no backtest for Supertrend here, ideas exit at the stop, a target or day 10. Where evidence is unknown, say so and keep confidence Low; do not borrow the US figures."
+    market_note: market === "FX" ? "Forex pairs: market_trend here is the US Dollar Index, not a market of these pairs. A rising dollar helps long USD/xxx, hurts long xxx/USD and says nothing about a cross; each setup's alignment and market-trend signal already account for this. No volume data, no backtest for Supertrend here, ideas exit at the stop, a target or day 10. Where evidence is unknown, say so and keep confidence Low; do not borrow the US figures."
       : market === "IN" ? "Large Indian (BSE) stocks in rupees: no backtest for Supertrend here, ideas exit at the stop, a target or day 10. Where evidence is unknown, say so and keep confidence Low; do not borrow the US figures." : undefined,
     strategy_evidence: Object.fromEntries(Object.entries(RANK_EVIDENCE).filter(([key]) => used.has(key))),
     live_track_record: live || undefined,
@@ -3023,8 +3046,10 @@ function ideaSignals(item, snapshot, trend) {
   if (item.buy_range?.label) add("entry_position", "Price versus the signal price", String(item.buy_range.label).toLowerCase(), String(item.buy_range.label).toLowerCase(), way(item.buy_range.state === "IN_BUY_RANGE", item.buy_range.state !== "IN_BUY_RANGE"),
     "Backtested: see entry_timing for what each spot earned.", "Whether the price is still near where the signal fired.");
   if (Number.isFinite(Number(item.age_days))) add("signal_age_days", "Signal age", Number(item.age_days), `${item.age_days} days`, way(item.age_days <= 3, item.age_days >= 11), "Backtested: see entry_timing by age.", "Days since the signal. Older means more of the move is gone.");
-  const state = trend?.state;
-  if (state) add("market_trend", "Market trend", state.toLowerCase(), state.toLowerCase(), state === "MIXED" ? "neutral" : way((state === "UP") === long, (state === "UP") !== long), SIGNAL_UNTESTED, "Direction of the broad market index. Against the idea's direction is a headwind.");
+  // For forex this is the dollar's trend as it bears on this pair (see marketStateFor), so a rising dollar reads "down" for EUR/USD.
+  const state = marketStateFor(trend?.state, item.symbol, item.market);
+  if (state) add("market_trend", item.market === "FX" ? "US dollar trend, as it bears on this pair" : "Market trend", state.toLowerCase(), state.toLowerCase(), state === "MIXED" ? "neutral" : way((state === "UP") === long, (state === "UP") !== long), SIGNAL_UNTESTED,
+    item.market === "FX" ? "Direction the US Dollar Index is pushing this pair. Mixed for a cross with no dollar in it. Against the idea's direction is a headwind." : "Direction of the broad market index. Against the idea's direction is a headwind.");
   if (Number.isFinite(Number(trend?.breadth_daily_pct))) { const v = Number(trend.breadth_daily_pct); add("market_breadth_pct", "Stocks in a daily uptrend", v, `${v}%`, long ? way(v >= 60, v <= 40) : way(v <= 40, v >= 60), SIGNAL_UNTESTED, "Share of scanned stocks in an uptrend. Broad strength supports longs."); }
   const f = item.filing;
   if (f?.earnings_in_days != null && f.earnings_in_days >= 0 && f.earnings_in_days <= 21) add("earnings_in_days", "Days to earnings", f.earnings_in_days, `${f.earnings_in_days} days`, way(false, f.earnings_in_days <= 14), "A report inside the hold can gap the price either way.", "Days until the next earnings report.");
@@ -3546,7 +3571,7 @@ function debateFacts(item, marketState) {
   const f = item.filing, e = item.evidence || {};
   const facts = {
     backtest_ev_pct: e.ev_pct, backtest_win_rate_pct: e.win_rate_pct, backtest_trades: e.n, strategy_experimental: e.experimental === true,
-    trend_alignment_score: item.alignment_score, market_trend: marketState || undefined, stop_pct: item.stop_pct, rr_to_target_1: item.rr_t1, from_entry_atr: item.from_entry_atr,
+    trend_alignment_score: item.alignment_score, market_trend: marketStateFor(marketState, item.symbol, item.market) || undefined, stop_pct: item.stop_pct, rr_to_target_1: item.rr_t1, from_entry_atr: item.from_entry_atr,
     age_days: item.age_days, volume_ratio: item.volume_ratio, atr_pct: item.atr_pct, sector_crowded: item.crowded === true,
     earnings_in_days: f?.earnings_in_days != null && f.earnings_in_days >= 0 ? f.earnings_in_days : undefined,
     earnings_confirmed: f?.earnings_in_days != null && f.earnings_in_days >= 0 ? f.earnings_confirmed === true : undefined,
