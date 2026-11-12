@@ -62,7 +62,7 @@ enum Market: String, CaseIterable, Identifiable, Sendable {
     var scanTitle: String {
         switch self {
         case .us: "S&P 500"
-        case .india: "Sensex 30"
+        case .india: "India large caps"
         case .forex: "Major forex pairs"
         }
     }

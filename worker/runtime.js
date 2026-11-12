@@ -37,7 +37,9 @@ const EXTERNAL_ANALYSIS_CACHE_SECONDS = 15 * 60;
 const YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/";
 const TWELVE_DATA = "https://api.twelvedata.com/time_series";
 
-const SENSEX_30 = [
+// India: the Sensex 30 plus 14 more of the largest Nifty 50 stocks. One data request per stock, so 44 stocks and the index stay under
+// the free plan's 50 requests per run; a wider list needs the paid plan or a rotating scan.
+const INDIA_LARGE_CAPS = [
   ["ADANIPORTS", "Adani Ports & SEZ", "Industrials"], ["ASIANPAINT", "Asian Paints", "Materials"],
   ["AXISBANK", "Axis Bank", "Financials"], ["BAJAJ-AUTO", "Bajaj Auto", "Consumer Discretionary"],
   ["BAJFINANCE", "Bajaj Finance", "Financials"], ["BAJAJFINSV", "Bajaj Finserv", "Financials"],
@@ -53,6 +55,13 @@ const SENSEX_30 = [
   ["SUNPHARMA", "Sun Pharmaceutical", "Health Care"], ["TMPV", "Tata Motors Passenger Vehicles", "Consumer Discretionary"],
   ["TATASTEEL", "Tata Steel", "Materials"], ["TCS", "Tata Consultancy Services", "Information Technology"],
   ["TECHM", "Tech Mahindra", "Information Technology"], ["TITAN", "Titan Company", "Consumer Discretionary"],
+  ["ULTRACEMCO", "UltraTech Cement", "Materials"], ["WIPRO", "Wipro", "Information Technology"],
+  ["JSWSTEEL", "JSW Steel", "Materials"], ["COALINDIA", "Coal India", "Energy"],
+  ["EICHERMOT", "Eicher Motors", "Consumer Discretionary"], ["TATACONSUM", "Tata Consumer Products", "Consumer Staples"],
+  ["APOLLOHOSP", "Apollo Hospitals", "Health Care"], ["ADANIENT", "Adani Enterprises", "Industrials"],
+  ["DIVISLAB", "Divi's Laboratories", "Health Care"], ["HDFCLIFE", "HDFC Life Insurance", "Financials"],
+  ["SBILIFE", "SBI Life Insurance", "Financials"], ["HINDALCO", "Hindalco Industries", "Materials"],
+  ["CIPLA", "Cipla", "Health Care"], ["DRREDDY", "Dr. Reddy's Laboratories", "Health Care"],
 ].map(([symbol, company, sector]) => ({ symbol, company, sector }));
 
 const FOREX_PAIRS = [
@@ -62,7 +71,7 @@ const FOREX_PAIRS = [
 
 const MARKETS = {
   US: { id: "US", name: "S&P 500", label: "US stocks", provider: "robinhood", auto: true, tz: "America/New_York", dailyCloseMinutes: 16 * 60, currency: "USD", symbolPrefix: "$", decimals: () => 2 },
-  IN: { id: "IN", name: "Sensex 30", label: "India (BSE)", provider: "external", auto: true, tz: "Asia/Kolkata", dailyCloseMinutes: 15 * 60 + 35, currency: "INR", symbolPrefix: "₹", decimals: () => 2, universe: SENSEX_30, yahoo: symbol => symbol.startsWith("^") ? symbol : `${symbol}.BO`, twelve: symbol => symbol, twelveExchange: "BSE", tradingView: symbol => `BSE:${symbol.replace(/[^A-Z0-9_-]/g, "_")}` },
+  IN: { id: "IN", name: "India large caps", label: "India (BSE)", provider: "external", auto: true, tz: "Asia/Kolkata", dailyCloseMinutes: 15 * 60 + 35, currency: "INR", symbolPrefix: "₹", decimals: () => 2, universe: INDIA_LARGE_CAPS, yahoo: symbol => symbol.startsWith("^") ? symbol : `${symbol}.BO`, twelve: symbol => symbol, twelveExchange: "BSE", tradingView: symbol => `BSE:${symbol.replace(/[^A-Z0-9_-]/g, "_")}` },
   FX: { id: "FX", name: "Major forex pairs", label: "Forex", provider: "external", auto: true, tz: "UTC", dailyCloseMinutes: Infinity, currency: "", symbolPrefix: "", decimals: value => value >= 20 ? 3 : 5, universe: FOREX_PAIRS, yahoo: symbol => symbol.includes("-") ? symbol : `${symbol}=X`, twelve: symbol => `${symbol.slice(0, 3)}/${symbol.slice(3)}`, tradingView: symbol => `FX:${symbol}` },
 };
 
@@ -1838,7 +1847,7 @@ const RANK_EVIDENCE = {
   PATTERN_SHORT: { label: "Pattern", n: 379, win_rate_pct: 57, avg_win_pct: null, avg_loss_pct: null, ev_pct: -0.61, experimental: true,
     note: "Bearish candlestick pattern on a 20-day-low breakdown with volume 1.4x average, 5-day hold. Beat breakdowns without a pattern by about +0.6% but still lost money in absolute terms, and the edge sat mostly in the first half." },
 };
-// Supertrend on the Sensex 30 and on forex pairs has not been backtested, so there is no figure to score: the evidence is marked unknown,
+// Supertrend on Indian large caps and on forex pairs has not been backtested, so there is no figure to score: the evidence is marked unknown,
 // confidence stays Low, and the scores lean on reward to risk, alignment and entry quality only.
 // Where price stands when the idea is acted on matters as much as the idea. Measured by replaying real S&P 500 history (2021 to 2026): every dip while SPY was down 1.5% or more over 5 days
 // (31,508 entries, bought at the close of day 1 to 4 after the signal, graded on the idea's own stop, first target and day 10, net of 0.2% cost) and the Supertrend research in
@@ -1848,7 +1857,7 @@ RANK_EVIDENCE.DIP.entry_timing = DIP_ENTRY_TIMING;
 RANK_EVIDENCE.DIP_SHARP.entry_timing = DIP_ENTRY_TIMING;
 RANK_EVIDENCE.SUPERTREND.entry_timing = "Distance from the buy point mattered more than age: within 0.5 ATR over it +1.25% per trade (1,901 days), pulled back under it +0.93% to +1.29%, 0.5 to 2 ATR over +0.63%, over 2 ATR +0.71%. By age: flip day +2.44%, 1 to 3 days +0.72%, 4 to 10 days +1.04%, 11 to 30 days +0.60%. Being extended is a weak warning for Supertrend.";
 RANK_EVIDENCE.SUPERTREND_IN = { label: "Supertrend", n: 0, win_rate_pct: null, avg_win_pct: null, avg_loss_pct: null, ev_pct: null, experimental: false,
-  note: "Not backtested on the Sensex 30. The US result does not carry over automatically: this market, its hours and its costs differ. Ideas exit at the first of the stop, target 1 or the tenth daily close." };
+  note: "Not backtested on Indian stocks. The US result does not carry over automatically: this market, its hours and its costs differ. Ideas exit at the first of the stop, target 1 or the tenth daily close." };
 RANK_EVIDENCE.SUPERTREND_FX = { label: "Supertrend", n: 0, win_rate_pct: null, avg_win_pct: null, avg_loss_pct: null, ev_pct: null, experimental: false,
   note: "Not backtested on forex pairs. The only forex test (chart patterns) found nothing that beat random entries. Ideas exit at the first of the stop, target 1 or the tenth daily close." };
 const RANK_MAX_STOP_PCT = 12, RANK_MAX_CHASE_ATR = 1.5, RANK_STALE_DAYS = 6, RANK_MIN_PROVEN_TRADES = 100, RANK_MAX_ITEMS = 30;
@@ -2164,7 +2173,7 @@ function rankModelInput(ranking, market, live) {
   return {
     as_of: new Date().toISOString().slice(0, 10), market: market || "US", market_trend: ranking.market_state,
     market_note: market === "FX" ? "Forex pairs: no volume data, no backtest for Supertrend here, ideas exit at the stop, a target or day 10. Where evidence is unknown, say so and keep confidence Low; do not borrow the US figures."
-      : market === "IN" ? "Sensex 30 (BSE) stocks in rupees: no backtest for Supertrend here, ideas exit at the stop, a target or day 10. Where evidence is unknown, say so and keep confidence Low; do not borrow the US figures." : undefined,
+      : market === "IN" ? "Large Indian (BSE) stocks in rupees: no backtest for Supertrend here, ideas exit at the stop, a target or day 10. Where evidence is unknown, say so and keep confidence Low; do not borrow the US figures." : undefined,
     strategy_evidence: Object.fromEntries(Object.entries(RANK_EVIDENCE).filter(([key]) => used.has(key))),
     live_track_record: live || undefined,
     hard_filters_applied_by_code: { sec_red_flag_filings: true, dip_and_pattern_with_earnings_within_days: EDGAR_EARNINGS_SKIP_DAYS, stop_wider_than_pct: RANK_MAX_STOP_PCT, chase_beyond_atr: RANK_MAX_CHASE_ATR, stale_after_days: RANK_STALE_DAYS, stop_already_hit: true },

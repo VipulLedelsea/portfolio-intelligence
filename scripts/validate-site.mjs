@@ -393,8 +393,8 @@ assert.ok(![...usScan.candidates, ...usScan.late_candidates].some(item => ["SPY"
 
 const inScan = await (await post("/api/discover", { market: "IN" }, { TWELVE_DATA_API_KEY: "test-key" })).json();
 assert.equal(inScan.market, "IN");
-assert.equal(inScan.universe_size, 30, "The Sensex 30 universe must have 30 symbols");
-assert.equal(inScan.successful, 30);
+assert.equal(inScan.universe_size, 44, "The India universe must have 44 symbols: with the index that is 45 requests, under the free plan's 50");
+assert.equal(inScan.successful, 44);
 assert.equal([...inScan.candidates, ...inScan.late_candidates][0].currency_symbol, "₹");
 assert.ok(fetchLog.includes("api.twelvedata.com"), "A Twelve Data key must route requests to Twelve Data");
 assert.equal(inScan.market_trend, null, "Without a usable index feed the trend is left out rather than guessed");
@@ -404,7 +404,7 @@ assert.deepEqual(inScan.market_trends, [], "Without an index feed there are no t
   const scan = await (await yahooModule.default.fetch(new Request("https://example.test/api/discover", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ market: "IN" }) }), {}, { waitUntil() {} })).json();
   assert.equal(scan.market_trend?.label, "Sensex 30", "The India scan must report the Sensex trend");
   assert.equal(scan.market_trend.index_symbol, "^BSESN");
-  assert.equal(scan.successful, 30, "The Sensex index must not count as a stock");
+  assert.equal(scan.successful, 44, "The Sensex index must not count as a stock");
 }
 
 const fxAnalysis = await (await post("/api/analyze", { market: "FX", symbol: "EURUSD" })).json();
