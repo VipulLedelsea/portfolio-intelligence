@@ -31,6 +31,63 @@ enum PairingExpiryParser {
     }
 }
 
+/// Calendar days as the person sees them. A purchase date is a day, not a moment: the server stores it as that day at midnight UTC,
+/// which read as a moment is the evening before in the Americas, and formatting "today" in UTC gives tomorrow there.
+enum CalendarDay {
+    /// "2026-11-12" for the day `date` falls on in the device's own time zone.
+    static func text(_ date: Date, calendar: Calendar = .current) -> String {
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    }
+
+    /// A stored day ("2026-11-12" or "2026-11-12T00:00:00.000Z") as noon of that day here, so it shows as the same day in every time zone.
+    /// Anything with a real time of day is a moment and is returned as that moment.
+    static func date(from stored: String, calendar: Calendar = .current) -> Date? {
+        let day = String(stored.prefix(10)), rest = stored.dropFirst(10)
+        let isDay = rest.isEmpty || rest.hasPrefix("T00:00:00")
+        let numbers = day.split(separator: "-").compactMap { Int($0) }
+        guard isDay, numbers.count == 3 else { return PairingExpiryParser.date(from: stored) }
+        return calendar.date(from: DateComponents(year: numbers[0], month: numbers[1], day: numbers[2], hour: 12))
+    }
+}
+
+/// Reads and writes the numbers people type for shares and prices.
+enum AmountText {
+    /// Text for an editable field: the person's own decimal mark and no thousands separators, so it always reads back.
+    static func editable(_ value: Double, maxDecimals: Int = 4, locale: Locale = .current) -> String {
+        value.formatted(.number.precision(.fractionLength(0...maxDecimals)).grouping(.never).locale(locale))
+    }
+
+    /// Accepts "1234.5", "1,234.5", "1.234,5" and "12,5". With both marks present the last one is the decimal mark. With one mark used once,
+    /// it is the decimal mark unless it is the locale's thousands separator followed by exactly three digits ("1,234" in the US).
+    static func parse(_ text: String, locale: Locale = .current) -> Double? {
+        var cleaned = text.filter { !$0.isWhitespace && $0 != "\u{00A0}" && $0 != "\u{202F}" && $0 != "'" }
+        guard !cleaned.isEmpty, cleaned.allSatisfy({ $0.isNumber || $0 == "." || $0 == "," }) else { return nil }
+        let dots = cleaned.filter { $0 == "." }.count, commas = cleaned.filter { $0 == "," }.count
+        let decimalMark: Character? 
+        if dots > 0 && commas > 0 {
+            decimalMark = cleaned.last(where: { $0 == "." || $0 == "," })
+        } else if dots + commas == 1 {
+            let mark: Character = dots == 1 ? "." : ","
+            let localDecimal = Character(locale.decimalSeparator ?? ".")
+            let after = cleaned.split(separator: mark, omittingEmptySubsequences: false).last?.count ?? 0
+            let before = cleaned.split(separator: mark, omittingEmptySubsequences: false).first?.count ?? 0
+            decimalMark = (mark != localDecimal && after == 3 && before > 0) ? nil : mark
+        } else {
+            decimalMark = nil
+        }
+        if let decimalMark {
+            let parts = cleaned.split(separator: decimalMark, omittingEmptySubsequences: false)
+            guard parts.count == 2 || (dots > 0 && commas > 0) else { return nil }
+            let whole = parts.dropLast().joined().filter(\.isNumber), fraction = (parts.last ?? "").filter(\.isNumber)
+            cleaned = whole + "." + fraction
+        } else {
+            cleaned = cleaned.filter(\.isNumber)
+        }
+        return Double(cleaned)
+    }
+}
+
 struct PairingStatus: Decodable, Sendable {
     let approved: Bool
     let token: String?

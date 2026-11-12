@@ -95,7 +95,8 @@ const insRec = (i, strategy, ret, features, day) => sqlite.prepare(`INSERT INTO 
 let seed = 7; const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
 const dayOf = i => new Date(Date.UTC(2026, 0, 1 + (i % 60))).toISOString();
 for (let i = 0; i < 400; i++) insRec(i, "DIP", (rnd() - 0.5) * 10, { score: 50, stop_pct: rnd() * 14, from_entry_atr: rnd() * 2, alignment: rnd() * 100, age_days: Math.floor(rnd() * 8), direction: "LONG", market_state: "UP", crowded: rnd() < 0.5 }, dayOf(i));
-const cronEvent = { cron: "*/15 13-21 * * 1-5", scheduledTime: Date.UTC(2026, 10, 9, 14, 0) };
+// Grading, post-mortems and the learning refresh run on their own hourly trigger.
+const cronEvent = { cron: "30 * * * *", scheduledTime: Date.UTC(2026, 10, 9, 14, 30) };
 const runCron = async () => { await worker.scheduled(cronEvent, baseEnv, ctx); await Promise.allSettled(pending.splice(0)); };
 sqlite.prepare("DELETE FROM learning_rules").run();
 await runCron();

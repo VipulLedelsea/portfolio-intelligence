@@ -206,6 +206,31 @@ private struct ReadableWidthModifier: ViewModifier {
     }
 }
 
+/// Shown in place of a spinner when a first load fails, so a screen never waits forever. Once data is on screen a failed
+/// background refresh leaves it alone.
+struct LoadFailedView: View {
+    let message: String
+    let retry: () async -> Void
+    @State private var retrying = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(message, systemImage: "wifi.exclamationmark").font(.headline)
+            Text("Check your connection and try again.").foregroundStyle(AppTheme.muted)
+            Button {
+                Task { retrying = true; await retry(); retrying = false }
+            } label: {
+                if retrying { ProgressView() } else { Text("Try again") }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(AppTheme.amber)
+            .disabled(retrying)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
+    }
+}
+
 extension View {
     @ViewBuilder
     func refreshableIf(_ enabled: Bool, action: @escaping @Sendable () async -> Void) -> some View {

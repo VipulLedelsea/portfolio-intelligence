@@ -65,7 +65,7 @@ const fakeDb = {
     return {
       bind() { return this; },
       async all() { return { results: [] }; },
-      async first() { return sql.includes("COUNT(*) AS total_calls") ? emptySummary : null; },
+      async first() { return sql.includes("COUNT(*) AS total_calls") ? emptySummary : sql.includes("COUNT(*) AS n") && sql.includes("'PENDING'") ? { n: 5 } : null; },
       async run() { return { success: true }; },
     };
   },
@@ -90,7 +90,7 @@ assert.equal(memory.horizon_trading_days, 10);
         args: [],
         bind(...args) { statement.args = args; return statement; },
         async all() {
-          if (sql.includes("ORDER BY generated_at ASC LIMIT 60")) {
+          if (sql.includes("ORDER BY generated_at ASC, id ASC LIMIT")) {
             return { results: [{ id: "rec-1", symbol: "TEST", market: "US", action: "IDEA", direction: "LONG", generated_at: "2026-10-26T15:00:00Z", current_price: 100, stop_price: 96, target_1: 107, horizon_trading_days: 5 },
               { id: "rec-2", symbol: "EARLY", market: "US", action: "IDEA", direction: "LONG", generated_at: "2026-10-26T15:00:00Z", current_price: 100, stop_price: 96, target_1: 107, horizon_trading_days: 10 },
               { id: "rec-3", symbol: "WAIT", market: "US", action: "IDEA", direction: "LONG", generated_at: "2026-10-26T15:00:00Z", current_price: 100, stop_price: 96, target_1: 107, horizon_trading_days: 10 },
@@ -99,7 +99,7 @@ assert.equal(memory.horizon_trading_days, 10);
           }
           return { results: [] };
         },
-        async first() { return sql.includes("COUNT(*) AS total_calls") ? emptySummary : null; },
+        async first() { return sql.includes("COUNT(*) AS total_calls") ? emptySummary : sql.includes("COUNT(*) AS n") && sql.includes("'PENDING'") ? { n: 5 } : null; },
         async run() { return { success: true }; },
       };
       return statement;

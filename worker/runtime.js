@@ -3366,11 +3366,26 @@ function gradeRecommendation(recommendation, path) {
   };
 }
 
+const SETTLE_PAGE = 60, SETTLE_EXTERNAL_SYMBOLS = 25;
 async function settlePendingRecommendations(db, userId, env = {}) {
+  // Trend picks can stay open for months, so always taking the oldest rows would re-check the same ones every run and never reach newer picks.
+  // Each hour looks at the next page instead, so every open pick is checked within a few hours however many are open.
+  const total = Number((await db.prepare("SELECT COUNT(*) AS n FROM recommendations WHERE user_id = ? AND status = 'PENDING'").bind(userId).first())?.n) || 0;
+  if (!total) return 0;
+  const offset = total <= SETTLE_PAGE ? 0 : (Math.floor(Date.now() / 3600000) * SETTLE_PAGE) % total;
   const pendingResult = await db.prepare(`SELECT id, symbol, market, action, direction, generated_at, current_price, stop_price, target_1, horizon_trading_days
-    FROM recommendations WHERE user_id = ? AND status = 'PENDING' ORDER BY generated_at ASC LIMIT 60`).bind(userId).all();
-  const pending = pendingResult?.results || [];
+    FROM recommendations WHERE user_id = ? AND status = 'PENDING' ORDER BY generated_at ASC, id ASC LIMIT ? OFFSET ?`).bind(userId, SETTLE_PAGE, offset).all();
+  let pending = pendingResult?.results || [];
   if (!pending.length) return 0;
+  // India and forex history costs one outgoing request per symbol, so a page keeps to a fixed number of those symbols; the rest wait for a later page.
+  const externalSymbols = new Set();
+  pending = pending.filter(row => {
+    if (MARKETS[row.market || "US"]?.provider === "robinhood") return true;
+    const key = `${row.market}:${row.symbol}`;
+    if (externalSymbols.has(key)) return true;
+    if (externalSymbols.size >= SETTLE_EXTERNAL_SYMBOLS) return false;
+    externalSymbols.add(key); return true;
+  });
   const histories = new Map();
   for (const market of Object.values(MARKETS)) {
     const symbols = [...new Set(pending.filter(row => (row.market || "US") === market.id).map(row => row.symbol))];
@@ -3869,9 +3884,11 @@ function legalPage(env, slug) {
   } });
 }
 
-async function deleteMobileAccountData(request, env) {
+// Everything stored about a person is keyed by their user id in the tables below (there is no separate users table; the email lives only on
+// web sessions), so this removes the account itself, from the app or from the website.
+async function deleteAccountData(request, env, mobileOnly = false) {
   const user = await requestUser(request, env);
-  if (!user || user.auth_type !== "mobile" || !env.DB) throw Object.assign(new Error("Connect your account before deleting its data"), { status: 401 });
+  if (!user || !env.DB || (mobileOnly && user.auth_type !== "mobile")) throw Object.assign(new Error("Connect your account before deleting its data"), { status: 401 });
   await env.DB.batch([
     env.DB.prepare("DELETE FROM recommendations WHERE user_id = ?").bind(user.id),
     env.DB.prepare("DELETE FROM holdings WHERE user_id = ?").bind(user.id),
@@ -3882,7 +3899,7 @@ async function deleteMobileAccountData(request, env) {
     env.DB.prepare("DELETE FROM mobile_sessions WHERE user_id = ?").bind(user.id),
     env.DB.prepare("DELETE FROM web_sessions WHERE user_id = ?").bind(user.id),
   ]);
-  accessCache.delete(`${user.id}:mobile`);
+  accessCache.delete(`${user.id}:mobile`); accessCache.delete(`${user.id}:web`);
   return { deleted: true };
 }
 
@@ -4336,6 +4353,9 @@ function toAmount(value) {
   return NaN;
 }
 // A strict YYYY-MM-DD calendar day that exists and is not in the future.
+// People enter the purchase date in their own time zone, which can already be tomorrow by the UTC calendar (India in the early morning).
+// The furthest-ahead calendar day anywhere is UTC+14, so a date up to that is not in the future for someone.
+const latestDayAnywhere = () => new Date(Date.now() + 14 * 3600 * 1000).toISOString().slice(0, 10);
 function validPastDay(text, today) {
   if (typeof text !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(text) || text > today) return false;
   const parsed = new Date(`${text}T00:00:00Z`);
@@ -4370,7 +4390,7 @@ async function addHolding(request, env) {
   if (!Number.isFinite(price) || price < MIN_AMOUNT || price > 1e8) throw Object.assign(new Error("Enter the price you paid per share"), { status: 400 });
   const today = new Date().toISOString().slice(0, 10);
   const boughtAt = body.bought_at === undefined || body.bought_at === null || body.bought_at === "" ? today : body.bought_at;
-  if (!validPastDay(boughtAt, today)) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
+  if (!validPastDay(boughtAt, latestDayAnywhere())) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
   if (body.allow_duplicate !== true) {
     const dup = await env.DB.prepare("SELECT id FROM holdings WHERE user_id = ? AND symbol = ? AND market = ? AND closed_at IS NULL LIMIT 1").bind(user.id, symbol, marketId).first();
     if (dup) throw Object.assign(new Error(`You already hold ${symbol}. Use "Add shares" on that position so it keeps one average price.`), { status: 409 });
@@ -4731,7 +4751,7 @@ async function editEntry(request, env) {
     if (holding.closed_at) throw Object.assign(new Error("This entry cannot be edited"), { status: 400 });
     const today = new Date().toISOString().slice(0, 10);
     const boughtAt = body.bought_at ? body.bought_at : holding.bought_at;
-    if (!validPastDay(boughtAt, today)) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
+    if (!validPastDay(boughtAt, latestDayAnywhere())) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
     await env.DB.batch([
       env.DB.prepare("UPDATE holdings SET bought_at = ?, shares = ?, buy_price = ? WHERE id = ? AND user_id = ? AND closed_at IS NULL").bind(boughtAt, shares, price, holding.id, user.id),
       voidOld, record(shares, `${boughtAt}T00:00:00.000Z`),
@@ -4860,8 +4880,9 @@ async function handle(request, env, ctx) {
     if (url.pathname === "/api/holdings/sell") return json(await sellHolding(request, env));
     if (url.pathname === "/api/holdings/close") return json(await closeHolding(request, env));
     if (url.pathname === "/api/holdings/remove") return json(await removeHolding(request, env));
-    if (url.pathname === "/api/mobile/account/delete") {
-      return json(await deleteMobileAccountData(request, env));
+    if (url.pathname === "/api/mobile/account/delete" || url.pathname === "/api/account/delete") {
+      const deleted = await deleteAccountData(request, env, url.pathname.startsWith("/api/mobile/"));
+      return json(deleted, 200, parseCookies(request).has(SESSION_COOKIE) ? { "set-cookie": cookieHeader(request, SESSION_COOKIE, "", { maxAge: 0 }) } : {});
     }
     if (url.pathname === "/api/mobile/session/revoke") {
       return json(await revokeMobileSession(request, env));
@@ -4924,25 +4945,31 @@ async function handle(request, env, ctx) {
   }
 }
 
+// Once an hour, every day: grade picks that hit a level or whose window has closed, then tag post-mortems and refresh the learning report.
+const GRADING_CRON = "30 * * * *";
 export default {
   fetch: handle,
   // One market per cron trigger, so each job has its own outgoing-request budget.
   async scheduled(event, env, ctx) {
     const byCron = { "5 * * * *": "IN", "*/15 3-10 * * 1-5": "IN", "10 * * * *": "FX", "*/15 13-21 * * 1-5": "US" };
+    const failed = step => error => console.error(`${step} failed (cron ${event.cron}): ${cleanError(error)}`);
+    // Grading has its own trigger, and so its own outgoing-request budget: run after a US scan it could push that job past the free plan's limit.
+    if (event.cron === GRADING_CRON) {
+      if (env.DB) ctx.waitUntil((async () => {
+        await settlePendingRecommendations(env.DB, SCANNER_USER_ID, env).catch(failed("Grading scanner picks"));
+        await tagPostMortems(env).catch(failed("Post-mortem tagging"));
+        await refreshLearning(env).catch(failed("Learning refresh"));
+      })());
+      return;
+    }
     const market = MARKETS[byCron[event.cron]];
     if (market) ctx.waitUntil((async () => {
-      await refreshScanIfDue(env, market, ctx).catch(() => {});
-      await refreshHoldingsIfDue(env, market).catch(() => {});
-      await monitorHoldings(env, market).catch(() => {});
+      await refreshScanIfDue(env, market, ctx).catch(failed(`Scan refresh for ${market.id}`));
+      await refreshHoldingsIfDue(env, market).catch(failed(`Holdings refresh for ${market.id}`));
+      await monitorHoldings(env, market).catch(failed(`Holdings monitor for ${market.id}`));
       // The hourly jobs rank their own market; the forex job also ranks the US scan, which has no hourly job of its own (it runs on weekdays only).
       for (const target of market.id === "FX" ? [MARKETS.FX, MARKETS.US] : market.id === "IN" ? [MARKETS.IN] : []) {
         await rankStoredScan(env, target).catch(error => console.error(`AI ranking job failed for ${target.id}: ${cleanError(error)}`));
-      }
-      // Once an hour, grade scanner picks that hit a level or whose window has closed.
-      if (market.id === "US" && env.DB && new Date(event.scheduledTime).getUTCMinutes() < 5) {
-        await settlePendingRecommendations(env.DB, SCANNER_USER_ID, env).catch(() => {});
-        await tagPostMortems(env).catch(error => console.error(`Post-mortem tagging failed: ${cleanError(error)}`));
-        await refreshLearning(env).catch(error => console.error(`Learning refresh failed: ${cleanError(error)}`));
       }
     })());
   },

@@ -915,7 +915,7 @@ struct RankedDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
             .sheet(isPresented: $logging) {
-                AddHoldingSheet(market: idea.market == "IN" ? "IN" : "US", symbol: idea.symbol, shares: SizingMath.shareText(idea), price: String(idea.price)).environmentObject(model)
+                AddHoldingSheet(market: idea.market == "IN" ? "IN" : "US", symbol: idea.symbol, shares: SizingMath.shareText(idea), price: AmountText.editable(idea.price, maxDecimals: 6)).environmentObject(model)
             }
         }
     }
@@ -1349,6 +1349,8 @@ struct TodayView: View {
                                 .tint(AppTheme.amber)
                         }
                         .panel()
+                    } else if model.failedLoads.contains(.briefing) {
+                        LoadFailedView(message: "Couldn't load today's briefing.") { await model.refreshBriefing() }
                     } else {
                         ProgressView("Loading today's briefing…").tint(AppTheme.amber).frame(maxWidth: .infinity)
                     }
