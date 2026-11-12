@@ -260,12 +260,17 @@ struct LearningPanel: View {
 
     @State private var showingDetail = false
     private var rules: [LearningRule] { learning?.rules ?? [] }
+    /// Why "nothing measured" can sit beside finished ideas: the early ones were recorded before their evidence was logged.
+    private var unloggedNote: String {
+        guard let n = learning?.report?.settledWithoutEvidence, n > 0 else { return "" }
+        return " \(n) finished \(n == 1 ? "idea was" : "ideas were") recorded before the evidence behind each idea was logged, so the first measured results come as newer ideas finish."
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("What we've learned").font(.headline)
             Text(rules.isEmpty
-                 ? "Nothing yet. A lesson is only adopted once enough ideas have finished to trust it."
+                 ? "Nothing yet. A lesson is only adopted once enough ideas have finished to trust it." + unloggedNote
                  : "\(rules.count) possible \(rules.count == 1 ? "lesson" : "lessons") so far. Nothing changes until it is approved.")
                 .font(.subheadline).foregroundStyle(.white.opacity(0.85)).fixedSize(horizontal: false, vertical: true)
             Button {

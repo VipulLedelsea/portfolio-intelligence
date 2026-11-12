@@ -338,10 +338,14 @@ final class AppModel: ObservableObject {
         }
         if requested.isAutomatic {
             let warming = discovery?.warmingUp == true
+            // Read again just after the server's next scan slot (9:30, 9:45, 10:00 for US), not five minutes after the app happened to open.
+            var wait = 300.0
+            if let stamp = discovery?.nextRefreshAt, let next = PairingExpiryParser.date(from: stamp) { wait = min(300, max(20, next.timeIntervalSinceNow + 50)) }
             autoRefreshTask = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(warming ? 15 : 300))
+                try? await Task.sleep(for: .seconds(warming ? 15 : wait))
                 guard !Task.isCancelled else { return }
                 await self?.refreshScanner(fromTimer: true)
+                await self?.refreshBriefing()
             }
         }
     }
