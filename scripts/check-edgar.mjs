@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 const source = readFileSync(fileURLToPath(new URL("../worker/runtime.js", import.meta.url)), "utf8");
 const start = source.indexOf("const EDGAR_SEVERE_ITEMS"), mid = source.indexOf("function edgarHeaders"), a = source.indexOf("const dayNumber"), end = source.indexOf("// The next report date from Robinhood");
 assert.ok(start > 0 && mid > start && a > mid && end > a, "EDGAR code block must exist");
-const code = `${source.slice(start, mid)}\n${source.slice(a, end)}\nexport { edgarFlagsFrom, dayNumber };`;
-const { edgarFlagsFrom, dayNumber } = await import("data:text/javascript;base64," + Buffer.from(code).toString("base64"));
+const code = `${source.slice(start, mid)}\n${source.slice(a, end)}\nexport { edgarFlagsFrom, dayNumber, lastEpsReport };`;
+const { edgarFlagsFrom, dayNumber, lastEpsReport } = await import("data:text/javascript;base64," + Buffer.from(code).toString("base64"));
 const today = dayNumber("2026-11-09");
 const iso = offset => new Date((today + offset) * 86400000).toISOString().slice(0, 10);
 const rec = rows => ({ form: rows.map(r => r[0]), filingDate: rows.map(r => r[1]), items: rows.map(r => r[2] ?? "") });
@@ -44,4 +44,12 @@ ok("hostile items text never appears in output", !JSON.stringify(f).includes("sc
 const four = [0, 91, 182, 273].map(d => ["8-K", iso(-(d + 20)), "2.02"]);
 f = edgarFlagsFrom(rec(four), today);
 ok("four quarters of history yields a finite estimate", Number.isFinite(f.earnings_in_days));
+// The last report with both EPS figures, from the earnings feed's rows (shadow-mode EPS surprise).
+const row = (offset, estimate, actual) => ({ report: { date: iso(offset) }, eps: { estimate, actual } });
+let e = lastEpsReport([row(-100, "1.00", "1.10"), row(-9, "1.63", "1.65"), row(82, "1.70", null)], today);
+ok("latest past report with both figures is chosen", e.date === iso(-9) && e.estimate === 1.63 && e.actual === 1.65);
+ok("a future row is never used, even with figures", lastEpsReport([row(5, "1", "2")], today) === null);
+ok("a report dated today counts", lastEpsReport([row(0, "1", "2")], today)?.date === iso(0));
+ok("rows missing a figure, or with junk, are skipped", lastEpsReport([row(-9, null, "1.65"), row(-8, "abc", "1"), { report: { date: "not-a-date" }, eps: { estimate: "1", actual: "1" } }, null, {}], today) === null);
+ok("a missing or malformed result list does not throw", lastEpsReport(undefined, today) === null && lastEpsReport("x", today) === null);
 console.log(`EDGAR parser checks passed (${n})`);

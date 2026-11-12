@@ -562,3 +562,34 @@ Yahoo intraday bars for the current S&P 500, regular session: 5-minute bars for 
 - An earlier approximation (exact 8 nearest neighbours, each voting by whether the close was higher four days later) also showed nothing: t between -1.3 and 0.3 on 404,374 stock-days.
 - Limits: daily bars only and one year of history per reading (the worker's data), where the TradingView default looks back 2,000 bars; kernel regression and the entry and exit rules were not ported or tested.
 - Decision: shown on the idea detail as information only, with this result stated next to it. It does not affect the score, the ranking, stops or exits.
+
+## Residual momentum and earnings surprise as ranking signals (backtest48.mjs, backtest49.mjs, fetch_earnings_eps.mjs, 2026-11-12)
+
+Two stock-selection ideas from Kakushadze and Serur, "151 Trading Strategies" (SSRN 3247865, sections 3.7 and 3.2). The paper gives formulas only, no results, so both were tested here. Point-in-time S&P 500, next-open entry, 0.1% cost per side.
+
+### Residual momentum (backtest48.mjs, 20-year bars)
+
+`node --max-old-space-size=6000 backtest48.mjs > backtest48.out`. Each stock's daily return is regressed on SPY (and, in a second version, on SPY plus its sector average) over 756 days; the residuals from 12 months ago to 1 month ago are summed and divided by their standard deviation. Compared with plain 12-1 month momentum and with momentum divided by volatility. 224 monthly cross-sections, 2008-02 to 2026-09, about 383 stocks each.
+
+- **It did not rank the next month.** Rank IC against the next 21 sessions: -0.001 (market version, t -0.1) and -0.002 (market and sector, t -0.2). Top fifth minus the universe: -0.08% a month for both (t -0.6 and -0.8). Plain momentum was just as empty (IC 0.002, t 0.1).
+- **No era helps.** IC between -0.019 and +0.021 in 2008-2012, 2013-2017, 2018-2022 and 2023-2026, no t above 1.4.
+- **It did not sort Supertrend flips.** App-gated flips (1,824): top fifth 41% to 42% wins against 43% overall; top fifth minus the rest, average difference intervals all span zero (for example -1.74 to +2.28 points for the market-and-sector version). Same on all 25,181 daily flips.
+- **The one thing it does as published:** smaller crashes. Worst month for top minus bottom fifth: -14% (market and sector) against -29% for plain momentum.
+- The 2023-2026 top fifth looks good on gated flips (52% wins, +5% to +6.7%, n 79 to 91) for every momentum version, plain included. That is the recent large-cap momentum run, not residual momentum, and it is absent in 2008-2022.
+- Limits: the 20-year bars leave out delisted stocks; sectors are today's classifications; market and sector only, not the three Fama-French factors of the original study.
+- **Decision:** not added.
+
+### Earnings surprise drift (backtest49.mjs)
+
+`node fetch_earnings_eps.mjs` then `node backtest49.mjs > backtest49.out`. Robinhood's earnings feed with the EPS estimate and actual: 3,287 reports of 514 stocks, reaction days 2025-04-09 to 2026-11-04 (the feed holds about five quarters). Buy at the open after the reaction day (the first session that trades on the news), hold 5, 10, 21 or 42 sessions. Benchmark: the average index stock bought at the same open and held the same span (the average stock lagged SPY by about 1 point a month in this window, so SPY would understate every group). t-statistics are clustered by report week.
+
+- **The size of the EPS surprise sorted the following weeks.** Reports ranked within their calendar quarter by (actual - estimate) / price. The top fifth beat the average stock by +0.76% over 5 sessions (t 3.0), +1.16% over 10 (t 3.3), +1.41% over 21 (t 3.5) and +2.03% over 42 (t 4.7). The bottom fifth lagged by -1.09% over 21 (t -2.6) and -1.55% over 42 (t -2.5). Top minus bottom: +2.50% over 21 sessions (t 4.4), +3.58% over 42 (t 5.3).
+- **It held in each part of the sample.** Top minus bottom over 21 sessions: +2.85% in 2025 reports (t 4.2), +2.15% in 2026 (t 2.4), and positive in all six quarters with a full 21 sessions (+1.5% to +4.3%). Against the stock's own sector average: +1.77% (t 3.3). Scaled by the estimate instead of the price: +2.19% (t 3.4). The top fifth is spread across sectors (largest: Financials 17%, Health Care 12%, Information Technology 12%).
+- **With a cut-off known in advance** (the previous quarter's 80th percentile, about 0.2% of the share price): 596 reports at or above it beat the average stock by +1.32% over 21 sessions (t 3.1) and +2.22% over 42 (t 4.2); the 2,211 below lagged by -0.60% and -0.86%.
+- **It is a ranking signal, not a high win rate.** Raw, after costs, the top fifth was up 60% of the time over 21 sessions for +2.54% on average; all reports 52% and +0.95%; the bottom fifth 48% and -0.01%.
+- **A plain beat or miss says little:** 82% of reports beat. Beat minus miss +0.81% over 21 sessions (t 1.4), and nothing against the sector average.
+- **The reaction-day move did not predict:** top fifth minus bottom fifth -0.47% over 21 sessions (t -0.7); positive in 2025, negative in 2026. "Beat and the stock rose" is no better than any other report.
+- **Supertrend flips within 20 sessions after a report, by that report's surprise** (Supertrend-line exit, 60-session limit). All 2,254 daily flips: top-fifth surprise 48% wins, +4.04% (n 218); other fifths 38% wins, +0.94% (n 636); bottom two fifths 32% wins, -0.55% (n 307); no recent report 40% wins, +1.53%. App-gated flips are too few to judge (176; top fifth n 27, 41% wins, +0.86%; bottom two fifths n 31, 26% wins, -2.43%).
+- **Limits:** 19 months in one mostly rising market, six earnings seasons; the estimates are the feed's current record and may not be exactly what was known before the report; the within-quarter fifths use the whole quarter's reports (the advance cut-off above does not); longer earnings history is needed before this drives a rule.
+- **Candidate:** give the ranking agent the last report's EPS surprise as a share of price as an evidence signal (large positive: supportive; negative: a caution on a fresh flip), shadow-mode first.
+- **Built in shadow mode (2026-11-12):** `worker/runtime.js` reads the last report's EPS estimate and actual from the earnings-feed reply it already fetches (no extra request) and stores three fields with every logged pick and every filtered-out idea: `eps_surprise_pct_of_price`, `eps_report_days_ago`, and `eps_surprise` (BIG_BEAT at 0.2% of price or more, BEAT, MET or MISS, set only when the report is 30 calendar days old or less). Nothing reads them: not the score, the filters, the ranking model or the debate. US stocks only. Review once enough graded picks carry a label.
