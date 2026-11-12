@@ -291,6 +291,20 @@ struct RankedIdea: Decodable, Identifiable, Hashable, Sendable {
     let priorRunUp: Bool?
     let marketRegime: String?
     let spyBelowHighPct: Double?
+    /// Information only: the Lorentzian Classification indicator's reading on the stock's last year of daily bars. Absent on older server data.
+    let lorentzian: LorentzianReading?
+}
+
+/// The Lorentzian Classification indicator's output for one stock (a port of jdehorty's open-source TradingView script, default settings).
+/// `prediction` is the sum of the neighbours' votes, from -8 to +8. `signal` is 1 long, -1 short, 0 none, after the indicator's own filters.
+struct LorentzianReading: Decodable, Hashable, Sendable {
+    let prediction: Int
+    let neighbors: Int
+    let signal: Int
+    let filtersPass: Bool
+    let votesLong: Int
+    let votesShort: Int
+    let bars: Int
 }
 
 extension RankedIdea {
@@ -663,6 +677,22 @@ struct TrackRecordResponse: Decodable, Sendable {
     let debate: [TrackRecordStrategy]?
     let lessons: TrackRecordLessons?
     let methodology: String?
+    /// The most recent finished ideas, newest first. Absent on older server data.
+    let finished: [FinishedIdea]?
+}
+
+/// One finished idea on the public track record.
+struct FinishedIdea: Decodable, Identifiable, Sendable {
+    var id: String { symbol + direction + strategy + (settledAt ?? "") + (openedAt ?? "") }
+    let symbol: String
+    let market: String?
+    let direction: String
+    let strategy: String
+    let openedAt: String?
+    let settledAt: String?
+    let returnPct: Double?
+    let stopHit: Bool?
+    let targetHit: Bool?
 }
 
 struct TrackRecordLessons: Decodable, Sendable {

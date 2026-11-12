@@ -550,3 +550,15 @@ Yahoo intraday bars for the current S&P 500, regular session: 5-minute bars for 
 - **Costs decide the short timeframes:** the average 5-minute bar range is 0.20% of price, so a 1 ATR stop is about five times the round-trip spread; a signal would need a real edge of several hundredths of a percent per trade just to break even.
 - **Limits:** 60 days of 5- and 15-minute data is one market stretch; current index members only; no shorts; the sweep script's kill-zone, SMT and other optional filters and its four other entry models were not tested; fills at the bar's open and at limit prices are assumed.
 - **Decision:** neither script is an edge intraday on S&P 500 stocks.
+
+## Lorentzian Classification reading (backtest47.mjs, 2026-11-11)
+
+`node --max-old-space-size=6000 backtest47.mjs > backtest47.out` runs the shipped port of jdehorty's Lorentzian Classification indicator (`worker/lorentzian.js`: the script's own logic and default settings, MPL 2.0) on the previous 250 daily bars, for every point-in-time S&P 500 member since 2006 on every 20th trading day (101,093 stock-days), and compares its prediction (-8 to +8) with the next 4 and 10 days, close to close, no costs.
+
+- **It did not predict in its stated direction.** Against the same-day average of all sampled stocks, "leans long" was -0.033% over 4 days (t -1.9) and -0.072% over 10 days (t -2.7); "leans short" was +0.028% (t 1.5) and +0.065% (t 2.3). Predictions of +5 or more were -0.049% over 4 days (t -2.1).
+- With the indicator's own volatility and regime filters applied, the long and short signals were both within noise (t between -1.4 and 0.8).
+- The small opposite-direction effect was stronger in 2006 to 2015 than since 2016 and is far too small to trade after costs.
+- Why the direction is odd: the script labels each bar by comparing the close four bars earlier with that bar's close (`src[4] < src[0] ? short : long`), so a neighbour votes long when the price had fallen into it. On daily stock bars that is a short-term mean-reversion vote, and short-term reversal was weak in this sample.
+- An earlier approximation (exact 8 nearest neighbours, each voting by whether the close was higher four days later) also showed nothing: t between -1.3 and 0.3 on 404,374 stock-days.
+- Limits: daily bars only and one year of history per reading (the worker's data), where the TradingView default looks back 2,000 bars; kernel regression and the entry and exit rules were not ported or tested.
+- Decision: shown on the idea detail as information only, with this result stated next to it. It does not affect the score, the ranking, stops or exits.

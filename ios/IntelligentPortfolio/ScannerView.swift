@@ -843,6 +843,7 @@ struct RankedDetailSheet: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .panel()
+                    if let reading = idea.lorentzian { LorentzianBlock(reading: reading, long: long) }
                     block("When to get out", exitText)
                     if let filing = idea.filing, let text = filingText(filing) { block("Company news", text) }
                     SizingBlock(idea: idea)
@@ -960,6 +961,46 @@ struct RankedDetailSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .tile()
     }
+}
+
+/// The Lorentzian Classification indicator's reading, shown for information only. The wording follows what the indicator's source
+/// actually does: a past day votes long when the price had fallen over the four days before it, and short when it had risen.
+private struct LorentzianBlock: View {
+    let reading: LorentzianReading
+    let long: Bool
+
+    private var lean: String { reading.prediction > 0 ? "Leans long" : reading.prediction < 0 ? "Leans short" : "No lean" }
+    private var agreement: String? {
+        guard reading.prediction != 0 else { return nil }
+        return (reading.prediction > 0) == long ? "That agrees with this idea." : "That disagrees with this idea."
+    }
+    private func pip(_ index: Int) -> Color {
+        index < reading.votesLong ? AppTheme.mint : index >= reading.neighbors - reading.votesShort ? AppTheme.red : AppTheme.line
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Lorentzian reading").font(.headline)
+            HStack(spacing: 4) {
+                ForEach(0..<max(reading.neighbors, 1), id: \.self) { index in
+                    RoundedRectangle(cornerRadius: 3).fill(pip(index)).frame(height: 10)
+                }
+            }
+            .accessibilityHidden(true)
+            Text("\(lean): of \(reading.neighbors) similar past days, \(reading.votesLong) vote long and \(reading.votesShort) vote short (\(String(format: "%+d", reading.prediction)) of \(reading.neighbors)). \(agreement ?? "")")
+                .font(.subheadline).foregroundStyle(.white.opacity(0.85)).fixedSize(horizontal: false, vertical: true)
+            if !reading.filtersPass {
+                Text("The indicator's own volatility and trend filters would not confirm a new signal today.")
+                    .font(.caption).foregroundStyle(AppTheme.amber).fixedSize(horizontal: false, vertical: true)
+            }
+            Text(LorentzianBlock.note)
+                .font(.caption).foregroundStyle(AppTheme.muted).fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
+    }
+
+    static let note = "From the Lorentzian Classification indicator by jdehorty, run on this stock's last year of daily bars. It finds past days whose RSI, WaveTrend, CCI and ADX readings looked like today's; a past day votes long when the price had fallen over the four days before it, and short when it had risen. In our test on 20 years of S&P 500 daily bars it did not predict the next 4 to 10 days: stocks it leaned long on did slightly worse than average. Information only: it doesn't change the strength or the exit line."
 }
 
 /// The pattern scan: candlestick patterns on a breakout (long) or breakdown (short) day, with entry, stop, targets and every exit rule.

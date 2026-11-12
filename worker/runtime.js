@@ -863,6 +863,8 @@ function snapshotFromPayload(symbol, dailyItem, signalItem, quote, market = MARK
   const signal = aggregateEntryBars(normalizeBars(signalItem, "hour", market), 4, market);
   if (daily.length < 35) throw new Error(`Insufficient daily history for ${symbol}`);
   if (signal.length < 22) throw new Error(`Insufficient confirmed 4-hour history for ${symbol}`);
+  // Kept beside the snapshot, not on it, so the year of bars never reaches storage or an API response.
+  DAILY_OHLC.set(`${market.id}:${symbol}`, daily.slice(-260).map(bar => ({ open: bar.open, high: bar.high, low: bar.low, close: bar.close })));
   const closes = daily.map(row => row.close);
   const highs = daily.map(row => row.high);
   const lows = daily.map(row => row.low);
@@ -1225,20 +1227,20 @@ function marketTrend(info, index, snapshots, withBreadth = true, marketId = null
   const indexState = daily === "UP" && fourHour === "UP" ? "UP" : daily === "DOWN" && fourHour === "DOWN" ? "DOWN" : "MIXED";
   let state = indexState;
   let headline = indexState === "UP" ? "Market is in an uptrend" : indexState === "DOWN" ? "Market is in a downtrend"
-    : daily === "UP" ? "Choppy: daily up, 4H down" : "Choppy: daily down, 4H up";
-  let note = indexState === "UP" ? "Fresh long entries are moving with the market."
-    : indexState === "DOWN" ? "Long entries are going against the market. Watch protective levels closely."
-    : daily === "UP" ? "A pullback inside an uptrend. Fresh entries are less reliable until the 4H turns up."
-    : "A bounce inside a downtrend. Treat long entries with extra care.";
+    : daily === "UP" ? "Uptrend, with a short-term pullback" : "Downtrend, with a short-term bounce";
+  let note = indexState === "UP" ? "New long ideas are moving with the market."
+    : indexState === "DOWN" ? "Long ideas are going against the market. Watch exit lines closely."
+    : daily === "UP" ? "A pullback inside an uptrend. New ideas are less reliable until the short-term trend turns up again."
+    : "A bounce inside a downtrend. Treat long ideas with extra care.";
   // The index trend line lags and can disagree with the stocks underneath it, so a strong split reads as mixed.
   if (breadthDaily != null && indexState === "DOWN" && breadthDaily >= BREADTH_STRONG_PCT) {
     state = "MIXED";
-    headline = "Mixed: index trend down, most stocks still up";
-    note = `The index trend line is down, but ${breadthDaily}% of stocks are in daily uptrends. The index tends to lag, so treat the market as mixed until it confirms.`;
+    headline = "Mixed: the index is falling, but most stocks are rising";
+    note = `The index is in a downtrend, but ${breadthDaily}% of stocks are in uptrends. The index tends to lag, so treat the market as mixed until it confirms.`;
   } else if (breadthDaily != null && indexState === "UP" && breadthDaily <= BREADTH_WEAK_PCT) {
     state = "MIXED";
-    headline = "Mixed: index trend up, few stocks up";
-    note = `The index trend line is up, but only ${breadthDaily}% of stocks are in daily uptrends. A narrow rally is less reliable.`;
+    headline = "Mixed: the index is rising, but few stocks are";
+    note = `The index is in an uptrend, but only ${breadthDaily}% of stocks are in uptrends. A narrow rally is less reliable.`;
   }
   return {
     state, index_state: indexState, headline, note,
@@ -2044,13 +2046,14 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
     item.reason = rankRulesReason(item);
     item.sources = ["rules"];
     if (index < 12) item.bars = snapshots.get(item.symbol)?.chart_daily || [];
+    if (index < 12) item.lorentzian = lorentzianReading(DAILY_OHLC.get(`${item.market || "US"}:${item.symbol}`));
     item.evidence_id = item.evidence_key; // kept on the item: a ranking read back from storage no longer holds the RANK_EVIDENCE object itself
     delete item.evidence_key;
   });
   const positive = kept.filter(item => item.evidence.ev_pct > 0), unknown = kept.filter(item => item.evidence.ev_pct === null);
-  const headline = positive.length ? `${positive.length} idea${positive.length === 1 ? "" : "s"} with a positive backtest edge today`
-    : unknown.length ? `${unknown.length} Supertrend idea${unknown.length === 1 ? "" : "s"}; this market has no backtest, so none can be called proven`
-    : (kept.length ? "Nothing here has a positive backtest edge today" : "No scanner ideas today");
+  const headline = positive.length ? `${positive.length} idea${positive.length === 1 ? "" : "s"} passed the checks today`
+    : unknown.length ? `${unknown.length} trend idea${unknown.length === 1 ? "" : "s"}; this market has no backtest, so none can be called proven`
+    : (kept.length ? "Nothing passed the checks today" : "No ideas today");
   return {
     available: true, source: "rules", model: null,
     headline,
@@ -2493,7 +2496,7 @@ function mergeAiRanking(ranking, stored) {
   const dives = new Map(ai.deep_dives.filter(row => keptIds.has(row.id) && [row.bull, row.bear, row.invalidation].every(text => numbersInText(text, ranking.items.find(i => i.id === row.id), extra))).map(row => [row.id, row]));
   return {
     ...ranking, source: "ai", model: stored.model, ai_generated_at: stored.generated_at,
-    headline: ai.headline || ranking.headline, nothing_compelling: items.length ? false : true,
+    headline: plainHeadline(ai.headline) || ranking.headline, nothing_compelling: items.length ? false : true,
     items: items.map(item => dives.has(item.id) ? { ...item, bull: dives.get(item.id).bull, bear: dives.get(item.id).bear, invalidation: dives.get(item.id).invalidation } : item),
     rejected: [...ranking.rejected, ...extraRejected],
     data_gaps: [...new Set([...ranking.data_gaps, ...ai.data_gaps])].slice(0, 10), ordering_notes: ai.ordering_notes || null,
@@ -2893,6 +2896,19 @@ async function recordScannerPicks(env, payload) {
   return statements.length;
 }
 
+// Information only: the Lorentzian Classification indicator's reading on the stock's last year of daily bars (worker/lorentzian.js,
+// a port of jdehorty's open-source script). No score, stop or exit uses it. Null when the port is not bundled or there are too few bars.
+const DAILY_OHLC = new Map();
+function lorentzianReading(dailyBars) {
+  if (typeof lorentzianClassification !== "function" || !Array.isArray(dailyBars) || dailyBars.length < 210) return null;
+  try { return lorentzianClassification(dailyBars); } catch { return null; }
+}
+
+// The model writes the ranking headline and names the scanner; the pages say "trend" for the same thing.
+function plainHeadline(text) {
+  return text ? String(text).replace(/\bSupertrend\b/g, "trend").replace(/\bsupertrend\b/g, "trend") : text;
+}
+
 // Public aggregate over settled scanner picks. Losses, stop-outs and open calls are all counted; nothing is filtered.
 function summarizeTrackRecord(rows, pendingCount) {
   const settled = rows.filter(row => row.status === "SETTLED");
@@ -3020,6 +3036,15 @@ async function publicTrackRecord(db) {
     if (own.length || pending) other_markets.push({ id, market: info.market, label: info.label, since: own[0]?.generated_at || null, summary: summarizeTrackRecord(own, pending) });
   }
   const supertrend = rows.filter(row => row.strategy === "SUPERTREND");
+  // The most recent finished ideas, one line each, so the totals above can be checked against named results.
+  const finishedRows = (await db.prepare(`SELECT symbol, market, direction, strategy, generated_at, settled_at, entry_price, exit_price, strategy_return_pct, stop_hit, target_hit
+    FROM recommendations WHERE user_id = ? AND status = 'SETTLED' AND action != 'PASS' ORDER BY settled_at DESC LIMIT 30`).bind(SCANNER_USER_ID).all().catch(() => ({ results: [] })))?.results || [];
+  const finished = finishedRows.map(row => ({
+    symbol: row.symbol, market: row.market || "US", direction: row.direction, strategy: row.strategy || "SUPERTREND",
+    opened_at: row.generated_at, settled_at: row.settled_at, entry_price: row.entry_price, exit_price: row.exit_price,
+    return_pct: row.strategy_return_pct == null ? null : round(numeric(row.strategy_return_pct), 2),
+    stop_hit: Boolean(row.stop_hit), target_hit: Boolean(row.target_hit),
+  }));
   // Results by the debate's lean, and what the settled picks have in common.
   const extra = (await db.prepare(`SELECT direction, status, strategy_return_pct, stop_hit, target_hit, generated_at, debate_leaning, post_mortem
     FROM recommendations WHERE user_id = ? AND status = 'SETTLED' AND action != 'PASS' AND (debate_leaning IS NOT NULL OR post_mortem IS NOT NULL) ORDER BY generated_at ASC LIMIT 5000`).bind(SCANNER_USER_ID).all().catch(() => ({ results: [] })))?.results || [];
@@ -3027,6 +3052,7 @@ async function publicTrackRecord(db) {
     .map(([id, label]) => ({ id, label, summary: summarizeTrackRecord(extra.filter(row => row.debate_leaning === id), 0) }));
   return {
     available: true,
+    finished,
     debate,
     lessons: summarizeLessons(extra.filter(row => row.post_mortem)),
     since: supertrend[0]?.generated_at || null,

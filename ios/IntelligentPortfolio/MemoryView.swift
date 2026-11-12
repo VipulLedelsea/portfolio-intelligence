@@ -133,6 +133,38 @@ struct TrackRecordPanel: View {
         }
     }
 
+    /// The most recent finished ideas for the chosen scan type, one line each, so the totals can be checked against named results.
+    @ViewBuilder private var finishedList: some View {
+        let rows = (record?.finished ?? []).filter { $0.strategy == strategy }.prefix(10)
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Finished ideas").font(.headline).padding(.bottom, 6)
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, idea in
+                    if index > 0 { Rectangle().fill(AppTheme.hairline).frame(height: 1) }
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(idea.symbol).font(.subheadline.weight(.semibold))
+                        Text(PlainWords.side(idea.direction)).font(.caption).foregroundStyle(AppTheme.muted)
+                        if let day = idea.settledAt.flatMap(Self.shortDay) { Text(day).font(.caption).foregroundStyle(AppTheme.muted) }
+                        Spacer(minLength: 8)
+                        if let value = idea.returnPct {
+                            Text((value > 0 ? "Gain " : value < 0 ? "Loss " : "Flat ") + String(format: "%+.2f%%", value))
+                                .font(.subheadline.weight(.semibold)).foregroundStyle(value > 0 ? AppTheme.mint : value < 0 ? AppTheme.red : AppTheme.muted)
+                        }
+                    }
+                    .padding(.vertical, 10)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
+    }
+
+    /// "Nov 9" from an ISO timestamp or date.
+    private static func shortDay(_ stamp: String) -> String? {
+        let parts = stamp.prefix(10).split(separator: "-")
+        guard parts.count == 3, let month = Int(parts[1]), let day = Int(parts[2]), (1...12).contains(month) else { return nil }
+        return "\(Calendar.current.shortMonthSymbols[month - 1]) \(day)"
+    }
+
     /// How many of the finished ideas made money, from the win rate the server reports.
     private func winners(_ summary: TrackRecordSummary) -> Int? {
         summary.winRatePct.map { Int(($0 / 100 * Double(summary.settledPicks)).rounded()) }
@@ -172,6 +204,7 @@ struct TrackRecordPanel: View {
                         stat("Hit the exit line", percent(summary.stopHitRatePct, signed: false))
                     }
                 }
+                finishedList
                 Button {
                     withAnimation(.snappy(duration: 0.25)) { showingMethod.toggle() }
                 } label: {
