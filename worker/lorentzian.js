@@ -78,6 +78,7 @@ function lorentzianClassification(rows) {
   const lastBarIndex = n - 1, maxBarsBackIndex = lastBarIndex >= MAX_BARS_BACK ? lastBarIndex - MAX_BARS_BACK : 0;
   const yTrain = [], distances = [], predictions = [];
   let prediction = 0, signal = 0, filterAll = false;
+  const predictionByBar = [], signalByBar = [];
   for (let bar = 0; bar < n; bar++) {
     yTrain.push(bar >= 4 ? (close[bar - 4] < close[bar] ? -1 : close[bar - 4] > close[bar] ? 1 : 0) : 0);
     let lastDistance = -1.0;
@@ -101,9 +102,20 @@ function lorentzianClassification(rows) {
     }
     filterAll = volatility(bar) && regime(bar);
     signal = prediction > 0 && filterAll ? 1 : prediction < 0 && filterAll ? -1 : signal;
+    predictionByBar.push(prediction); signalByBar.push(signal);
   }
+  // The last HISTORY_BARS readings, for the chart strip and the ranking agent. `p` is the prediction, `s` the indicator's own signal after its filters.
+  const HISTORY_BARS = 60, from = Math.max(0, n - HISTORY_BARS);
+  const history = predictionByBar.slice(from).map((p, i) => ({ d: rows[from + i].date ?? null, p, s: signalByBar[from + i] }));
+  const sign = v => v > 0 ? 1 : v < 0 ? -1 : 0;
+  let streak = 0; while (streak < n && sign(predictionByBar[n - 1 - streak]) === sign(prediction)) streak++;
+  const before = streak < n ? sign(predictionByBar[n - 1 - streak]) : 0; // the lean just before the current one, 0 if none
+  const avg = (a, b) => { const part = predictionByBar.slice(a, b); return part.length ? part.reduce((x, y) => x + y, 0) / part.length : 0; };
+  const change = avg(n - 3, n) - avg(n - 8, n - 3);
+  const trajectory = Math.abs(change) < 1 ? "steady" : (change > 0) === (prediction >= 0) ? "strengthening" : "fading";
   return {
     prediction, neighbors: NEIGHBORS, signal, filters_pass: filterAll,
+    history, streak_bars: streak, previous_lean: before, trajectory,
     votes_long: predictions.filter(value => value > 0).length, votes_short: predictions.filter(value => value < 0).length,
     bars: n,
   };

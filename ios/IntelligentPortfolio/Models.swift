@@ -309,6 +309,17 @@ struct LorentzianReading: Decodable, Hashable, Sendable {
     let votesLong: Int
     let votesShort: Int
     let bars: Int
+    /// The last 60 days' readings, for the strip under the chart. Absent on older server data.
+    let history: [LorentzianDay]?
+    let streakBars: Int?
+    let trajectory: String?
+}
+
+/// One day's Lorentzian prediction (-8 to +8) and the indicator's own signal after its filters.
+struct LorentzianDay: Decodable, Hashable, Sendable {
+    let d: String?
+    let p: Int
+    let s: Int
 }
 
 extension RankedIdea {
