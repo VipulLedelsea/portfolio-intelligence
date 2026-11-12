@@ -1075,9 +1075,13 @@ async function fetchExternalSnapshots(symbols, market, env) {
   const snapshots = new Map();
   for (const [symbol, item] of series) {
     try {
-      const closes = normalizeBars(item.daily, "day", market).map(bar => bar.close);
+      const finished = normalizeBars(item.daily, "day", market), closes = finished.map(bar => bar.close);
       const hourly = item.signal.historicals;
-      const quote = { last_trade_price: hourly.at(-1)?.close_price, adjusted_previous_close: closes.at(-2), venue_last_trade_time: hourly.at(-1)?.begins_at };
+      // The finished daily bars leave out a session still in progress. When the live price belongs to a later day than the last finished bar
+      // (the market is open), that bar is the previous close; otherwise the price is that bar's own close and the previous close is the one before it.
+      const lastBegins = Date.parse(hourly.at(-1)?.begins_at), lastFinished = String(finished.at(-1)?.date || "").slice(0, 10);
+      const inSession = Number.isFinite(lastBegins) && lastFinished && marketDayFormatter(market.tz).format(new Date(lastBegins)) > lastFinished;
+      const quote = { last_trade_price: hourly.at(-1)?.close_price, adjusted_previous_close: inSession ? closes.at(-1) : closes.at(-2), venue_last_trade_time: hourly.at(-1)?.begins_at };
       snapshots.set(symbol, snapshotFromPayload(symbol, item.daily, item.signal, quote, market));
     } catch (error) { errors.push({ symbol, error: cleanError(error) }); }
   }
@@ -1224,6 +1228,17 @@ const MARKET_INDEXES = {
 // Share of scanned stocks in a daily uptrend at or above this reads as a strong majority, at or below the lower bound as a weak one.
 const BREADTH_STRONG_PCT = 60, BREADTH_WEAK_PCT = 40;
 
+// The forex "market" is the US Dollar Index, so what its trend means depends on which side of the pair the dollar sits: a rising dollar
+// lifts USD/xxx and pushes xxx/USD down, and says nothing about a cross with no dollar in it (read as mixed, which every caller treats as neutral).
+// Stocks pass through unchanged.
+function marketStateFor(state, symbol, marketId) {
+  if (marketId !== "FX" || (state !== "UP" && state !== "DOWN")) return state;
+  const pair = String(symbol || "").toUpperCase();
+  if (pair.startsWith("USD")) return state;
+  if (pair.endsWith("USD")) return state === "UP" ? "DOWN" : "UP";
+  return "MIXED";
+}
+
 function marketTrend(info, index, snapshots, withBreadth = true, marketId = null) {
   if (!info || !index) return null;
   const daily = index.daily_supertrend?.direction === "LONG" ? "UP" : "DOWN";
@@ -1250,6 +1265,13 @@ function marketTrend(info, index, snapshots, withBreadth = true, marketId = null
     state = "MIXED";
     headline = "Mixed: the index is rising, but few stocks are";
     note = `The index is in an uptrend, but only ${breadthDaily}% of stocks are in uptrends. A narrow rally is less reliable.`;
+  }
+  if (marketId === "FX") {
+    headline = indexState === "UP" ? "The US dollar is in an uptrend" : indexState === "DOWN" ? "The US dollar is in a downtrend"
+      : daily === "UP" ? "The US dollar is in an uptrend, with a short-term pullback" : "The US dollar is in a downtrend, with a short-term bounce";
+    note = indexState === "UP" ? "A rising dollar supports long ideas in pairs that start with USD and works against long ideas in pairs that end with USD. It says little about crosses."
+      : indexState === "DOWN" ? "A falling dollar supports long ideas in pairs that end with USD and works against long ideas in pairs that start with USD. It says little about crosses."
+      : "The dollar's daily and 4-hour trends disagree, so it is not a clear help or headwind for any pair.";
   }
   return {
     state, index_state: indexState, headline, note,
@@ -1668,7 +1690,7 @@ function pickFeatures(item, marketState) {
   return {
     score: item.score ?? item.rules_score ?? null, strategy: item.strategy, direction: item.direction, sector: item.sector || null,
     from_entry_atr: item.from_entry_atr ?? null, stop_pct: item.stop_pct ?? null, rr_t1: item.rr_t1 ?? null, alignment: item.alignment_score ?? null, age_days: item.age_days ?? null,
-    volume_ratio: item.volume_ratio ?? null, atr_pct: item.atr_pct ?? null, crowded: item.crowded === true, market_state: marketState || null,
+    volume_ratio: item.volume_ratio ?? null, atr_pct: item.atr_pct ?? null, crowded: item.crowded === true, market_state: marketStateFor(marketState, item.symbol, item.market) || null,
     earnings_in_days: f?.earnings_in_days ?? null, cautions: (f?.cautions || []).length,
     // Information-only labels, stored so the live track record can show whether they matter. No rule or score reads them.
     chart_pattern: item.chart_pattern ?? null, prior_run_up: item.prior_run_up === true, market_regime: item.market_regime ?? null,
@@ -1999,7 +2021,8 @@ function rankRulesReason(item) {
 function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, marketId = "US", filings = new Map(), learnedRules = [], spy = null }) {
   const marketState = trend?.state || "UNKNOWN";
   const regime = marketId === "US" ? marketRegimeLabel(spy) : null;
-  const agrees = direction => marketState === "UP" ? (direction === "LONG" ? 100 : 25) : marketState === "DOWN" ? (direction === "SHORT" ? 100 : 25) : 55;
+  const agrees = (direction, symbol) => { const state = marketStateFor(marketState, symbol, marketId); return state === "UP" ? (direction === "LONG" ? 100 : 25) : state === "DOWN" ? (direction === "SHORT" ? 100 : 25) : 55; };
+  const marketNote = marketId === "FX" ? `US dollar index ${marketState.toLowerCase()}` : `market ${marketState.toLowerCase()}`;
   const raw = [];
   for (const c of candidates || []) {
     const entry = numeric(c.signal_entry_price), atr = numeric(c.daily_atr) || numeric(c.signal_atr);
@@ -2014,8 +2037,8 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
       volume_ratio: null, age_days: rankDaysOld(c.signal_confirmed_at), scanner_score: c.score, tag: "Supertrend", detail: c.label, buy_range: c.buy_range || null, signal_at: c.signal_confirmed_at || null,
       exit_rule: us ? (levels.stop_kind === "SUPERTREND_LINE" ? "" : `The protective level shown is two daily ranges from the entry, because the daily Supertrend line is not yet on the safe side of it. `) + "Leave when a day closes " + (c.direction === "SHORT" ? "over" : "under") + " the daily Supertrend line, at the next open. No fixed target and no time limit."
         : "Leave at the stop, at target 1 or 2, or at the close of day 10, whichever comes first.",
-      alignment_score: Math.round((agrees(c.direction) + (c.daily_aligned && c.daily_adx >= 20 ? 100 : 40)) / 2),
-      alignment_note: `Daily Supertrend ${c.daily_supertrend_direction}, daily ADX ${c.daily_adx}${c.daily_adx_rising ? " and rising" : ""}; market ${marketState.toLowerCase()}.`,
+      alignment_score: Math.round((agrees(c.direction, c.symbol) + (c.daily_aligned && c.daily_adx >= 20 ? 100 : 40)) / 2),
+      alignment_note: `Daily Supertrend ${c.daily_supertrend_direction}, daily ADX ${c.daily_adx}${c.daily_adx_rising ? " and rising" : ""}; ${marketNote}.`,
       currency_symbol: c.currency_symbol, price_decimals: c.price_decimals,
       // Information-only labels (US long ideas): not used by any score, filter or exit.
       ...(us && c.direction === "LONG" ? {
@@ -2044,7 +2067,7 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
         entry: p.signal_close, stop: p.stop_price, target_1: p.target_1, target_2: p.target_2, atr: p.atr_14, atr_pct: p.atr_14_pct,
         volume_ratio: p.volume_ratio, age_days: rankDaysOld(p.signal_as_of), scanner_score: p.score, tag: "Pattern", detail: p.label, signal_at: p.signal_as_of || null, buy_range: buyRange(p.direction, p.signal_close, p.atr_14, p.price),
         exit_rule: `Leave at the stop, at target 1 or 2, when a day closes back ${p.direction === "LONG" ? "under" : "over"} ${p.failure_level}, or at the close of day 10.`,
-        alignment_score: agrees(p.direction), alignment_note: `Close beyond the 20-day ${p.direction === "LONG" ? "high" : "low"} on ${p.volume_ratio}x volume; market ${marketState.toLowerCase()}.`,
+        alignment_score: agrees(p.direction, p.symbol), alignment_note: `Close beyond the 20-day ${p.direction === "LONG" ? "high" : "low"} on ${p.volume_ratio}x volume; market ${marketState.toLowerCase()}.`,
         currency_symbol: p.currency_symbol, price_decimals: p.price_decimals,
       });
     }
@@ -2203,7 +2226,7 @@ function rankModelInput(ranking, market, live) {
   const used = new Set(setups.map(setup => setup.evidence));
   return {
     as_of: new Date().toISOString().slice(0, 10), market: market || "US", market_trend: ranking.market_state,
-    market_note: market === "FX" ? "Forex pairs: no volume data, no backtest for Supertrend here, ideas exit at the stop, a target or day 10. Where evidence is unknown, say so and keep confidence Low; do not borrow the US figures."
+    market_note: market === "FX" ? "Forex pairs: market_trend here is the US Dollar Index, not a market of these pairs. A rising dollar helps long USD/xxx, hurts long xxx/USD and says nothing about a cross; each setup's alignment and market-trend signal already account for this. No volume data, no backtest for Supertrend here, ideas exit at the stop, a target or day 10. Where evidence is unknown, say so and keep confidence Low; do not borrow the US figures."
       : market === "IN" ? "Large Indian (BSE) stocks in rupees: no backtest for Supertrend here, ideas exit at the stop, a target or day 10. Where evidence is unknown, say so and keep confidence Low; do not borrow the US figures." : undefined,
     strategy_evidence: Object.fromEntries(Object.entries(RANK_EVIDENCE).filter(([key]) => used.has(key))),
     live_track_record: live || undefined,
@@ -3023,8 +3046,10 @@ function ideaSignals(item, snapshot, trend) {
   if (item.buy_range?.label) add("entry_position", "Price versus the signal price", String(item.buy_range.label).toLowerCase(), String(item.buy_range.label).toLowerCase(), way(item.buy_range.state === "IN_BUY_RANGE", item.buy_range.state !== "IN_BUY_RANGE"),
     "Backtested: see entry_timing for what each spot earned.", "Whether the price is still near where the signal fired.");
   if (Number.isFinite(Number(item.age_days))) add("signal_age_days", "Signal age", Number(item.age_days), `${item.age_days} days`, way(item.age_days <= 3, item.age_days >= 11), "Backtested: see entry_timing by age.", "Days since the signal. Older means more of the move is gone.");
-  const state = trend?.state;
-  if (state) add("market_trend", "Market trend", state.toLowerCase(), state.toLowerCase(), state === "MIXED" ? "neutral" : way((state === "UP") === long, (state === "UP") !== long), SIGNAL_UNTESTED, "Direction of the broad market index. Against the idea's direction is a headwind.");
+  // For forex this is the dollar's trend as it bears on this pair (see marketStateFor), so a rising dollar reads "down" for EUR/USD.
+  const state = marketStateFor(trend?.state, item.symbol, item.market);
+  if (state) add("market_trend", item.market === "FX" ? "US dollar trend, as it bears on this pair" : "Market trend", state.toLowerCase(), state.toLowerCase(), state === "MIXED" ? "neutral" : way((state === "UP") === long, (state === "UP") !== long), SIGNAL_UNTESTED,
+    item.market === "FX" ? "Direction the US Dollar Index is pushing this pair. Mixed for a cross with no dollar in it. Against the idea's direction is a headwind." : "Direction of the broad market index. Against the idea's direction is a headwind.");
   if (Number.isFinite(Number(trend?.breadth_daily_pct))) { const v = Number(trend.breadth_daily_pct); add("market_breadth_pct", "Stocks in a daily uptrend", v, `${v}%`, long ? way(v >= 60, v <= 40) : way(v <= 40, v >= 60), SIGNAL_UNTESTED, "Share of scanned stocks in an uptrend. Broad strength supports longs."); }
   const f = item.filing;
   if (f?.earnings_in_days != null && f.earnings_in_days >= 0 && f.earnings_in_days <= 21) add("earnings_in_days", "Days to earnings", f.earnings_in_days, `${f.earnings_in_days} days`, way(false, f.earnings_in_days <= 14), "A report inside the hold can gap the price either way.", "Days until the next earnings report.");
@@ -3341,11 +3366,26 @@ function gradeRecommendation(recommendation, path) {
   };
 }
 
+const SETTLE_PAGE = 60, SETTLE_EXTERNAL_SYMBOLS = 25;
 async function settlePendingRecommendations(db, userId, env = {}) {
+  // Trend picks can stay open for months, so always taking the oldest rows would re-check the same ones every run and never reach newer picks.
+  // Each hour looks at the next page instead, so every open pick is checked within a few hours however many are open.
+  const total = Number((await db.prepare("SELECT COUNT(*) AS n FROM recommendations WHERE user_id = ? AND status = 'PENDING'").bind(userId).first())?.n) || 0;
+  if (!total) return 0;
+  const offset = total <= SETTLE_PAGE ? 0 : (Math.floor(Date.now() / 3600000) * SETTLE_PAGE) % total;
   const pendingResult = await db.prepare(`SELECT id, symbol, market, action, direction, generated_at, current_price, stop_price, target_1, horizon_trading_days
-    FROM recommendations WHERE user_id = ? AND status = 'PENDING' ORDER BY generated_at ASC LIMIT 60`).bind(userId).all();
-  const pending = pendingResult?.results || [];
+    FROM recommendations WHERE user_id = ? AND status = 'PENDING' ORDER BY generated_at ASC, id ASC LIMIT ? OFFSET ?`).bind(userId, SETTLE_PAGE, offset).all();
+  let pending = pendingResult?.results || [];
   if (!pending.length) return 0;
+  // India and forex history costs one outgoing request per symbol, so a page keeps to a fixed number of those symbols; the rest wait for a later page.
+  const externalSymbols = new Set();
+  pending = pending.filter(row => {
+    if (MARKETS[row.market || "US"]?.provider === "robinhood") return true;
+    const key = `${row.market}:${row.symbol}`;
+    if (externalSymbols.has(key)) return true;
+    if (externalSymbols.size >= SETTLE_EXTERNAL_SYMBOLS) return false;
+    externalSymbols.add(key); return true;
+  });
   const histories = new Map();
   for (const market of Object.values(MARKETS)) {
     const symbols = [...new Set(pending.filter(row => (row.market || "US") === market.id).map(row => row.symbol))];
@@ -3546,7 +3586,7 @@ function debateFacts(item, marketState) {
   const f = item.filing, e = item.evidence || {};
   const facts = {
     backtest_ev_pct: e.ev_pct, backtest_win_rate_pct: e.win_rate_pct, backtest_trades: e.n, strategy_experimental: e.experimental === true,
-    trend_alignment_score: item.alignment_score, market_trend: marketState || undefined, stop_pct: item.stop_pct, rr_to_target_1: item.rr_t1, from_entry_atr: item.from_entry_atr,
+    trend_alignment_score: item.alignment_score, market_trend: marketStateFor(marketState, item.symbol, item.market) || undefined, stop_pct: item.stop_pct, rr_to_target_1: item.rr_t1, from_entry_atr: item.from_entry_atr,
     age_days: item.age_days, volume_ratio: item.volume_ratio, atr_pct: item.atr_pct, sector_crowded: item.crowded === true,
     earnings_in_days: f?.earnings_in_days != null && f.earnings_in_days >= 0 ? f.earnings_in_days : undefined,
     earnings_confirmed: f?.earnings_in_days != null && f.earnings_in_days >= 0 ? f.earnings_confirmed === true : undefined,
@@ -3844,9 +3884,11 @@ function legalPage(env, slug) {
   } });
 }
 
-async function deleteMobileAccountData(request, env) {
+// Everything stored about a person is keyed by their user id in the tables below (there is no separate users table; the email lives only on
+// web sessions), so this removes the account itself, from the app or from the website.
+async function deleteAccountData(request, env, mobileOnly = false) {
   const user = await requestUser(request, env);
-  if (!user || user.auth_type !== "mobile" || !env.DB) throw Object.assign(new Error("Connect your account before deleting its data"), { status: 401 });
+  if (!user || !env.DB || (mobileOnly && user.auth_type !== "mobile")) throw Object.assign(new Error("Connect your account before deleting its data"), { status: 401 });
   await env.DB.batch([
     env.DB.prepare("DELETE FROM recommendations WHERE user_id = ?").bind(user.id),
     env.DB.prepare("DELETE FROM holdings WHERE user_id = ?").bind(user.id),
@@ -3857,7 +3899,7 @@ async function deleteMobileAccountData(request, env) {
     env.DB.prepare("DELETE FROM mobile_sessions WHERE user_id = ?").bind(user.id),
     env.DB.prepare("DELETE FROM web_sessions WHERE user_id = ?").bind(user.id),
   ]);
-  accessCache.delete(`${user.id}:mobile`);
+  accessCache.delete(`${user.id}:mobile`); accessCache.delete(`${user.id}:web`);
   return { deleted: true };
 }
 
@@ -4311,6 +4353,9 @@ function toAmount(value) {
   return NaN;
 }
 // A strict YYYY-MM-DD calendar day that exists and is not in the future.
+// People enter the purchase date in their own time zone, which can already be tomorrow by the UTC calendar (India in the early morning).
+// The furthest-ahead calendar day anywhere is UTC+14, so a date up to that is not in the future for someone.
+const latestDayAnywhere = () => new Date(Date.now() + 14 * 3600 * 1000).toISOString().slice(0, 10);
 function validPastDay(text, today) {
   if (typeof text !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(text) || text > today) return false;
   const parsed = new Date(`${text}T00:00:00Z`);
@@ -4345,7 +4390,7 @@ async function addHolding(request, env) {
   if (!Number.isFinite(price) || price < MIN_AMOUNT || price > 1e8) throw Object.assign(new Error("Enter the price you paid per share"), { status: 400 });
   const today = new Date().toISOString().slice(0, 10);
   const boughtAt = body.bought_at === undefined || body.bought_at === null || body.bought_at === "" ? today : body.bought_at;
-  if (!validPastDay(boughtAt, today)) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
+  if (!validPastDay(boughtAt, latestDayAnywhere())) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
   if (body.allow_duplicate !== true) {
     const dup = await env.DB.prepare("SELECT id FROM holdings WHERE user_id = ? AND symbol = ? AND market = ? AND closed_at IS NULL LIMIT 1").bind(user.id, symbol, marketId).first();
     if (dup) throw Object.assign(new Error(`You already hold ${symbol}. Use "Add shares" on that position so it keeps one average price.`), { status: 409 });
@@ -4706,7 +4751,7 @@ async function editEntry(request, env) {
     if (holding.closed_at) throw Object.assign(new Error("This entry cannot be edited"), { status: 400 });
     const today = new Date().toISOString().slice(0, 10);
     const boughtAt = body.bought_at ? body.bought_at : holding.bought_at;
-    if (!validPastDay(boughtAt, today)) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
+    if (!validPastDay(boughtAt, latestDayAnywhere())) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
     await env.DB.batch([
       env.DB.prepare("UPDATE holdings SET bought_at = ?, shares = ?, buy_price = ? WHERE id = ? AND user_id = ? AND closed_at IS NULL").bind(boughtAt, shares, price, holding.id, user.id),
       voidOld, record(shares, `${boughtAt}T00:00:00.000Z`),
@@ -4835,8 +4880,9 @@ async function handle(request, env, ctx) {
     if (url.pathname === "/api/holdings/sell") return json(await sellHolding(request, env));
     if (url.pathname === "/api/holdings/close") return json(await closeHolding(request, env));
     if (url.pathname === "/api/holdings/remove") return json(await removeHolding(request, env));
-    if (url.pathname === "/api/mobile/account/delete") {
-      return json(await deleteMobileAccountData(request, env));
+    if (url.pathname === "/api/mobile/account/delete" || url.pathname === "/api/account/delete") {
+      const deleted = await deleteAccountData(request, env, url.pathname.startsWith("/api/mobile/"));
+      return json(deleted, 200, parseCookies(request).has(SESSION_COOKIE) ? { "set-cookie": cookieHeader(request, SESSION_COOKIE, "", { maxAge: 0 }) } : {});
     }
     if (url.pathname === "/api/mobile/session/revoke") {
       return json(await revokeMobileSession(request, env));
@@ -4899,25 +4945,31 @@ async function handle(request, env, ctx) {
   }
 }
 
+// Once an hour, every day: grade picks that hit a level or whose window has closed, then tag post-mortems and refresh the learning report.
+const GRADING_CRON = "30 * * * *";
 export default {
   fetch: handle,
   // One market per cron trigger, so each job has its own outgoing-request budget.
   async scheduled(event, env, ctx) {
     const byCron = { "5 * * * *": "IN", "*/15 3-10 * * 1-5": "IN", "10 * * * *": "FX", "*/15 13-21 * * 1-5": "US" };
+    const failed = step => error => console.error(`${step} failed (cron ${event.cron}): ${cleanError(error)}`);
+    // Grading has its own trigger, and so its own outgoing-request budget: run after a US scan it could push that job past the free plan's limit.
+    if (event.cron === GRADING_CRON) {
+      if (env.DB) ctx.waitUntil((async () => {
+        await settlePendingRecommendations(env.DB, SCANNER_USER_ID, env).catch(failed("Grading scanner picks"));
+        await tagPostMortems(env).catch(failed("Post-mortem tagging"));
+        await refreshLearning(env).catch(failed("Learning refresh"));
+      })());
+      return;
+    }
     const market = MARKETS[byCron[event.cron]];
     if (market) ctx.waitUntil((async () => {
-      await refreshScanIfDue(env, market, ctx).catch(() => {});
-      await refreshHoldingsIfDue(env, market).catch(() => {});
-      await monitorHoldings(env, market).catch(() => {});
+      await refreshScanIfDue(env, market, ctx).catch(failed(`Scan refresh for ${market.id}`));
+      await refreshHoldingsIfDue(env, market).catch(failed(`Holdings refresh for ${market.id}`));
+      await monitorHoldings(env, market).catch(failed(`Holdings monitor for ${market.id}`));
       // The hourly jobs rank their own market; the forex job also ranks the US scan, which has no hourly job of its own (it runs on weekdays only).
       for (const target of market.id === "FX" ? [MARKETS.FX, MARKETS.US] : market.id === "IN" ? [MARKETS.IN] : []) {
         await rankStoredScan(env, target).catch(error => console.error(`AI ranking job failed for ${target.id}: ${cleanError(error)}`));
-      }
-      // Once an hour, grade scanner picks that hit a level or whose window has closed.
-      if (market.id === "US" && env.DB && new Date(event.scheduledTime).getUTCMinutes() < 5) {
-        await settlePendingRecommendations(env.DB, SCANNER_USER_ID, env).catch(() => {});
-        await tagPostMortems(env).catch(error => console.error(`Post-mortem tagging failed: ${cleanError(error)}`));
-        await refreshLearning(env).catch(error => console.error(`Learning refresh failed: ${cleanError(error)}`));
       }
     })());
   },

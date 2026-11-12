@@ -41,6 +41,8 @@ export const recommendations = sqliteTable("recommendations", {
   // its rank, score, confidence and stated win probability, the price at that moment, the model and the prompt version. Used to measure the advisor on results.
   advisorVerdict: text("advisor_verdict"),
   advisorAt: text("advisor_at"),
+  // The price that proves a dip or pattern idea wrong (added by migration 0013; the Worker reads and writes it).
+  failureLevel: real("failure_level"),
 }, table => [
   uniqueIndex("recommendations_user_signal_unique").on(table.userId, table.symbol, table.signalConfirmedAt, table.action),
   index("recommendations_user_status_idx").on(table.userId, table.status, table.generatedAt),

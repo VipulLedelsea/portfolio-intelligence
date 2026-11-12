@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack {
@@ -13,6 +14,16 @@ struct ContentView: View {
             case .checking:
                 ProgressView("Checking secure access…")
                     .tint(AppTheme.amber)
+            case .unreachable:
+                VStack(spacing: 16) {
+                    LoadFailedView(message: "Can't reach IntelligentPortfolio right now.") { await model.restoreSession() }
+                    Text("Your connection to your account is saved. Nothing needs to be set up again.")
+                        .font(.footnote)
+                        .foregroundStyle(AppTheme.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(20)
+                .readableWidth()
             case .disconnected, .pairing:
                 ConnectionView()
             case .connected:
@@ -37,6 +48,10 @@ struct ContentView: View {
         }
         .animation(.smooth(duration: 0.5), value: model.deskActive)
         .onAppear { model.updateStandByDetection() }
+        // Coming back to the app is the natural moment to try again after being offline.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active, model.connectionState == .unreachable { Task { await model.restoreSession() } }
+        }
         .background(HingeReader { state, angle in
             // Only a change of state reaches the layouts; the live angle changes too often to publish.
             if model.fold != state { model.fold = state }

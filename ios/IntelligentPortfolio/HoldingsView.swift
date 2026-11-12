@@ -193,6 +193,8 @@ struct HoldingsView: View {
             Text(data.disclaimer)
                 .font(.caption)
                 .foregroundStyle(AppTheme.muted)
+        } else if model.failedLoads.contains(.holdings) {
+            LoadFailedView(message: "Couldn't load your holdings.") { await model.refreshHoldings() }
         } else {
             ProgressView("Checking your holdings…").tint(AppTheme.amber)
         }
@@ -549,8 +551,8 @@ struct AddHoldingSheet: View {
         _price = State(initialValue: price)
     }
 
-    private var parsedShares: Double? { Double(shares.replacingOccurrences(of: ",", with: ".")) }
-    private var parsedPrice: Double? { Double(price.replacingOccurrences(of: ",", with: ".")) }
+    private var parsedShares: Double? { AmountText.parse(shares) }
+    private var parsedPrice: Double? { AmountText.parse(price) }
     private var canSave: Bool {
         !symbol.trimmingCharacters(in: .whitespaces).isEmpty && (parsedShares ?? 0) > 0 && (parsedPrice ?? 0) > 0 && !saving
     }
@@ -581,7 +583,7 @@ struct AddHoldingSheet: View {
                         guard let shares = parsedShares, let price = parsedPrice else { return }
                         saving = true
                         Task {
-                            let day = date.formatted(.iso8601.year().month().day())
+                            let day = CalendarDay.text(date)
                             let saved = await model.addHolding(symbol: symbol.trimmingCharacters(in: .whitespaces).uppercased(), market: market, shares: shares, price: price, boughtAt: day)
                             saving = false
                             if saved { dismiss() }
@@ -615,11 +617,11 @@ private struct PositionSheet: View {
     init(holding: Holding, startsAsSell: Bool) {
         self.holding = holding
         _selling = State(initialValue: startsAsSell)
-        _price = State(initialValue: startsAsSell ? (holding.currentPrice.map { String($0) } ?? "") : "")
+        _price = State(initialValue: startsAsSell ? (holding.currentPrice.map { AmountText.editable($0, maxDecimals: 6) } ?? "") : "")
     }
 
-    private var count: Double? { Double(shares.replacingOccurrences(of: ",", with: ".")) }
-    private var value: Double? { Double(price.replacingOccurrences(of: ",", with: ".")) }
+    private var count: Double? { AmountText.parse(shares) }
+    private var value: Double? { AmountText.parse(price) }
     private var canSave: Bool {
         guard let n = count, n > 0, let p = value, p > 0, !saving else { return false }
         return !selling || n <= holding.shares + 1e-9
@@ -655,7 +657,7 @@ private struct PositionSheet: View {
                 HStack {
                     TextField(selling ? "Shares sold" : "Extra shares bought", text: $shares).keyboardType(.decimalPad)
                     if selling {
-                        Button("All") { shares = shareText(holding.shares) }.buttonStyle(.bordered)
+                        Button("All") { shares = AmountText.editable(holding.shares) }.buttonStyle(.bordered)
                     }
                 }
                 TextField(selling ? "Price sold at, per share" : "Price paid per share", text: $price).keyboardType(.decimalPad)
@@ -705,6 +707,8 @@ private struct PerformancePanel: View {
                     marketSection(market)
                 }
                 Text(stats.disclaimer).font(.caption).foregroundStyle(AppTheme.muted)
+            } else if model.failedLoads.contains(.holdingStats) {
+                LoadFailedView(message: "Couldn't load performance.") { await model.refreshHoldingStats() }
             } else {
                 ProgressView("Loading performance…").tint(AppTheme.amber)
             }
@@ -809,6 +813,8 @@ private struct HistoryPanel: View {
                 Text("Only the newest entry for a stock can be undone or edited, so averages stay exact. Undone entries (including the old version of an edited one) stay here, marked as undone, and do not count in Performance.")
                     .font(.caption)
                     .foregroundStyle(AppTheme.muted)
+            } else if model.failedLoads.contains(.holdingStats) {
+                LoadFailedView(message: "Couldn't load history.") { await model.refreshHoldingStats() }
             } else {
                 ProgressView("Loading history…").tint(AppTheme.amber)
             }
@@ -827,7 +833,7 @@ private struct HistoryPanel: View {
     }
 
     private func dateText(_ iso: String) -> String {
-        PairingExpiryParser.date(from: iso)?.formatted(date: .abbreviated, time: .omitted) ?? iso
+        CalendarDay.date(from: iso)?.formatted(date: .abbreviated, time: .omitted) ?? iso
     }
 }
 
@@ -843,15 +849,15 @@ private struct EditEntrySheet: View {
 
     init(trade: TradeEntry) {
         self.trade = trade
-        _shares = State(initialValue: shareText(trade.shares))
-        _price = State(initialValue: String(trade.price))
-        _date = State(initialValue: PairingExpiryParser.date(from: trade.at) ?? Date())
+        _shares = State(initialValue: AmountText.editable(trade.shares))
+        _price = State(initialValue: AmountText.editable(trade.price, maxDecimals: 6))
+        _date = State(initialValue: CalendarDay.date(from: trade.at) ?? Date())
     }
 
     private var canEditShares: Bool { trade.edit?.shares ?? false }
     private var canEditDate: Bool { trade.edit?.date ?? false }
-    private var count: Double? { Double(shares.replacingOccurrences(of: ",", with: ".")) }
-    private var value: Double? { Double(price.replacingOccurrences(of: ",", with: ".")) }
+    private var count: Double? { AmountText.parse(shares) }
+    private var value: Double? { AmountText.parse(price) }
 
     var body: some View {
         NavigationStack {
@@ -883,7 +889,7 @@ private struct EditEntrySheet: View {
                         guard let n = count, n > 0, let p = value, p > 0 else { return }
                         saving = true
                         Task {
-                            let day = canEditDate ? date.formatted(.iso8601.year().month().day()) : nil
+                            let day = canEditDate ? CalendarDay.text(date) : nil
                             let saved = await model.editEntry(id: trade.id, shares: n, price: p, boughtAt: day)
                             saving = false
                             if saved { dismiss() }
@@ -916,6 +922,8 @@ private struct PortfolioPanel: View {
                 Text("Risk down to protective levels is what you would lose if every holding fell to its protective level. It ignores overnight gaps. Weights use current prices. This is not personal financial advice.")
                     .font(.caption)
                     .foregroundStyle(AppTheme.muted)
+            } else if model.failedLoads.contains(.holdings) {
+                LoadFailedView(message: "Couldn't load your portfolio.") { await model.refreshHoldings() }
             } else {
                 ProgressView("Loading portfolio…").tint(AppTheme.amber)
             }

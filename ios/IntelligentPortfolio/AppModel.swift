@@ -6,6 +6,8 @@ import Combine
 final class AppModel: ObservableObject {
     enum ConnectionState: Equatable {
         case checking
+        /// A saved connection exists but the server could not be reached to confirm it. The connection is kept.
+        case unreachable
         case disconnected
         case pairing
         case connected
@@ -72,6 +74,17 @@ final class AppModel: ObservableObject {
     private static let disclaimerKey = "disclaimerAcceptedV1"
     private static let guestKey = "browsingWithoutAccount"
 
+    /// First loads that failed with nothing to show. The screen offers a retry in place of its spinner.
+    enum LoadTarget: Hashable { case briefing, holdings, holdingStats, memory }
+    @Published var failedLoads: Set<LoadTarget> = []
+
+    /// A read that failed. With nothing on screen yet the screen shows a retry; with data already shown the data stays and
+    /// nobody is interrupted (these reads repeat on a timer, so an alert each time would never stop while offline).
+    private func loadFailed(_ target: LoadTarget, _ error: Error, hasData: Bool) {
+        if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
+        if !hasData { failedLoads.insert(target) }
+    }
+
     private let api = APIClient.shared
     private var token: String?
     private var pairingTask: Task<Void, Never>?
@@ -82,19 +95,29 @@ final class AppModel: ObservableObject {
             if UserDefaults.standard.bool(forKey: Self.guestKey) { await enterGuest() } else { connectionState = .disconnected }
             return
         }
+        connectionState = .checking
         do {
             let access = try await api.access(token: stored)
-            guard access.subscribed else { throw APIError(error: "An active subscription is required.") }
+            // The server answered and does not know this connection (revoked on the website, or expired): only then is it forgotten.
+            guard access.signedIn else {
+                KeychainStore.delete()
+                connectionState = .disconnected
+                errorMessage = "This iPhone is no longer connected to your account. Connect it again to see your holdings."
+                return
+            }
+            guard access.subscribed else {
+                KeychainStore.delete()
+                connectionState = .disconnected
+                return
+            }
             token = stored
             connectionState = .connected
             await refreshAll()
-        } catch let error as URLError where error.code != .cancelled {
-            // No connection is not a revoked connection: keep the saved token so the next launch signs straight back in.
-            connectionState = .disconnected
-            report(error)
         } catch {
-            KeychainStore.delete()
-            connectionState = .disconnected
+            // No network, a busy server or an unreadable answer says nothing about the connection itself, so the saved token is kept
+            // and the app offers to try again instead of asking the person to pair from scratch.
+            if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
+            connectionState = .unreachable
         }
     }
 
@@ -142,6 +165,7 @@ final class AppModel: ObservableObject {
         briefing = nil
         learning = nil
         holdingStats = nil
+        failedLoads = []
         connectionState = .disconnected
     }
 
@@ -210,8 +234,8 @@ final class AppModel: ObservableObject {
         guard let token else { holdings = nil; return }
         isLoadingHoldings = true
         defer { isLoadingHoldings = false }
-        do { holdings = try await api.holdings(token: token) }
-        catch { report(error) }
+        do { holdings = try await api.holdings(token: token); failedLoads.remove(.holdings) }
+        catch { loadFailed(.holdings, error, hasData: holdings != nil) }
     }
 
     /// What the learning loop has found in graded picks. Read-only here: rules are approved on the website.
@@ -223,8 +247,8 @@ final class AppModel: ObservableObject {
     /// Reads the briefing: stored results only, so it is cheap and never starts a scan.
     func refreshBriefing() async {
         guard let token else { briefing = nil; return }
-        do { briefing = try await api.briefing(token: token) }
-        catch { report(error) }
+        do { briefing = try await api.briefing(token: token); failedLoads.remove(.briefing) }
+        catch { loadFailed(.briefing, error, hasData: briefing != nil) }
     }
 
     /// Marks the alerts as seen once the user has had a chance to read them, so the next visit shows only what is new.
@@ -241,8 +265,8 @@ final class AppModel: ObservableObject {
 
     func refreshHoldingStats() async {
         guard let token else { holdingStats = nil; return }
-        do { holdingStats = try await api.holdingStats(token: token) }
-        catch { report(error) }
+        do { holdingStats = try await api.holdingStats(token: token); failedLoads.remove(.holdingStats) }
+        catch { loadFailed(.holdingStats, error, hasData: holdingStats != nil) }
     }
 
     /// Returns true when the holding was saved, so the entry sheet can close.
@@ -367,8 +391,8 @@ final class AppModel: ObservableObject {
 
     func refreshMemory() async {
         guard let token else { memory = nil; return }
-        do { memory = try await api.memory(token: token) }
-        catch { report(error) }
+        do { memory = try await api.memory(token: token); failedLoads.remove(.memory) }
+        catch { loadFailed(.memory, error, hasData: memory != nil) }
     }
 
     func disconnect() async {
@@ -384,6 +408,7 @@ final class AppModel: ObservableObject {
         briefing = nil
         learning = nil
         holdingStats = nil
+        failedLoads = []
         connectionState = .disconnected
     }
 
