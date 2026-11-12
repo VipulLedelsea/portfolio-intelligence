@@ -1563,12 +1563,28 @@ function edgarFlagsFrom(recent, todayDay) {
   };
 }
 
+// ---- EPS surprise of the last report (shadow mode: recorded with each pick, read by nothing) ----
+// research/pattern-backtest/README.md (backtest49): reports in the top fifth by (actual EPS - estimate) / share price beat the average index stock by
+// +1.4% over the next 21 sessions and +2.0% over 42, in every quarter of a 19-month sample; misses lagged. That sample is too short to act on, so the
+// figure is only stored in a pick's features. It does not reach the score, the filters, the ranking model or the debate. Once enough picks are graded
+// the live record will show whether it holds.
+// Pure: the latest report on or before todayDay that has both an EPS estimate and an actual, from the earnings feed's result rows. Null when there is none.
+function lastEpsReport(results, todayDay) {
+  let best = null;
+  for (const row of Array.isArray(results) ? results : []) {
+    if (!row?.report?.date || row.eps?.estimate == null || row.eps?.actual == null) continue;
+    const day = dayNumber(row.report.date), estimate = Number(row.eps.estimate), actual = Number(row.eps.actual);
+    if (!Number.isFinite(day) || day > todayDay || !Number.isFinite(estimate) || !Number.isFinite(actual)) continue;
+    if (!best || day > best.day) best = { day, date: String(row.report.date).slice(0, 10), estimate, actual };
+  }
+  return best;
+}
 // The next report date from Robinhood's earnings feed: an exact date, with a flag for whether the company has confirmed it and whether it reports
-// before the open ("am") or after the close ("pm"). Null when the feed has nothing for the symbol.
-async function robinhoodNextEarnings(symbol, todayDay) {
+// before the open ("am") or after the close ("pm"); null when the feed has nothing ahead. The same reply also gives the last report's EPS estimate and actual.
+async function robinhoodEarnings(symbol, todayDay) {
   const payload = await fetchJson(`${ROBINHOOD_EARNINGS}?symbol=${encodeURIComponent(symbol)}`);
   const rows = (payload?.results || []).filter(row => row?.report?.date).map(row => ({ day: dayNumber(row.report.date), date: String(row.report.date).slice(0, 10), confirmed: row.report.verified === true, timing: row.report.timing || null }));
-  return rows.filter(row => row.day >= todayDay).sort((a, b) => a.day - b.day)[0] || null;
+  return { next: rows.filter(row => row.day >= todayDay).sort((a, b) => a.day - b.day)[0] || null, last: lastEpsReport(payload?.results, todayDay) };
 }
 
 // Returns Map(symbol -> flags) for the US symbols asked about. Cached per symbol for 20 hours; never throws.
@@ -1595,13 +1611,14 @@ async function loadFilingFlags(env, symbols, maxFetch = 6) {
             if (response.ok) flags = edgarFlagsFrom((await response.json())?.filings?.recent, todayDay);
           } catch { /* fall through to the earnings feed alone */ }
         }
-        let next = null;
-        try { next = await robinhoodNextEarnings(symbol, todayDay); } catch { /* the SEC estimate stands */ }
+        let next = null, last = null;
+        try { ({ next, last } = await robinhoodEarnings(symbol, todayDay)); } catch { /* the SEC estimate stands */ }
         if (flags) flags.earnings_confirmed = false;
         if (next) {
           flags = flags || { severe: [], cautions: [], last_reported_days_ago: null };
           Object.assign(flags, { earnings_in_days: next.day - todayDay, earnings_estimate: next.date, earnings_confirmed: next.confirmed, earnings_timing: next.timing, earnings_source: next.confirmed ? "company-confirmed date" : "projected date" });
         } else if (flags && flags.earnings_estimate) flags.earnings_source = "estimate from past SEC filings";
+        if (last) { flags = flags || { severe: [], cautions: [], last_reported_days_ago: null }; Object.assign(flags, { last_eps_date: last.date, last_eps_estimate: last.estimate, last_eps_actual: last.actual }); }
         if (!flags) { if (cache[symbol]) out.set(symbol, { ...cache[symbol].flags, source: "SEC EDGAR", checked_at: new Date(cache[symbol].at).toISOString(), stale: true }); continue; }
         cache[symbol] = { at: now, flags };
         out.set(symbol, { ...flags, source: "SEC EDGAR and Robinhood earnings", checked_at: new Date(now).toISOString() });
@@ -1633,9 +1650,21 @@ const LEARNING_RULES = {
 };
 const LEARNING_STRATEGY_LABELS = { SUPERTREND: "Supertrend", DIP: "Dip", PATTERN: "Pattern" };
 
+// Shadow mode: the last report's EPS surprise (see "EPS surprise of the last report" above).
+const EPS_SURPRISE_BIG_PCT_OF_PRICE = 0.2, EPS_SURPRISE_RECENT_DAYS = 30; // 0.2% of price was about the 80th percentile; 30 calendar days is about 20 sessions
+// Pure: the surprise as a percentage of the share price, how long ago the report was (counted to the day the filing data was checked), and a label
+// when the report is recent. Null when the last report or the price is unknown.
+function epsSurpriseOf(filing, price) {
+  const p = Number(price), estimate = filing?.last_eps_estimate, actual = filing?.last_eps_actual;
+  if (!filing?.last_eps_date || !Number.isFinite(estimate) || !Number.isFinite(actual) || !(p > 0)) return null;
+  const pct = Math.round((actual - estimate) / p * 100 * 1000) / 1000, day = iso => Math.floor(Date.parse(`${String(iso).slice(0, 10)}T00:00:00Z`) / 86400000), ago = Number.isFinite(day(filing.checked_at)) && Number.isFinite(day(filing.last_eps_date)) ? day(filing.checked_at) - day(filing.last_eps_date) : null;
+  const recent = ago !== null && ago >= 0 && ago <= EPS_SURPRISE_RECENT_DAYS;
+  return { pct_of_price: pct, days_ago: ago, label: !recent ? null : pct >= EPS_SURPRISE_BIG_PCT_OF_PRICE ? "BIG_BEAT" : pct > 0 ? "BEAT" : pct < 0 ? "MISS" : "MET" };
+}
+
 // What was known about an idea when it was logged. Used both to store with a pick and to test rules on a live idea, so the two always agree.
 function pickFeatures(item, marketState) {
-  const f = item.filing;
+  const f = item.filing, eps = epsSurpriseOf(f, item.price);
   return {
     score: item.score ?? item.rules_score ?? null, strategy: item.strategy, direction: item.direction, sector: item.sector || null,
     from_entry_atr: item.from_entry_atr ?? null, stop_pct: item.stop_pct ?? null, rr_t1: item.rr_t1 ?? null, alignment: item.alignment_score ?? null, age_days: item.age_days ?? null,
@@ -1645,6 +1674,8 @@ function pickFeatures(item, marketState) {
     chart_pattern: item.chart_pattern ?? null, prior_run_up: item.prior_run_up === true, market_regime: item.market_regime ?? null,
     lorentzian: item.lorentzian?.prediction ?? null, signals_for: item.signal_tally?.for ?? null, signals_against: item.signal_tally?.against ?? null,
     signals: item.signals?.length ? Object.fromEntries(item.signals.map(signal => [signal.key, signal.reading])) : null,
+    // Shadow mode (see "EPS surprise of the last report"): stored only.
+    eps_surprise_pct_of_price: eps?.pct_of_price ?? null, eps_report_days_ago: eps?.days_ago ?? null, eps_surprise: eps?.label ?? null,
   };
 }
 

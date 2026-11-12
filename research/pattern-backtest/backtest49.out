@@ -1,0 +1,139 @@
+Part 1: 3287 reports, reaction days 2025-04-09 to 2026-11-04, 514 stocks, 81 report weeks; 0 skipped (no am/pm timing).
+Beat 82%, miss 14%. Average reaction-day move vs SPY: beat 0.45%, miss -2.52%.
+
+ALL REPORTS (baseline): any stock bought at the open after its reaction day
+group                         n      5 sessions, minus avg stock    10 sessions, minus avg stock   21 sessions, minus avg stock   42 sessions, minus avg stock   
+all reports                   3287    0.09% t  0.9 beat avg 51%      0.05% t  0.3 beat avg 48%     -0.22% t -1.0 beat avg 45%     -0.28% t -1.1 beat avg 44%     
+
+EPS beat or miss
+group                         n      5 sessions, minus avg stock    10 sessions, minus avg stock   21 sessions, minus avg stock   42 sessions, minus avg stock   
+beat                          2708    0.08% t  0.8 beat avg 51%      0.09% t  0.5 beat avg 49%     -0.04% t -0.2 beat avg 46%      0.01% t  0.0 beat avg 45%     
+met                           115     0.11% t  0.3 beat avg 50%     -0.83% t -1.7 beat avg 38%     -1.78% t -2.7 beat avg 41%     -2.59% t -2.4 beat avg 36%     
+miss                          464     0.15% t  0.5 beat avg 51%      0.07% t  0.1 beat avg 45%     -0.85% t -1.6 beat avg 40%     -1.37% t -2.2 beat avg 39%     
+
+EPS surprise / price, fifths
+group                         n      5 sessions, minus avg stock    10 sessions, minus avg stock   21 sessions, minus avg stock   42 sessions, minus avg stock   
+fifth 1 (worst miss)          659     0.05% t  0.1 beat avg 50%     -0.27% t -0.7 beat avg 43%     -1.09% t -2.6 beat avg 39%     -1.55% t -2.5 beat avg 38%     
+fifth 2                       658    -0.29% t -1.6 beat avg 49%     -0.70% t -2.4 beat avg 46%     -0.81% t -2.0 beat avg 42%     -1.46% t -3.1 beat avg 41%     
+fifth 3                       657    -0.16% t -0.6 beat avg 50%     -0.36% t -1.3 beat avg 47%     -0.74% t -1.8 beat avg 43%     -0.58% t -1.2 beat avg 42%     
+fifth 4                       658     0.14% t  0.8 beat avg 52%      0.44% t  1.7 beat avg 52%      0.14% t  0.4 beat avg 47%      0.16% t  0.3 beat avg 45%     
+fifth 5 (biggest beat)        655     0.76% t  3.0 beat avg 54%      1.16% t  3.3 beat avg 54%      1.41% t  3.5 beat avg 52%      2.03% t  4.7 beat avg 55%     
+
+EPS surprise / |estimate|, fifths (other scaling)
+group                         n      5 sessions, minus avg stock    10 sessions, minus avg stock   21 sessions, minus avg stock   42 sessions, minus avg stock   
+fifth 1 (worst miss)          659     0.07% t  0.2 beat avg 51%     -0.22% t -0.6 beat avg 44%     -1.11% t -2.6 beat avg 39%     -1.46% t -2.2 beat avg 39%     
+fifth 2                       658    -0.12% t -0.6 beat avg 48%     -0.43% t -1.6 beat avg 45%     -0.78% t -2.0 beat avg 43%     -1.15% t -2.8 beat avg 42%     
+fifth 3                       657     0.00% t  0.0 beat avg 52%     -0.05% t -0.2 beat avg 48%     -0.19% t -0.6 beat avg 44%     -1.26% t -2.6 beat avg 39%     
+fifth 4                       658     0.15% t  0.8 beat avg 52%      0.20% t  0.7 beat avg 53%     -0.10% t -0.3 beat avg 48%      0.47% t  0.7 beat avg 48%     
+fifth 5 (biggest beat)        655     0.38% t  1.4 beat avg 51%      0.77% t  2.0 beat avg 52%      1.08% t  2.5 beat avg 49%      1.98% t  3.4 beat avg 52%     
+
+Reaction-day return vs SPY (EAR), fifths
+group                         n      5 sessions, minus avg stock    10 sessions, minus avg stock   21 sessions, minus avg stock   42 sessions, minus avg stock   
+fifth 1 (sold off)            659     0.18% t  0.6 beat avg 51%      0.40% t  1.0 beat avg 48%      0.24% t  0.6 beat avg 46%      0.25% t  0.4 beat avg 45%     
+fifth 2                       658     0.25% t  1.3 beat avg 54%      0.30% t  1.3 beat avg 51%     -0.22% t -0.6 beat avg 46%     -0.21% t -0.5 beat avg 41%     
+fifth 3                       657     0.06% t  0.3 beat avg 50%     -0.11% t -0.4 beat avg 49%     -0.39% t -0.9 beat avg 42%     -0.53% t -1.1 beat avg 43%     
+fifth 4                       658    -0.03% t -0.1 beat avg 49%     -0.21% t -0.7 beat avg 46%     -0.51% t -1.4 beat avg 46%     -1.05% t -2.5 beat avg 45%     
+fifth 5 (jumped)              655     0.00% t  0.0 beat avg 51%     -0.13% t -0.4 beat avg 47%     -0.22% t -0.6 beat avg 44%      0.13% t  0.2 beat avg 46%     
+
+Both together
+group                         n      5 sessions, minus avg stock    10 sessions, minus avg stock   21 sessions, minus avg stock   42 sessions, minus avg stock   
+beat and reaction up          1441   -0.04% t -0.3 beat avg 50%     -0.16% t -0.8 beat avg 48%     -0.20% t -0.8 beat avg 46%     -0.21% t -0.6 beat avg 47%     
+beat and reaction >= +3%      864    -0.02% t -0.1 beat avg 50%     -0.01% t -0.0 beat avg 48%     -0.05% t -0.1 beat avg 46%     -0.04% t -0.1 beat avg 47%     
+top fifth on both             163     0.41% t  0.9 beat avg 50%      0.95% t  1.5 beat avg 52%      0.85% t  1.1 beat avg 46%      2.31% t  2.2 beat avg 55%     
+beat but reaction down        1267    0.22% t  1.5 beat avg 52%      0.37% t  1.6 beat avg 51%      0.13% t  0.4 beat avg 45%      0.25% t  0.6 beat avg 44%     
+miss but reaction up          164     0.70% t  1.6 beat avg 56%      0.52% t  1.0 beat avg 48%     -0.51% t -0.7 beat avg 40%     -0.97% t -1.0 beat avg 45%     
+miss and reaction down        300    -0.14% t -0.4 beat avg 49%     -0.17% t -0.3 beat avg 43%     -1.02% t -1.7 beat avg 40%     -1.57% t -1.9 beat avg 36%     
+bottom fifth on both          193    -0.10% t -0.2 beat avg 50%     -0.38% t -0.5 beat avg 38%     -1.34% t -1.5 beat avg 37%     -1.98% t -1.4 beat avg 36%     
+
+Raw return after costs (not against a benchmark):
+all reports                   5d: avg 0.41% up 54%        10d: avg 0.74% up 53%       21d: avg 0.95% up 52%       42d: avg 1.63% up 52%       
+EPS surprise top fifth        5d: avg 0.96% up 57%        10d: avg 1.77% up 58%       21d: avg 2.54% up 60%       42d: avg 4.01% up 60%       
+EPS surprise bottom fifth     5d: avg 0.34% up 52%        10d: avg 0.47% up 50%       21d: avg -0.01% up 48%      42d: avg 0.29% up 47%       
+
+SPY-relative, for reference (the average stock lagged SPY in this window):
+all reports                   3287   -0.23% t -0.7 beat avg 47%     -0.49% t -1.3 beat avg 45%     -1.02% t -2.3 beat avg 41%     -1.90% t -3.2 beat avg 38%     
+
+Differences between groups, all reports (n=3287), average return minus the average stock:
+beat minus miss                               5d: -0.07% (t -0.2)       10d: 0.02% (t 0.0)        21d: 0.81% (t 1.4)        42d: 1.38% (t 2.0)        
+EPS surprise top fifth minus bottom fifth     5d: 0.71% (t 1.8)         10d: 1.42% (t 2.7)        21d: 2.50% (t 4.4)        42d: 3.58% (t 5.3)        
+EPS surprise / |estimate| top minus bottom fifth5d: 0.31% (t 0.7)         10d: 0.99% (t 1.8)        21d: 2.19% (t 3.4)        42d: 3.44% (t 4.9)        
+EPS surprise top fifth minus all other reports5d: 0.83% (t 2.9)         10d: 1.38% (t 3.8)        21d: 2.03% (t 5.2)        42d: 2.89% (t 6.4)        
+reaction top fifth minus bottom fifth         5d: -0.17% (t -0.4)       10d: -0.53% (t -1.0)      21d: -0.47% (t -0.7)      42d: -0.12% (t -0.1)      
+beat and up minus miss and down               5d: 0.10% (t 0.3)         10d: 0.01% (t 0.0)        21d: 0.83% (t 1.2)        42d: 1.36% (t 1.4)        
+beat and up minus all other reports           5d: -0.23% (t -1.2)       10d: -0.38% (t -1.3)      21d: 0.04% (t 0.1)        42d: 0.13% (t 0.3)        
+
+Differences between groups, reports in 2025 (n=1454), average return minus the average stock:
+beat minus miss                               5d: 0.42% (t 1.6)         10d: 0.73% (t 1.1)        21d: 1.29% (t 1.9)        42d: 1.81% (t 1.8)        
+EPS surprise top fifth minus bottom fifth     5d: 0.79% (t 2.1)         10d: 1.66% (t 2.4)        21d: 2.85% (t 4.2)        42d: 4.55% (t 5.6)        
+EPS surprise / |estimate| top minus bottom fifth5d: 0.31% (t 1.0)         10d: 0.91% (t 1.5)        21d: 2.16% (t 2.8)        42d: 3.47% (t 3.6)        
+EPS surprise top fifth minus all other reports5d: 0.46% (t 1.5)         10d: 1.05% (t 2.3)        21d: 1.92% (t 4.1)        42d: 3.40% (t 6.4)        
+reaction top fifth minus bottom fifth         5d: 0.95% (t 2.2)         10d: 0.63% (t 1.2)        21d: 1.03% (t 1.3)        42d: 2.21% (t 1.6)        
+beat and up minus miss and down               5d: 0.78% (t 2.5)         10d: 0.70% (t 0.9)        21d: 1.36% (t 1.5)        42d: 2.55% (t 1.8)        
+beat and up minus all other reports           5d: 0.30% (t 1.5)         10d: 0.27% (t 0.7)        21d: 0.55% (t 1.2)        42d: 1.06% (t 1.4)        
+
+Differences between groups, reports in 2026 (n=1833), average return minus the average stock:
+beat minus miss                               5d: -0.49% (t -0.9)       10d: -0.65% (t -0.8)      21d: 0.33% (t 0.4)        42d: 0.94% (t 1.1)        
+EPS surprise top fifth minus bottom fifth     5d: 0.66% (t 1.0)         10d: 1.21% (t 1.5)        21d: 2.15% (t 2.4)        42d: 2.61% (t 2.5)        
+EPS surprise / |estimate| top minus bottom fifth5d: 0.32% (t 0.4)         10d: 1.08% (t 1.2)        21d: 2.21% (t 2.1)        42d: 3.40% (t 3.3)        
+EPS surprise top fifth minus all other reports5d: 1.14% (t 2.6)         10d: 1.69% (t 3.1)        21d: 2.14% (t 3.5)        42d: 2.39% (t 3.4)        
+reaction top fifth minus bottom fifth         5d: -1.14% (t -2.2)       10d: -1.64% (t -1.9)      21d: -1.94% (t -2.3)      42d: -2.43% (t -2.1)      
+beat and up minus miss and down               5d: -0.53% (t -0.9)       10d: -0.70% (t -0.8)      21d: 0.27% (t 0.3)        42d: 0.09% (t 0.1)        
+beat and up minus all other reports           5d: -0.69% (t -3.0)       10d: -0.97% (t -2.7)      21d: -0.46% (t -1.0)      42d: -0.81% (t -1.3)      
+
+Differences between groups, all reports, against the SECTOR average (n=3287), average return minus the average stock:
+beat minus miss                               5d: -0.16% (t -0.6)       10d: -0.32% (t -0.8)      21d: -0.01% (t -0.0)      42d: -0.33% (t -0.5)      
+EPS surprise top fifth minus bottom fifth     5d: 0.66% (t 2.0)         10d: 1.19% (t 2.8)        21d: 1.77% (t 3.3)        42d: 2.27% (t 3.2)        
+EPS surprise / |estimate| top minus bottom fifth5d: 0.16% (t 0.4)         10d: 0.69% (t 1.5)        21d: 1.22% (t 2.1)        42d: 1.74% (t 2.7)        
+EPS surprise top fifth minus all other reports5d: 0.79% (t 3.3)         10d: 1.38% (t 4.5)        21d: 1.84% (t 5.5)        42d: 2.67% (t 5.6)        
+reaction top fifth minus bottom fifth         5d: -0.03% (t -0.1)       10d: -0.44% (t -0.8)      21d: -0.41% (t -0.7)      42d: -0.03% (t -0.0)      
+beat and up minus miss and down               5d: -0.06% (t -0.2)       10d: -0.37% (t -0.8)      21d: -0.11% (t -0.2)      42d: -0.50% (t -0.5)      
+beat and up minus all other reports           5d: -0.31% (t -1.6)       10d: -0.52% (t -1.9)      21d: -0.28% (t -0.9)      42d: -0.52% (t -1.1)      
+
+EPS surprise / price, top fifth minus bottom fifth, by report quarter (average stock benchmark):
+2025Q2 (n=480)                                5d: 0.03% (t 0.1)         10d: 0.17% (t 0.1)        21d: 2.66% (t 1.8)        42d: 4.52% (t 2.5)        
+2025Q3 (n=486)                                5d: 0.27% (t 0.7)         10d: 1.18% (t 2.3)        21d: 1.61% (t 1.7)        42d: 3.37% (t 6.4)        
+2025Q4 (n=488)                                5d: 2.05% (t 4.7)         10d: 3.60% (t 7.6)        21d: 4.29% (t 8.4)        42d: 5.78% (t 4.6)        
+2026Q1 (n=490)                                5d: 0.44% (t 0.3)         10d: -0.38% (t -0.2)      21d: 2.59% (t 1.3)        42d: 4.18% (t 2.2)        
+2026Q2 (n=490)                                5d: 1.69% (t 2.6)         10d: 2.16% (t 2.3)        21d: 2.34% (t 1.8)        42d: 0.37% (t 0.2)        
+2026Q3 (n=494)                                5d: 1.26% (t 2.8)         10d: 2.45% (t 2.5)        21d: 1.51% (t 1.2)        42d: 3.30% (t 2.5)        
+2026Q4 (n=359)                                5d: -1.88% (t -2.3)       10d: -1.55% (t -0.7)      21d: n/a                  42d: n/a                  
+
+Live-usable cut-off (previous quarter 80th percentile; cut-offs 0.153, 0.201, 0.286, 0.206, 0.202, 0.215 % of price), reports from 2025Q3 on:
+at or above the cut-off       596     0.75% t  3.5 beat avg 54%      1.34% t  4.2 beat avg 56%      1.32% t  3.1 beat avg 51%      2.22% t  4.2 beat avg 56%     
+below the cut-off             2211   -0.10% t -0.7 beat avg 50%     -0.22% t -1.0 beat avg 47%     -0.60% t -2.2 beat avg 43%     -0.86% t -2.7 beat avg 42%     
+difference                                    5d: 0.85% (t 3.3)         10d: 1.56% (t 4.3)        21d: 1.92% (t 4.1)        42d: 3.08% (t 5.3)        
+
+Is the top fifth just one kind of stock? Sector mix of the EPS-surprise top fifth vs all reports:
+Financials 17% (all 15%); Health Care 12% (all 12%); Information Technology 12% (all 14%); Real Estate 11% (all 6%); Consumer Discretionary 9% (all 9%); Industrials 8% (all 16%); Energy 7% (all 4%); Communication Services 7% (all 4%); Consumer Staples 5% (all 6%); Materials 4% (all 5%); Utilities 4% (all 6%); ? 3% (all 2%)
+
+################ Part 2, APP-GATED flips (ADX >= 20 and rising): 186 flips from 2025-04-23
+group                                       Supertrend-line exit (60-session limit)       fixed 20 sessions
+all flips                                   n= 176 win  44% avg  1.41% (t 1.5)            n= 186 win  56% avg  0.56% (t 0.9)
+no report in the last 20 sessions           n=  73 win  49% avg  2.36% (t 1.8)            n=  81 win  64% avg  1.66% (t 1.6)
+report in the last 20 sessions              n= 103 win  41% avg  0.74% (t 0.6)            n= 105 win  50% avg -0.29% (t -0.4)
+  that report: EPS beat                     n=  95 win  41% avg  0.94% (t 0.7)            n=  96 win  53% avg -0.12% (t -0.2)
+  that report: EPS miss                     n=   6 win  33% avg -1.68% (t n/a)            n=   7 win  14% avg -2.68% (t n/a)
+  that report: reaction up                  n=  82 win  39% avg  0.63% (t 0.4)            n=  82 win  54% avg  0.06% (t 0.1)
+  that report: reaction down                n=  21 win  48% avg  1.19% (t 0.4)            n=  23 win  39% avg -1.57% (t -1.3)
+  that report: beat and reaction up         n=  78 win  40% avg  0.83% (t 0.5)            n=  78 win  54% avg  0.08% (t 0.1)
+  that report: beat and reaction >= +3%     n=  62 win  44% avg  1.50% (t 0.9)            n=  62 win  56% avg  0.48% (t 0.5)
+  that report: miss or reaction down        n=  25 win  44% avg  0.47% (t 0.2)            n=  27 win  41% avg -1.36% (t -1.2)
+  that report: EPS surprise top fifth       n=  27 win  41% avg  0.86% (t 0.4)            n=  27 win  48% avg -1.88% (t -1.2)
+  that report: EPS surprise fifths 1-4      n=  76 win  41% avg  0.70% (t 0.5)            n=  78 win  51% avg  0.26% (t 0.4)
+  that report: EPS surprise bottom two fifthsn=  31 win  26% avg -2.43% (t -1.9)           n=  32 win  41% avg -1.24% (t -1.4)
+
+################ Part 2, ALL daily flips: 2397 flips from 2025-04-14
+group                                       Supertrend-line exit (60-session limit)       fixed 20 sessions
+all flips                                   n=2254 win  40% avg  1.61% (t 2.3)            n=2397 win  53% avg  0.72% (t 1.4)
+no report in the last 20 sessions           n=1400 win  40% avg  1.53% (t 1.7)            n=1505 win  55% avg  1.05% (t 1.6)
+report in the last 20 sessions              n= 854 win  41% avg  1.73% (t 1.7)            n= 892 win  49% avg  0.16% (t 0.3)
+  that report: EPS beat                     n= 718 win  42% avg  1.98% (t 2.0)            n= 749 win  51% avg  0.35% (t 0.6)
+  that report: EPS miss                     n= 107 win  33% avg  0.20% (t 0.1)            n= 114 win  39% avg -0.77% (t -0.8)
+  that report: reaction up                  n= 502 win  44% avg  2.47% (t 1.9)            n= 524 win  55% avg  0.86% (t 1.3)
+  that report: reaction down                n= 352 win  37% avg  0.68% (t 0.7)            n= 368 win  41% avg -0.82% (t -1.3)
+  that report: beat and reaction up         n= 441 win  44% avg  2.70% (t 2.1)            n= 459 win  56% avg  1.13% (t 1.6)
+  that report: beat and reaction >= +3%     n= 283 win  42% avg  1.70% (t 1.5)            n= 293 win  55% avg  0.96% (t 1.4)
+  that report: miss or reaction down        n= 413 win  37% avg  0.70% (t 0.8)            n= 433 win  42% avg -0.86% (t -1.5)
+  that report: EPS surprise top fifth       n= 218 win  48% avg  4.04% (t 2.7)            n= 227 win  54% avg  0.74% (t 0.8)
+  that report: EPS surprise fifths 1-4      n= 636 win  38% avg  0.94% (t 0.9)            n= 665 win  48% avg -0.03% (t -0.1)
+  that report: EPS surprise bottom two fifthsn= 307 win  32% avg -0.55% (t -0.6)           n= 320 win  42% avg -0.89% (t -1.6)

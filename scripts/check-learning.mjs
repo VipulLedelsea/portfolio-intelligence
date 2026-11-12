@@ -8,12 +8,29 @@ const start = source.indexOf("// ---- Continuous learning"), end = source.indexO
 assert.ok(start > 0 && end > start, "The learning code block must exist");
 const code = `const numeric=v=>{const n=Number(v);return Number.isFinite(n)?n:0};const round=(v,d=2)=>Math.round(v*10**d)/10**d;
 const RANK_FILTER_LABELS={ STOP_HIT:"stop already hit", CHASED:"price already ran past the entry" };const SCANNER_USER_ID="x";
-const edgarCacheWrite=async()=>{},edgarCacheRead=async()=>null,requireSubscription=async()=>{},requestUser=async()=>null,readBody=async()=>({});\n${source.slice(start, end)}\nexport { pickFeatures, learnedPenalty, evaluateLearningRule, buildLearningReport, buildAdvisorReport, learningAdmin, LEARNING_RULES };`;
-const { pickFeatures, learnedPenalty, evaluateLearningRule, buildLearningReport, buildAdvisorReport, learningAdmin } = await import("data:text/javascript;base64," + Buffer.from(code).toString("base64"));
+const edgarCacheWrite=async()=>{},edgarCacheRead=async()=>null,requireSubscription=async()=>{},requestUser=async()=>null,readBody=async()=>({});\n${source.slice(start, end)}\nexport { epsSurpriseOf, pickFeatures, learnedPenalty, evaluateLearningRule, buildLearningReport, buildAdvisorReport, learningAdmin, LEARNING_RULES };`;
+const { epsSurpriseOf, pickFeatures, learnedPenalty, evaluateLearningRule, buildLearningReport, buildAdvisorReport, learningAdmin } = await import("data:text/javascript;base64," + Buffer.from(code).toString("base64"));
 
 const item = { strategy: "DIP", direction: "LONG", sector: "Energy", score: 61, from_entry_atr: 0.4, stop_pct: 9.2, rr_t1: 0.5, alignment_score: 70, age_days: 1, volume_ratio: null, atr_pct: 3, crowded: false, filing: { earnings_in_days: 5, cautions: [] } };
 const f = pickFeatures(item, "DOWN");
 assert.equal(f.stop_pct, 9.2); assert.equal(f.earnings_in_days, 5); assert.equal(f.market_state, "DOWN"); assert.equal(f.volume_ratio, null);
+
+// Shadow-mode EPS surprise: stored with the pick, and nothing else reads it.
+assert.equal(f.eps_surprise, null); assert.equal(f.eps_surprise_pct_of_price, null); assert.equal(f.eps_report_days_ago, null);
+const filed = (date, estimate, actual) => ({ last_eps_date: date, last_eps_estimate: estimate, last_eps_actual: actual, checked_at: "2026-11-12T10:00:00.000Z" });
+assert.deepEqual(epsSurpriseOf(filed("2026-11-02", 1.5, 2.0), 100), { pct_of_price: 0.5, days_ago: 10, label: "BIG_BEAT" });
+assert.equal(epsSurpriseOf(filed("2026-11-02", 1.5, 1.6), 100).label, "BEAT");
+assert.equal(epsSurpriseOf(filed("2026-11-02", 1.5, 1.5), 100).label, "MET");
+assert.equal(epsSurpriseOf(filed("2026-11-02", 1.5, 1.2), 100).label, "MISS");
+assert.equal(epsSurpriseOf(filed("2026-10-13", 1.5, 1.7), 100).label, "BIG_BEAT", "30 days ago is still recent");
+const old = epsSurpriseOf(filed("2026-08-01", 1.5, 2.0), 100);
+assert.equal(old.label, null, "An old report keeps its figure but gets no label"); assert.equal(old.pct_of_price, 0.5); assert.equal(old.days_ago, 103);
+assert.equal(epsSurpriseOf(filed("2026-11-02", 1.5, 2.0), 0), null); assert.equal(epsSurpriseOf(filed("2026-11-02", 1.5, 2.0), undefined), null);
+assert.equal(epsSurpriseOf({ earnings_in_days: 5 }, 100), null); assert.equal(epsSurpriseOf(null, 100), null);
+assert.equal(epsSurpriseOf({ ...filed("2026-11-02", 1.5, 2.0), checked_at: undefined }, 100).label, null, "No check date: no label");
+const withEps = pickFeatures({ ...item, price: 50, filing: { ...item.filing, ...filed("2026-11-02", 1.5, 1.4) } }, "UP");
+assert.equal(withEps.eps_surprise, "MISS"); assert.equal(withEps.eps_surprise_pct_of_price, -0.2); assert.equal(withEps.eps_report_days_ago, 10);
+assert.equal(learnedPenalty({ ...item, price: 50, stop_pct: 5, filing: filed("2026-11-02", 1.5, 1.0) }, "UP", [{ rule_key: "WIDE_STOP|DIP", penalty: 10 }]).points, 0, "An EPS miss takes no points off");
 
 // Approved rules only touch their own strategy and condition.
 const rules = [{ rule_key: "WIDE_STOP|DIP", penalty: 10 }];
