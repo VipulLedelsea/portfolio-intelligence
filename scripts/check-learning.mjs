@@ -6,9 +6,12 @@ import { fileURLToPath } from "node:url";
 const source = readFileSync(fileURLToPath(new URL("../worker/runtime.js", import.meta.url)), "utf8");
 const start = source.indexOf("// ---- Continuous learning"), end = source.indexOf("// ---- Unified ranking");
 assert.ok(start > 0 && end > start, "The learning code block must exist");
+// marketStateFor lives outside this block (beside marketTrend), so the real function is lifted in with it.
+const stateStart = source.indexOf("function marketStateFor"), stateFor = source.slice(stateStart, source.indexOf("\n}\n", stateStart) + 3);
+assert.ok(stateStart > 0, "marketStateFor must exist");
 const code = `const numeric=v=>{const n=Number(v);return Number.isFinite(n)?n:0};const round=(v,d=2)=>Math.round(v*10**d)/10**d;
 const RANK_FILTER_LABELS={ STOP_HIT:"stop already hit", CHASED:"price already ran past the entry" };const SCANNER_USER_ID="x";
-const edgarCacheWrite=async()=>{},edgarCacheRead=async()=>null,requireSubscription=async()=>{},requestUser=async()=>null,readBody=async()=>({});\n${source.slice(start, end)}\nexport { epsSurpriseOf, pickFeatures, learnedPenalty, evaluateLearningRule, buildLearningReport, buildAdvisorReport, learningAdmin, LEARNING_RULES };`;
+const edgarCacheWrite=async()=>{},edgarCacheRead=async()=>null,requireSubscription=async()=>{},requestUser=async()=>null,readBody=async()=>({});\n${stateFor}\n${source.slice(start, end)}\nexport { epsSurpriseOf, pickFeatures, learnedPenalty, evaluateLearningRule, buildLearningReport, buildAdvisorReport, learningAdmin, LEARNING_RULES };`;
 const { epsSurpriseOf, pickFeatures, learnedPenalty, evaluateLearningRule, buildLearningReport, buildAdvisorReport, learningAdmin } = await import("data:text/javascript;base64," + Buffer.from(code).toString("base64"));
 
 const item = { strategy: "DIP", direction: "LONG", sector: "Energy", score: 61, from_entry_atr: 0.4, stop_pct: 9.2, rr_t1: 0.5, alignment_score: 70, age_days: 1, volume_ratio: null, atr_pct: 3, crowded: false, filing: { earnings_in_days: 5, cautions: [] } };
@@ -94,3 +97,8 @@ const advThin = buildAdvisorReport([...Array.from({ length: 10 }, (_, i) => advR
 assert.match(advThin.verdict, /Too early/); assert.equal(advThin.judged, 20); assert.equal(advThin.ci, null);
 assert.ok(report.advisor && report.by_strategy.DIP, "the main report carries the advisor section and results by strategy");
 console.log("Learning checks passed");
+
+// Forex: the market state is the US Dollar Index, read per pair. A rising dollar is a headwind for long EUR/USD, a tailwind for long USD/JPY and neutral for a cross.
+const fx = (symbol, state = "UP") => pickFeatures({ symbol, market: "FX", direction: "LONG", strategy: "SUPERTREND" }, state).market_state;
+assert.equal(fx("EURUSD"), "DOWN"); assert.equal(fx("USDJPY"), "UP"); assert.equal(fx("EURGBP"), "MIXED"); assert.equal(fx("GBPUSD", "DOWN"), "UP"); assert.equal(fx("EURUSD", "MIXED"), "MIXED");
+assert.equal(pickFeatures({ symbol: "USDT", market: "US", direction: "LONG" }, "UP").market_state, "UP", "Stocks keep the index state as it is");
