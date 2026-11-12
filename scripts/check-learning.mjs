@@ -8,8 +8,8 @@ const start = source.indexOf("// ---- Continuous learning"), end = source.indexO
 assert.ok(start > 0 && end > start, "The learning code block must exist");
 const code = `const numeric=v=>{const n=Number(v);return Number.isFinite(n)?n:0};const round=(v,d=2)=>Math.round(v*10**d)/10**d;
 const RANK_FILTER_LABELS={ STOP_HIT:"stop already hit", CHASED:"price already ran past the entry" };const SCANNER_USER_ID="x";
-const edgarCacheWrite=async()=>{},edgarCacheRead=async()=>null,requireSubscription=async()=>{},requestUser=async()=>null,readBody=async()=>({});\n${source.slice(start, end)}\nexport { pickFeatures, learnedPenalty, evaluateLearningRule, buildLearningReport, learningAdmin, LEARNING_RULES };`;
-const { pickFeatures, learnedPenalty, evaluateLearningRule, buildLearningReport, learningAdmin } = await import("data:text/javascript;base64," + Buffer.from(code).toString("base64"));
+const edgarCacheWrite=async()=>{},edgarCacheRead=async()=>null,requireSubscription=async()=>{},requestUser=async()=>null,readBody=async()=>({});\n${source.slice(start, end)}\nexport { pickFeatures, learnedPenalty, evaluateLearningRule, buildLearningReport, buildAdvisorReport, learningAdmin, LEARNING_RULES };`;
+const { pickFeatures, learnedPenalty, evaluateLearningRule, buildLearningReport, buildAdvisorReport, learningAdmin } = await import("data:text/javascript;base64," + Buffer.from(code).toString("base64"));
 
 const item = { strategy: "DIP", direction: "LONG", sector: "Energy", score: 61, from_entry_atr: 0.4, stop_pct: 9.2, rr_t1: 0.5, alignment_score: 70, age_days: 1, volume_ratio: null, atr_pct: 3, crowded: false, filing: { earnings_in_days: 5, cautions: [] } };
 const f = pickFeatures(item, "DOWN");
@@ -56,4 +56,24 @@ assert.equal(learningAdmin({ email: "a@x.com" }, { LEARNING_ADMIN_EMAILS: "A@x.c
 assert.equal(learningAdmin({ email: "c@x.com" }, { LEARNING_ADMIN_EMAILS: "a@x.com" }), false);
 assert.equal(learningAdmin({ email: "a@x.com" }, {}), false, "No administrator configured: nobody can decide");
 assert.equal(learningAdmin({ email: null }, { LEARNING_ADMIN_EMAILS: "a@x.com" }), false, "A mobile session has no email and cannot decide");
+
+// ---- Did the advisor add anything? ----
+// 40 kept ideas that gained about 2% and 40 rejected ones that lost about 1%, spread over 20 days: a real difference must be reported as value added.
+const advRow = (verdict, ret, i, extra = {}) => ({ strategy: "DIP", ret: 99, adv_ret: ret + (i % 3 - 1) * 0.5, date: `2026-03-${String(1 + i % 20).padStart(2, "0")}`, features: { score: 60 }, advisor: { verdict, prompt: "p1", ...extra } });
+const advGood = buildAdvisorReport([...Array.from({ length: 40 }, (_, i) => advRow("KEPT", 2, i, { confidence: i % 2 ? "High" : "Med", win_prob: 60 })), ...Array.from({ length: 40 }, (_, i) => advRow("REJECTED", -1, i, { by: i % 4 ? "model" : "code" }))]);
+assert.equal(advGood.kept.n, 40); assert.equal(advGood.rejected.n, 40); assert.ok(Math.abs(advGood.kept.mean_return_pct - 2) < 0.05, "the result is measured from the verdict price, not the logged return");
+assert.ok(advGood.diff > 2.5 && advGood.ci[0] > 0); assert.match(advGood.verdict, /adding value/);
+assert.equal(advGood.rejected_by_model.n, 30); assert.equal(advGood.rejected_by_code.n, 10);
+assert.equal(advGood.by_confidence.find(c => c.confidence === "High").n, 20);
+assert.deepEqual(advGood.probability.find(p => p.label === "55 to 65"), { label: "55 to 65", n: 40, stated_pct: 60, actual_win_rate_pct: 100 });
+assert.equal(advGood.by_prompt[0].prompt, "p1");
+// the same picks with the labels swapped must be reported as hurting, and no difference as no difference
+const advBad = buildAdvisorReport([...Array.from({ length: 40 }, (_, i) => advRow("KEPT", -1, i)), ...Array.from({ length: 40 }, (_, i) => advRow("REJECTED", 2, i, { by: "model" }))]);
+assert.match(advBad.verdict, /WORSE/);
+const advFlat = buildAdvisorReport([...Array.from({ length: 40 }, (_, i) => advRow("KEPT", 1, i)), ...Array.from({ length: 40 }, (_, i) => advRow("REJECTED", 1, i, { by: "model" }))]);
+assert.match(advFlat.verdict, /No measurable difference/);
+// advThin samples and ideas with no verdict say nothing
+const advThin = buildAdvisorReport([...Array.from({ length: 10 }, (_, i) => advRow("KEPT", 5, i)), ...Array.from({ length: 10 }, (_, i) => advRow("REJECTED", -5, i)), { strategy: "DIP", ret: 1, adv_ret: null, date: "2026-03-01", features: {}, advisor: null }]);
+assert.match(advThin.verdict, /Too early/); assert.equal(advThin.judged, 20); assert.equal(advThin.ci, null);
+assert.ok(report.advisor && report.by_strategy.DIP, "the main report carries the advisor section and results by strategy");
 console.log("Learning checks passed");

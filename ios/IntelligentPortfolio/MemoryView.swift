@@ -7,7 +7,7 @@ struct MemoryView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("US Supertrend ideas are followed until the daily Supertrend breaks and graded at the next open, with no time limit. Other calls are graded when they hit a level or after ten completed market sessions.")
+                    Text("Every idea is recorded the moment it appears and scored when it ends. Losses count too.")
                         .foregroundStyle(AppTheme.muted)
                     TrackRecordPanel(record: model.trackRecord)
                     LearningPanel(learning: model.learning)
@@ -23,6 +23,7 @@ struct MemoryView: View {
                         }
                         .panel()
                     } else if let memory = model.memory, let summary = memory.summary {
+                        Text("Your own research calls").font(.title3.weight(.semibold)).accessibilityAddTraits(.isHeader)
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
                             metric("Tracked", "\(summary.totalCalls)")
                             metric("Pending", "\(summary.pendingCalls)")
@@ -36,14 +37,15 @@ struct MemoryView: View {
                             MemoryRow(record: record)
                         }
                     } else {
-                        ProgressView("Loading recommendation memory…").tint(AppTheme.amber)
+                        ProgressView("Loading your research calls…").tint(AppTheme.amber)
                     }
+                    ResearchFootnote()
                 }
                 .padding(16)
                 .readableWidth()
             }
             .background(AppTheme.background)
-            .navigationTitle("Learning memory")
+            .navigationTitle("Track record")
             .task { await model.refreshTrackRecord(); await model.refreshLearning() }
             .refreshable { await Task { await model.refreshMemory(); await model.refreshTrackRecord() }.value }
         }
@@ -101,70 +103,133 @@ struct TrackRecordPanel: View {
     /// The summary for the chosen scanner; falls back to the Supertrend summary from older servers.
     private var chosen: TrackRecordStrategy? { record?.strategies?.first { $0.id == strategy } }
     private var shownSummary: TrackRecordSummary? { chosen?.summary ?? record?.summary }
-    private func shortName(_ id: String) -> String { id == "SUPERTREND" ? "Supertrend" : id == "DIP" ? "Dip scan" : id == "PATTERN" ? "Pattern" : "Dip, gate closed" }
+    private func shortName(_ id: String) -> String { id == "SUPERTREND" ? "Trend" : id == "DIP" ? "Dips" : id == "PATTERN" ? "Patterns" : "Skipped" }
+    @State private var showingMethod = false
+    /// Averages and win rates are held back until this many ideas have finished, because fewer swing by luck.
+    private static let enough = 30
 
-    /// Graded picks grouped by what the bull-versus-bear debate leaned. Shown once any pick with a logged lean has been graded.
+    /// Finished ideas grouped by which way the for-and-against reading leaned. Shown once any such idea has finished.
     @ViewBuilder private var debateResults: some View {
         let rows = (record?.debate ?? []).filter { $0.summary.settledPicks > 0 }
         if !rows.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                SectionLabel(text: "Results by the debate's lean")
+                SectionLabel(text: "Results by the for-and-against reading")
                 ForEach(rows) { row in
-                    Text("\(row.label): \(row.summary.settledPicks) graded, \(percent(row.summary.averageReturnPct, signed: true)) average, \(percent(row.summary.winRatePct, signed: false)) wins")
+                    Text("\(row.label): \(row.summary.settledPicks) finished, \(percent(row.summary.averageReturnPct, signed: true)) average, \(percent(row.summary.winRatePct, signed: false)) made money")
                         .font(.footnote)
                 }
-                Text("This checks whether the debate's lean means anything. It does not change any score.").font(.caption2).foregroundStyle(AppTheme.muted)
+                Text("This checks whether that reading means anything. It does not change any strength score.").font(.caption).foregroundStyle(AppTheme.muted)
             }
         }
     }
 
-    /// What graded picks have in common (hit the stop, earnings in the hold, the market moved against them). Counts only; small samples are flagged.
+    /// What finished ideas have in common. Counts only; small samples are flagged.
     @ViewBuilder private var lessonsBlock: some View {
         if let lessons = record?.lessons, lessons.graded > 0 {
             VStack(alignment: .leading, spacing: 6) {
-                SectionLabel(text: "What graded picks have in common")
+                SectionLabel(text: "What finished ideas have in common")
                 ForEach(lessons.notes, id: \.self) { Text($0).font(.footnote).foregroundStyle(AppTheme.muted) }
             }
         }
     }
 
+    /// The most recent finished ideas for the chosen scan type, one line each, so the totals can be checked against named results.
+    @ViewBuilder private var finishedList: some View {
+        let rows = (record?.finished ?? []).filter { $0.strategy == strategy }.prefix(10)
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Finished ideas").font(.headline).padding(.bottom, 6)
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, idea in
+                    if index > 0 { Rectangle().fill(AppTheme.hairline).frame(height: 1) }
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(idea.symbol).font(.subheadline.weight(.semibold))
+                        Text(PlainWords.side(idea.direction)).font(.caption).foregroundStyle(AppTheme.muted)
+                        if let day = idea.settledAt.flatMap(Self.shortDay) { Text(day).font(.caption).foregroundStyle(AppTheme.muted) }
+                        Spacer(minLength: 8)
+                        if let value = idea.returnPct {
+                            Text((value > 0 ? "Gain " : value < 0 ? "Loss " : "Flat ") + String(format: "%+.2f%%", value))
+                                .font(.subheadline.weight(.semibold)).foregroundStyle(value > 0 ? AppTheme.mint : value < 0 ? AppTheme.red : AppTheme.muted)
+                        }
+                    }
+                    .padding(.vertical, 10)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
+    }
+
+    /// "Nov 9" from an ISO timestamp or date.
+    private static func shortDay(_ stamp: String) -> String? {
+        let parts = stamp.prefix(10).split(separator: "-")
+        guard parts.count == 3, let month = Int(parts[1]), let day = Int(parts[2]), (1...12).contains(month) else { return nil }
+        return "\(Calendar.current.shortMonthSymbols[month - 1]) \(day)"
+    }
+
+    /// How many of the finished ideas made money, from the win rate the server reports.
+    private func winners(_ summary: TrackRecordSummary) -> Int? {
+        summary.winRatePct.map { Int(($0 / 100 * Double(summary.settledPicks)).rounded()) }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionLabel(text: "Scanner track record")
             if let strategies = record?.strategies, strategies.count > 1 {
-                Picker("Scanner", selection: $strategy) {
+                Picker("Scan type", selection: $strategy) {
                     ForEach(strategies) { Text(shortName($0.id)).tag($0.id) }
                 }
                 .pickerStyle(.segmented)
-                if let label = chosen?.label { Text(label).font(.footnote).foregroundStyle(AppTheme.muted) }
             }
             if let summary = shownSummary, record?.available == true {
                 let n = summary.settledPicks
-                if n == 0 {
-                    Text("No scanner picks have been graded yet. \(summary.pendingPicks) are still running: Supertrend picks close when the daily trend breaks.")
-                        .foregroundStyle(AppTheme.muted)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 10)], spacing: 10) {
+                    stat("Finished", "\(n)")
+                    stat("Made money", winners(summary).map { "\($0) of \(n)" } ?? "-")
+                    stat("Still open", "\(summary.pendingPicks)")
+                }
+                if n < Self.enough {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Too early to judge").font(.headline)
+                        Text("A handful of results can swing either way by luck. Win rate and average return appear here once \(Self.enough) ideas have finished.")
+                            .font(.subheadline).foregroundStyle(.white.opacity(0.85)).fixedSize(horizontal: false, vertical: true)
+                        ProgressView(value: Double(n), total: Double(Self.enough)).tint(AppTheme.amber)
+                            .accessibilityLabel("\(n) of \(Self.enough) finished")
+                        Text("\(n) of \(Self.enough) finished").font(.caption).foregroundStyle(AppTheme.muted)
+                    }
                 } else {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {
-                        stat("Graded picks", "\(n)")
-                        stat("Still open", "\(summary.pendingPicks)")
                         stat("Win rate", percent(summary.winRatePct, signed: false))
-                        stat("Avg return", percent(summary.averageReturnPct, signed: true))
-                        stat("Avg win", percent(summary.averageWinPct, signed: true))
-                        stat("Avg loss", percent(summary.averageLossPct, signed: true))
+                        stat("Average result", percent(summary.averageReturnPct, signed: true))
+                        stat("Average gain", percent(summary.averageWinPct, signed: true))
+                        stat("Average loss", percent(summary.averageLossPct, signed: true))
                         stat("Worst loss", percent(summary.worstLossPct, signed: true))
-                        stat("Stop hit", percent(summary.stopHitRatePct, signed: false))
-                    }
-                    if n < 30 {
-                        Text("Only \(n) graded so far. Small samples can swing widely, so treat these as early results.")
-                            .font(.footnote).foregroundStyle(AppTheme.amber)
+                        stat("Hit the exit line", percent(summary.stopHitRatePct, signed: false))
                     }
                 }
-                debateResults
-                lessonsBlock
-                Text(record?.methodology ?? "")
-                    .font(.footnote).foregroundStyle(AppTheme.muted)
+                finishedList
+                Button {
+                    withAnimation(.snappy(duration: 0.25)) { showingMethod.toggle() }
+                } label: {
+                    HStack {
+                        Text("How ideas are scored").font(.subheadline.weight(.semibold))
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.down").font(.footnote.weight(.semibold)).foregroundStyle(AppTheme.muted)
+                            .rotationEffect(.degrees(showingMethod ? 180 : 0))
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if showingMethod {
+                    if n > 0, n < Self.enough {
+                        Text("So far: \(percent(summary.averageReturnPct, signed: true)) average result across \(n) finished \(n == 1 ? "idea" : "ideas"). Too few to mean anything yet.")
+                            .font(.footnote).foregroundStyle(AppTheme.muted)
+                    }
+                    debateResults
+                    lessonsBlock
+                    Text(record?.methodology ?? "")
+                        .font(.footnote).foregroundStyle(AppTheme.muted)
+                }
             } else {
-                Text("Track record is loading or not available yet.").foregroundStyle(AppTheme.muted)
+                Text("The track record is loading or not available yet.").foregroundStyle(AppTheme.muted)
             }
         }
         .panel()
@@ -172,10 +237,11 @@ struct TrackRecordPanel: View {
 
     private func stat(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading) {
-            Text(title.uppercased()).font(.caption2).foregroundStyle(AppTheme.muted)
-            Text(value).font(.title3.monospaced().bold())
+            Text(title).font(.caption).foregroundStyle(AppTheme.muted)
+            Text(value).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 
     private func percent(_ value: Double?, signed: Bool) -> String {
@@ -192,9 +258,36 @@ struct LearningPanel: View {
 
     private func pct(_ value: Double?) -> String { value.map { String(format: "%+.2f%%", $0) } ?? "n/a" }
 
+    @State private var showingDetail = false
+    private var rules: [LearningRule] { learning?.rules ?? [] }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionLabel(text: "What we have learned")
+            Text("What we've learned").font(.headline)
+            Text(rules.isEmpty
+                 ? "Nothing yet. A lesson is only adopted once enough ideas have finished to trust it."
+                 : "\(rules.count) possible \(rules.count == 1 ? "lesson" : "lessons") so far. Nothing changes until it is approved.")
+                .font(.subheadline).foregroundStyle(.white.opacity(0.85)).fixedSize(horizontal: false, vertical: true)
+            Button {
+                withAnimation(.snappy(duration: 0.25)) { showingDetail.toggle() }
+            } label: {
+                HStack {
+                    Text("Show the working").font(.subheadline.weight(.semibold))
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.down").font(.footnote.weight(.semibold)).foregroundStyle(AppTheme.muted)
+                        .rotationEffect(.degrees(showingDetail ? 180 : 0))
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if showingDetail { detail }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
+    }
+
+    @ViewBuilder private var detail: some View {
             if let report = learning?.report {
                 Text("\(report.gradedReal) graded picks measured, plus \(report.gradedShadow) that our filters skipped.").font(.footnote).foregroundStyle(AppTheme.muted)
                 if let note = report.note { Text(note).font(.footnote).foregroundStyle(AppTheme.amber) }
@@ -209,7 +302,6 @@ struct LearningPanel: View {
                         Text("Skipped, \(filter.label): \(filter.n) picks, \(pct(filter.meanReturnPct)) average. \(filter.verdict)").font(.caption).foregroundStyle(AppTheme.muted)
                     }
                 }
-                let rules = learning?.rules ?? []
                 if !rules.isEmpty {
                     Text("Learned rules").font(.subheadline.weight(.semibold))
                     ForEach(rules) { rule in
@@ -226,8 +318,5 @@ struct LearningPanel: View {
                 Text("The first learning report is written after picks are graded. Nothing is changed automatically.").font(.footnote).foregroundStyle(AppTheme.muted)
             }
             if let how = learning?.howItWorks { Text(how).font(.caption2).foregroundStyle(AppTheme.muted) }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .panel()
     }
 }

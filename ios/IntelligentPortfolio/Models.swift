@@ -291,6 +291,20 @@ struct RankedIdea: Decodable, Identifiable, Hashable, Sendable {
     let priorRunUp: Bool?
     let marketRegime: String?
     let spyBelowHighPct: Double?
+    /// Information only: the Lorentzian Classification indicator's reading on the stock's last year of daily bars. Absent on older server data.
+    let lorentzian: LorentzianReading?
+}
+
+/// The Lorentzian Classification indicator's output for one stock (a port of jdehorty's open-source TradingView script, default settings).
+/// `prediction` is the sum of the neighbours' votes, from -8 to +8. `signal` is 1 long, -1 short, 0 none, after the indicator's own filters.
+struct LorentzianReading: Decodable, Hashable, Sendable {
+    let prediction: Int
+    let neighbors: Int
+    let signal: Int
+    let filtersPass: Bool
+    let votesLong: Int
+    let votesShort: Int
+    let bars: Int
 }
 
 extension RankedIdea {
@@ -308,6 +322,88 @@ extension RankedIdea {
         default: break
         }
         return chips
+    }
+}
+
+// MARK: - Plain wording
+
+/// Everyday wording for the idea cards, built from the scanner's own fields so no figure is invented.
+enum PlainWords {
+    static func side(_ direction: String) -> String { direction == "LONG" ? "Long" : "Short" }
+    static func exitLabel(_ direction: String) -> String { direction == "LONG" ? "Exit below" : "Exit above" }
+
+    /// How far the exit line is from the entry, as a rounded percentage.
+    static func risk(entry: Double, stop: Double, stopPct: Double? = nil) -> String {
+        let pct = stopPct ?? (entry > 0 ? abs(entry - stop) / entry * 100 : 0)
+        return pct > 0 ? "about \(Int(pct.rounded()))%" : "-"
+    }
+
+    /// What kind of setup this is, from the scanner that found it. Nil for a scanner this build does not know.
+    static func setup(strategy: String, long: Bool) -> String? {
+        switch strategy.uppercased() {
+        case let s where s.hasPrefix("SUPERTREND"): long ? "Uptrend that is getting stronger." : "Downtrend that is getting stronger."
+        case let s where s.contains("DIP"): "A dip in a stock that is in an uptrend, while the market is under stress."
+        case let s where s.hasPrefix("PATTERN"): long ? "Broke out upward on a strong day. Experimental scan." : "Broke down on a weak day. Experimental scan."
+        default: nil
+        }
+    }
+}
+
+extension RankedIdea {
+    var isLong: Bool { direction == "LONG" }
+    var inBuyRange: Bool { buyRange?.state == "IN_BUY_RANGE" }
+    private var hasFilingCaution: Bool { !(filing?.cautions ?? []).isEmpty }
+    private var earningsSoon: Int? { filing?.earningsInDays.flatMap { (0...10).contains($0) ? $0 : nil } }
+    private var isOld: Bool { (ageDays ?? 0) > 2 }
+
+    /// One or two plain sentences for the card. Falls back to the server's reason for an unknown scanner.
+    var plainReason: String {
+        guard let setup = PlainWords.setup(strategy: strategy, long: isLong) else { return reason }
+        var parts = [setup]
+        if isOld, let age = ageDays {
+            parts.append("The signal is \(age) days old, so part of the move has already happened.")
+        } else if inBuyRange {
+            parts.append("The price is still close to where the signal fired.")
+        }
+        if let range = buyRange, !inBuyRange { parts.append("The price has moved away from the signal (\(range.label.lowercased())).") }
+        if hasFilingCaution { parts.append("A recent company filing raises a caution.") }
+        if let days = earningsSoon { parts.append(days == 0 ? "Earnings are due today." : "Earnings are due in \(days) day\(days == 1 ? "" : "s").") }
+        return parts.joined(separator: " ")
+    }
+
+    /// The buy zone as a rounded range, when the scanner gave one.
+    func buyZoneText(_ money: (Double) -> String) -> String? {
+        guard let zone = buyRange?.zones.first(where: { $0.key == "IN_BUY_RANGE" }), let lo = zone.lo, let hi = zone.hi else { return nil }
+        // Whole numbers for larger prices, so the range fits a narrow tile.
+        func short(_ value: Double) -> String { value >= 100 ? (currencySymbol ?? "") + String(Int(value.rounded())) : money(value) }
+        return "\(short(lo))–\(short(hi))"
+    }
+
+    /// What speaks for the idea and what to be careful about, in plain words. `marketState` is the index trend: UP, DOWN or MIXED.
+    func checks(marketState: String?) -> (good: [String], careful: [String]) {
+        var good: [String] = [], careful: [String] = []
+        let s = strategy.uppercased()
+        if s.hasPrefix("SUPERTREND") {
+            good.append(isLong ? "The stock has been rising on the daily chart" : "The stock has been falling on the daily chart")
+            good.append("The move is gaining strength")
+        } else if s.contains("DIP") {
+            good.append("The stock is in an uptrend and has dipped")
+            good.append("The market is under stress, which is when dips paid off in testing")
+        }
+        if inBuyRange { good.append("The price is still near the signal") }
+        if !isOld, ageDays != nil { good.append("The signal is fresh") }
+
+        if let state = marketState, state != (isLong ? "UP" : "DOWN") {
+            careful.append(state == "MIXED" ? "The overall market is mixed" : "The overall market is moving the other way")
+        }
+        if let pct = stopPct, pct >= 8 { careful.append("The exit line is far away, about \(Int(pct.rounded()))% from the price") }
+        if isOld, let age = ageDays { careful.append("The signal is \(age) days old") }
+        if let range = buyRange, !inBuyRange { careful.append("The price has moved away from the signal (\(range.label.lowercased()))") }
+        if hasFilingCaution { careful.append("A recent company filing raises a caution") }
+        if let days = earningsSoon { careful.append(days == 0 ? "Earnings are due today" : "Earnings are due in \(days) day\(days == 1 ? "" : "s")") }
+        if crowded == true { careful.append("Higher-ranked ideas are in the same sector, so this is largely the same bet") }
+        if evidence.experimental { careful.append("This scan type is experimental") }
+        return (good, careful)
     }
 }
 
@@ -581,6 +677,22 @@ struct TrackRecordResponse: Decodable, Sendable {
     let debate: [TrackRecordStrategy]?
     let lessons: TrackRecordLessons?
     let methodology: String?
+    /// The most recent finished ideas, newest first. Absent on older server data.
+    let finished: [FinishedIdea]?
+}
+
+/// One finished idea on the public track record.
+struct FinishedIdea: Decodable, Identifiable, Sendable {
+    var id: String { symbol + direction + strategy + (settledAt ?? "") + (openedAt ?? "") }
+    let symbol: String
+    let market: String?
+    let direction: String
+    let strategy: String
+    let openedAt: String?
+    let settledAt: String?
+    let returnPct: Double?
+    let stopHit: Bool?
+    let targetHit: Bool?
 }
 
 struct TrackRecordLessons: Decodable, Sendable {

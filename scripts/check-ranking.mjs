@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 const source = readFileSync(fileURLToPath(new URL("../worker/runtime.js", import.meta.url)), "utf8").replace(/^export default \{/m, "const __default = {");
-const code = `${source}\nexport { rankItem, enforceAiRanking, mergeAiRanking, numbersInText, validateAiRanking, RANKING_SYSTEM_PROMPT, rankModelInput, rejectionHolds, rankingExampleTurns, exampleInput, EXAMPLE_ANSWERS, exampleTerms };`;
+const code = `${source}\nexport { rankItem, enforceAiRanking, mergeAiRanking, numbersInText, validateAiRanking, RANKING_SYSTEM_PROMPT, rankModelInput, rejectionHolds, rankingExampleTurns, exampleInput, EXAMPLE_ANSWERS, exampleTerms, advisorVerdicts, liveRecordForModel, RANKING_PROMPT_VERSION };`;
 const rt = await import("data:text/javascript;base64," + Buffer.from(code).toString("base64"));
 
 const evid = { proven: { label: "Supertrend", n: 503, win_rate_pct: 45, avg_win_pct: 11.3, avg_loss_pct: -6.2, ev_pct: 1.61, experimental: false },
@@ -117,4 +117,50 @@ assert.equal(leak.items[0].reason, "rules reason", "an example name in a reason 
 assert.ok(rt.exampleTerms().includes("ALFD"));
 // size: the examples must stay small enough for any model call
 assert.ok(turns.reduce((n, t) => n + t.content.length, 0) < 40000, "examples stay under 40,000 characters");
+
+// ---- advisor verdict log, live record and prompt ----
+// every idea gets exactly one verdict: kept, removed by a guardrail ("code"), or left out by the model ("model")
+const storedAi = { ...ai([{ ...row("SUPERTREND:AAA:LONG", 80, "High"), win_prob: 47 }, { ...row("SUPERTREND:BBB:LONG", 70, "High"), win_prob: 44 }, { ...row("SUPERTREND:CCC:LONG", 90, "High"), win_prob: 60 }]), prompt_version: rt.RANKING_PROMPT_VERSION };
+const advVerdicts = rt.advisorVerdicts(ranking, storedAi), vById = Object.fromEntries(advVerdicts.map(v => [v.item.id, v.verdict]));
+assert.equal(advVerdicts.length, items.length, "one verdict per idea");
+assert.deepEqual([vById["SUPERTREND:AAA:LONG"].verdict, vById["SUPERTREND:AAA:LONG"].rank, vById["SUPERTREND:AAA:LONG"].win_prob, vById["SUPERTREND:AAA:LONG"].price], ["KEPT", 1, 47, 100]);
+assert.deepEqual([vById["SUPERTREND:BBB:LONG"].verdict, vById["SUPERTREND:BBB:LONG"].by], ["REJECTED", "code"], "a same-sector duplicate is the code's rejection");
+assert.deepEqual([vById["SUPERTREND:CCC:LONG"].verdict, vById["SUPERTREND:CCC:LONG"].by], ["REJECTED", "code"], "a negative-edge idea is the code's rejection");
+assert.deepEqual([vById["SUPERTREND:EEE:LONG"].verdict, vById["SUPERTREND:EEE:LONG"].by], ["REJECTED", "model"], "an idea the model left out is the model's rejection");
+assert.equal(vById["SUPERTREND:AAA:LONG"].prompt, rt.RANKING_PROMPT_VERSION); assert.equal(vById["SUPERTREND:AAA:LONG"].model, "m");
+assert.equal(rt.advisorVerdicts(ranking, ai([row("SUPERTREND:DDD:LONG", 60, "Low")])).length, 0, "nothing is logged when the rules ranking served instead");
+assert.equal(rt.advisorVerdicts(ranking, { result: null }).length, 0);
+// the stated win probability survives validation and is bounded
+const probed = rt.validateAiRanking({ headline: "h", nothing_compelling: false, ranked: [{ id: "SUPERTREND:AAA:LONG", score: 70, confidence: "Med", win_probability_pct: 140, reason: "r" }, { id: "SUPERTREND:EEE:LONG", score: 60, confidence: "Med", reason: "r" }], deep_dives: [], rejected: [], data_gaps: [], ordering_notes: "" }, new Set(items.map(i => i.id)));
+assert.deepEqual(probed.ranked.map(r => r.win_prob), [100, null]);
+for (const name of ["unproven", "mixed"]) for (const r of rt.EXAMPLE_ANSWERS[name].ranked) assert.ok(Number.isInteger(r.win_probability_pct), `${name}: every example row states a win probability`);
+// the live record reaches the model only with enough graded ideas, and its figures may be quoted in a reason
+const cellOf = (n, win, mean) => ({ n, win_rate_pct: win, mean_return_pct: mean });
+const liveReport = { by_strategy: { SUPERTREND: { label: "Supertrend", ...cellOf(140, 41, 0.83) }, DIP: { label: "Dip", ...cellOf(12, 70, 0.4) } }, advisor: { kept: cellOf(45, 52, 0.91), rejected: cellOf(60, 47, 0.12), verdict: "No measurable difference yet." } };
+const liveRec = rt.liveRecordForModel(liveReport);
+assert.deepEqual(Object.keys(liveRec.by_strategy), ["Supertrend"], "a strategy with under 20 graded ideas is left out");
+assert.equal(liveRec.your_own_record.ideas_you_kept.graded, 45);
+assert.equal(rt.liveRecordForModel({ by_strategy: { DIP: { label: "Dip", ...cellOf(3, 70, 0.4) } } }), undefined);
+assert.equal(rt.liveRecordForModel(null), undefined);
+assert.deepEqual(rt.rankModelInput(ranking, "US", liveRec).live_track_record, liveRec);
+assert.equal(rt.rankModelInput(ranking, "US").live_track_record, undefined);
+const liveReason = "Live record: 140 graded ideas, 41% wins, +0.83% on average";
+assert.equal(rt.mergeAiRanking(ranking, ai([row("SUPERTREND:AAA:LONG", 80, "High", liveReason)])).items[0].reason, "rules reason", "without a liveRec record those figures are invented");
+assert.equal(rt.mergeAiRanking(ranking, { ...ai([row("SUPERTREND:AAA:LONG", 80, "High", liveReason)]), live: liveRec }).items[0].reason, liveReason, "live-record figures may be quoted");
+// the prompt: the trader's hat, no list-size target, no variety nudge, and the probability is asked for
+assert.ok(/veteran NYSE trader/.test(rt.RANKING_SYSTEM_PROMPT));
+assert.ok(!/3 to 8/.test(rt.RANKING_SYSTEM_PROMPT) && !/not all one strategy/.test(rt.RANKING_SYSTEM_PROMPT));
+assert.ok(/win_probability_pct/.test(rt.RANKING_SYSTEM_PROMPT) && /live_track_record/.test(rt.RANKING_SYSTEM_PROMPT));
+// the model must get the backtest evidence when the ranking was read back from storage (the live path), with or without the stored id
+for (const name of ["quiet", "unproven", "mixed"]) {
+  const { ranking: fresh, market: mk } = rt.exampleInput(name), direct = rt.rankModelInput(fresh, mk);
+  assert.ok(Object.keys(direct.strategy_evidence).length > 0, `${name}: evidence is sent`);
+  const roundTrip = JSON.parse(JSON.stringify(fresh)), old = JSON.parse(JSON.stringify(fresh));
+  for (const item of old.items) delete item.evidence_id;
+  for (const [label, copy] of [["stored", roundTrip], ["stored before the id existed", old]]) {
+    const again = rt.rankModelInput(copy, mk);
+    assert.deepEqual(again.strategy_evidence, direct.strategy_evidence, `${name}: ${label} ranking sends the same evidence`);
+    assert.deepEqual(again.setups.map(x => x.evidence), direct.setups.map(x => x.evidence), `${name}: ${label} ranking names the same evidence per setup`);
+  }
+}
 console.log("Ranking guardrail checks passed");

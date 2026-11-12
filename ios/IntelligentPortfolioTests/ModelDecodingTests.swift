@@ -119,4 +119,24 @@ final class ModelDecodingTests: XCTestCase {
         let old = try decoder.decode(Holding.self, from: Data((base + "}").utf8))
         XCTAssertNil(old.profitLock, "an older payload without the lock still decodes")
     }
+
+    func testLorentzianReadingDecodes() throws {
+        let json = #"{"prediction":4,"neighbors":8,"signal":1,"filters_pass":false,"votes_long":6,"votes_short":2,"bars":251}"#
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let reading = try decoder.decode(LorentzianReading.self, from: Data(json.utf8))
+        XCTAssertEqual(reading.prediction, 4)
+        XCTAssertEqual(reading.votesLong, 6)
+        XCTAssertFalse(reading.filtersPass)
+    }
+
+    func testFinishedIdeasDecode() throws {
+        let json = #"[{"symbol":"AAA","market":"US","direction":"LONG","strategy":"SUPERTREND","opened_at":"2026-11-05T14:00:00Z","settled_at":"2026-11-09T14:35:00Z","entry_price":10,"exit_price":13.1,"return_pct":31.29,"stop_hit":false,"target_hit":false},{"symbol":"BBB","market":"US","direction":"SHORT","strategy":"SUPERTREND","opened_at":"2026-11-05T14:00:00Z","settled_at":null,"entry_price":10,"exit_price":null,"return_pct":null,"stop_hit":true,"target_hit":false}]"#
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let ideas = try decoder.decode([FinishedIdea].self, from: Data(json.utf8))
+        XCTAssertEqual(ideas.count, 2)
+        XCTAssertEqual(ideas[0].returnPct, 31.29)
+        XCTAssertNil(ideas[1].returnPct, "a finished idea with no recorded return still decodes")
+    }
 }

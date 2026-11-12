@@ -1,0 +1,177 @@
+target +5%, stop -3%, 10-day limit. 1996832 stock-days, 109 traits.
+ALL DAYS  2006-2016: n 895775, reached +5% first 24.5%, avg 0.01%   2017-2026: n 1101057, 27.4%, avg 0.02%
+
+=== 1. Each trait alone (2006-2016 / 2017-2026). "before winners" = share of the days that went on to +5% that had the trait ===
+SPY RSI14<35                                                   all days   5.0%  before winners   7.2%  | win 35.4% avg   0.26% | later: win 35.1% avg   0.08%  n 45826
+touched Supertrend line from above (within 1 ATR)              all days   9.6%  before winners  10.2%  | win 26.0% avg   0.11% | later: win 27.5% avg   0.01%  n 102437
+tight 10d range (<=6%)                                         all days  37.4%  before winners  25.7%  | win 16.9% avg   0.09% | later: win 19.8% avg   0.04%  n 337449
+ATR% <=2                                                       all days  44.3%  before winners  28.3%  | win 15.7% avg   0.08% | later: win 18.3% avg   0.03%  n 391040
+ATR% <=3                                                       all days  75.3%  before winners  64.5%  | win 21.0% avg   0.08% | later: win 24.1% avg   0.02%  n 821466
+RSI2<50 (small dip)                                            all days  46.6%  before winners  50.7%  | win 26.6% avg   0.08% | later: win 28.8% avg   0.05%  n 508435
+ROC5<0 (pullback)                                              all days  45.8%  before winners  50.4%  | win 27.0% avg   0.08% | later: win 29.1% avg   0.05%  n 503587
+BB width low (pct<=30)                                         all days  31.4%  before winners  31.3%  | win 24.4% avg   0.07% | later: win 26.9% avg   0.02%  n 337249
+tight 10d range (<=4%)                                         all days  13.2%  before winners   6.9%  | win 12.9% avg   0.07% | later: win 16.1% avg   0.13%  n 95870
+3 down closes in a row                                         all days  10.2%  before winners  11.4%  | win 27.5% avg   0.06% | later: win 30.0% avg   0.07%  n 114492
+RSI2<10                                                        all days  11.3%  before winners  12.9%  | win 28.1% avg   0.05% | later: win 30.4% avg   0.06%  n 126923
+ATR14<ATR50 (calming)                                          all days  53.8%  before winners  53.4%  | win 24.3% avg   0.05% | later: win 26.9% avg   0.04%  n 588913
+breadth >200d >=60%                                            all days  69.7%  before winners  61.6%  | win 21.6% avg   0.05% | later: win 24.1% avg  -0.07%  n 693053
+ROC126>0                                                       all days  64.8%  before winners  57.5%  | win 21.7% avg   0.04% | later: win 24.7% avg  -0.02%  n 689114
+pullback to 50d avg in uptrend                                 all days   8.8%  before winners   7.8%  | win 21.9% avg   0.04% | later: win 25.5% avg   0.01%  n 87550
+sma200 rising 20d                                              all days  67.8%  before winners  60.3%  | win 21.8% avg   0.04% | later: win 25.0% avg  -0.01%  n 722130
+within 20% of 52w high                                         all days  76.6%  before winners  66.4%  | win 21.2% avg   0.04% | later: win 24.4% avg   0.00%  n 817545
+ext vs sma20 <=1 ATR                                           all days  67.2%  before winners  72.8%  | win 26.5% avg   0.04% | later: win 28.9% avg   0.04%  n 738123
+sma50>sma200                                                   all days  65.9%  before winners  58.8%  | win 21.8% avg   0.03% | later: win 25.0% avg  -0.02%  n 699477
+within 10% of 52w high                                         all days  54.2%  before winners  41.0%  | win 18.5% avg   0.03% | later: win 21.9% avg  -0.03%  n 533119
+ext vs sma50 <=3 ATR                                           all days  81.6%  before winners  86.5%  | win 26.0% avg   0.03% | later: win 28.8% avg   0.05%  n 892270
+SPY>sma200                                                     all days  77.2%  before winners  69.5%  | win 22.0% avg   0.03% | later: win 25.7% avg  -0.01%  n 920514
+c>sma200                                                       all days  65.6%  before winners  57.1%  | win 21.3% avg   0.03% | later: win 24.5% avg  -0.01%  n 694401
+inside day                                                     all days  12.0%  before winners  11.8%  | win 24.2% avg   0.03% | later: win 27.2% avg   0.04%  n 130192
+sector 63d > market                                            all days  41.3%  before winners  39.9%  | win 23.7% avg   0.03% | later: win 26.3% avg  -0.01%  n 486679
+lower highs (three 5d highs falling)                           all days  23.2%  before winners  26.5%  | win 28.0% avg   0.03% | later: win 30.0% avg   0.07%  n 262138
+close within 3 ATR of ST line                                  all days  84.6%  before winners  87.8%  | win 25.4% avg   0.03% | later: win 28.1% avg   0.03%  n 939698
+close within 2 ATR of ST line                                  all days  60.3%  before winners  66.2%  | win 26.9% avg   0.03% | later: win 29.3% avg   0.04%  n 687316
+Supertrend flipped down <=3d ago                               all days   4.2%  before winners   4.6%  | win 26.9% avg   0.03% | later: win 28.7% avg  -0.08%  n 48773
+SPY calm (ATR%<1.3)                                            all days  61.0%  before winners  51.1%  | win 20.5% avg   0.02% | later: win 24.3% avg  -0.01%  n 695247
+rel vol<0.8 (quiet)                                            all days  36.6%  before winners  35.4%  | win 23.7% avg   0.02% | later: win 26.9% avg   0.04%  n 398927
+c<sma50                                                        all days  40.7%  before winners  47.3%  | win 28.4% avg   0.02% | later: win 30.8% avg   0.08%  n 466145
+NR7 (narrowest day of 7)                                       all days  15.0%  before winners  14.7%  | win 24.1% avg   0.02% | later: win 26.8% avg   0.02%  n 166965
+ext vs sma20 <=2 ATR                                           all days  86.5%  before winners  89.5%  | win 25.3% avg   0.02% | later: win 28.1% avg   0.03%  n 942812
+Supertrend up                                                  all days  57.1%  before winners  52.0%  | win 22.3% avg   0.02% | later: win 25.2% avg  -0.00%  n 597893
+RSI14<70                                                       all days  93.6%  before winners  95.6%  | win 25.0% avg   0.02% | later: win 28.0% avg   0.03%  n 1021880
+RS21 vs SPY>0                                                  all days  50.8%  before winners  49.1%  | win 23.6% avg   0.01% | later: win 26.3% avg  -0.00%  n 526891
+pullback to 20d EMA in uptrend                                 all days   8.4%  before winners   7.8%  | win 22.8% avg   0.01% | later: win 25.7% avg  -0.01%  n 85027
+c>sma100                                                       all days  62.0%  before winners  54.5%  | win 21.5% avg   0.01% | later: win 24.5% avg  -0.04%  n 660302
+RS63 vs SPY>0                                                  all days  51.5%  before winners  49.4%  | win 23.5% avg   0.01% | later: win 25.9% avg  -0.02%  n 514842
+RSI14<40                                                       all days  15.4%  before winners  18.7%  | win 29.7% avg   0.01% | later: win 31.6% avg   0.08%  n 182787
+RS126 vs SPY>0                                                 all days  52.0%  before winners  49.8%  | win 23.5% avg   0.01% | later: win 26.1% avg   0.00%  n 496825
+ADX rising 5d                                                  all days  46.2%  before winners  45.0%  | win 23.8% avg   0.01% | later: win 26.8% avg   0.01%  n 507682
+sma50 rising 20d                                               all days  61.0%  before winners  54.9%  | win 22.0% avg   0.01% | later: win 24.8% avg  -0.05%  n 655125
+within 5% of 52w high                                          all days  33.7%  before winners  22.8%  | win 16.6% avg   0.00% | later: win 19.8% avg  -0.05%  n 314659
+Supertrend down >20d                                           all days  19.0%  before winners  22.5%  | win 29.1% avg  -0.00% | later: win 31.5% avg   0.12%  n 219555
+Supertrend flipped up <=3d ago                                 all days   4.1%  before winners   4.0%  | win 23.5% avg  -0.00% | later: win 27.6% avg  -0.02%  n 48579
+SPY 20d>0                                                      all days  65.1%  before winners  59.3%  | win 22.3% avg  -0.00% | later: win 25.9% avg   0.01%  n 769627
+c>sma50                                                        all days  59.3%  before winners  52.7%  | win 21.8% avg  -0.00% | later: win 24.9% avg  -0.02%  n 634912
+ROC20>0                                                        all days  57.2%  before winners  51.4%  | win 22.0% avg  -0.00% | later: win 25.4% avg  -0.00%  n 618122
+MACD>0                                                         all days  59.4%  before winners  52.9%  | win 21.8% avg  -0.00% | later: win 25.0% avg  -0.02%  n 636973
+sma20>sma50                                                    all days  59.4%  before winners  53.8%  | win 22.2% avg  -0.01% | later: win 24.9% avg  -0.04%  n 637767
+Supertrend down                                                all days  42.9%  before winners  48.0%  | win 27.4% avg  -0.01% | later: win 30.1% avg   0.05%  n 503164
+ema10>ema20                                                    all days  58.7%  before winners  52.3%  | win 21.8% avg  -0.01% | later: win 25.1% avg  -0.01%  n 631574
+RSI14 50-70                                                    all days  52.1%  before winners  47.4%  | win 22.3% avg  -0.01% | later: win 25.8% avg   0.01%  n 550547
++DI>-DI                                                        all days  55.2%  before winners  49.0%  | win 21.7% avg  -0.01% | later: win 25.1% avg  -0.02%  n 600228
+double bottom (two lows within 3%, 10-40d apart, close off the low) all days   9.5%  before winners  10.4%  | win 26.8% avg  -0.01% | later: win 29.7% avg   0.09%  n 117832
+close under 20d low                                            all days   4.9%  before winners   5.9%  | win 29.5% avg  -0.01% | later: win 31.4% avg   0.02%  n 57011
+Supertrend up >20d                                             all days  31.9%  before winners  27.4%  | win 21.0% avg  -0.01% | later: win 23.0% avg  -0.07%  n 312484
+$vol20 top half (>=$50M)                                       all days  78.8%  before winners  79.5%  | win 24.7% avg  -0.02% | later: win 27.5% avg   0.02%  n 1064986
+higher lows (three 5d lows rising)                             all days  32.4%  before winners  28.3%  | win 21.4% avg  -0.02% | later: win 25.1% avg  -0.01%  n 361896
+rel vol>=1                                                     all days  39.1%  before winners  40.6%  | win 25.4% avg  -0.02% | later: win 28.1% avg   0.00%  n 422457
+OBV>OBV 20d avg                                                all days  54.8%  before winners  50.3%  | win 22.5% avg  -0.02% | later: win 25.6% avg  -0.01%  n 612010
+bullish engulfing                                              all days   3.4%  before winners   3.3%  | win 23.4% avg  -0.02% | later: win 26.5% avg   0.00%  n 37868
+c>sma20                                                        all days  56.7%  before winners  50.8%  | win 21.9% avg  -0.03% | later: win 25.6% avg   0.00%  n 616103
+up close                                                       all days  51.2%  before winners  49.0%  | win 23.4% avg  -0.03% | later: win 26.6% avg   0.00%  n 573618
+breadth >50d >=60%                                             all days  57.0%  before winners  50.3%  | win 21.6% avg  -0.03% | later: win 24.7% avg  -0.02%  n 578705
+c<sma200                                                       all days  34.4%  before winners  42.9%  | win 30.5% avg  -0.03% | later: win 32.3% avg   0.08%  n 406656
+SPY>sma50                                                      all days  67.4%  before winners  59.6%  | win 21.6% avg  -0.03% | later: win 25.6% avg  -0.00%  n 818722
++DI-(-DI)>=10                                                  all days  27.0%  before winners  21.9%  | win 19.8% avg  -0.04% | later: win 23.4% avg  -0.07%  n 302264
+ADX>=25                                                        all days  38.1%  before winners  36.9%  | win 23.8% avg  -0.04% | later: win 26.2% avg  -0.01%  n 418836
+MACD hist rising                                               all days  49.4%  before winners  48.1%  | win 23.9% avg  -0.04% | later: win 27.2% avg   0.01%  n 553673
+ext vs sma20 >=3 ATR                                           all days   3.7%  before winners   2.8%  | win 19.0% avg  -0.05% | later: win 22.3% avg  -0.13%  n 48371
+ADX>=30                                                        all days  23.0%  before winners  22.1%  | win 23.5% avg  -0.05% | later: win 25.5% avg  -0.04%  n 252787
+RSI14 rising 3d                                                all days  50.9%  before winners  48.4%  | win 23.3% avg  -0.05% | later: win 26.7% avg  -0.00%  n 567650
+BB width high (pct>=70)                                        all days  30.9%  before winners  31.1%  | win 24.7% avg  -0.05% | later: win 28.0% avg   0.02%  n 342194
+RSI14>60                                                       all days  27.2%  before winners  21.1%  | win 18.9% avg  -0.06% | later: win 22.5% avg  -0.07%  n 301097
+RS63 vs SPY>10%                                                all days  17.4%  before winners  18.9%  | win 26.6% avg  -0.06% | later: win 27.9% avg  -0.10%  n 200657
+SPY within 3% of high                                          all days  56.5%  before winners  45.1%  | win 19.5% avg  -0.06% | later: win 24.9% avg  -0.00%  n 672704
+ATR14>ATR50 (heating up)                                       all days  13.3%  before winners  14.6%  | win 26.7% avg  -0.06% | later: win 29.0% avg  -0.01%  n 149820
+SPY<sma200                                                     all days  22.8%  before winners  30.5%  | win 32.8% avg  -0.07% | later: win 35.8% avg   0.17%  n 180543
+close in top 25% of range                                      all days  29.5%  before winners  28.0%  | win 23.2% avg  -0.07% | later: win 26.4% avg  -0.01%  n 315921
+rel vol>=1.5                                                   all days  10.5%  before winners  11.2%  | win 26.2% avg  -0.07% | later: win 28.6% avg  -0.08%  n 112458
+hammer (long lower wick, close near high)                      all days   4.0%  before winners   3.8%  | win 23.3% avg  -0.07% | later: win 26.6% avg   0.01%  n 42965
+>=20% under 52w high                                           all days  23.4%  before winners  33.6%  | win 35.2% avg  -0.09% | later: win 36.0% avg   0.07%  n 283517
+RSI2>80                                                        all days  26.5%  before winners  23.0%  | win 21.3% avg  -0.09% | later: win 25.1% avg  -0.04%  n 296645
+RSI14<30                                                       all days   2.9%  before winners   3.7%  | win 30.5% avg  -0.13% | later: win 32.9% avg   0.05%  n 38683
+close over 252d high                                           all days   3.3%  before winners   2.1%  | win 15.2% avg  -0.13% | later: win 18.9% avg  -0.18%  n 34811
+bull flag (15% run, then <=8% pullback over 3-10d)             all days   3.0%  before winners   3.8%  | win 30.9% avg  -0.13% | later: win 31.0% avg  -0.06%  n 40360
+new 20d high                                                   all days   7.9%  before winners   6.1%  | win 18.8% avg  -0.13% | later: win 23.3% avg  -0.08%  n 87518
+gap down >=2%                                                  all days   2.7%  before winners   3.7%  | win 33.8% avg  -0.14% | later: win 33.8% avg  -0.23%  n 30525
+>=3 ATR under 20d avg                                          all days   2.3%  before winners   2.8%  | win 29.7% avg  -0.14% | later: win 32.0% avg  -0.04%  n 31315
+ROC20>10%                                                      all days   9.7%  before winners  10.9%  | win 27.5% avg  -0.14% | later: win 29.0% avg  -0.11%  n 128777
+SPY up day >=1.5%                                              all days   6.5%  before winners   7.7%  | win 29.0% avg  -0.14% | later: win 32.0% avg   0.01%  n 63516
+gap up >=1%                                                    all days   8.8%  before winners  10.9%  | win 30.4% avg  -0.14% | later: win 34.2% avg   0.06%  n 107379
+close under 50d low                                            all days   2.7%  before winners   3.3%  | win 30.1% avg  -0.15% | later: win 33.1% avg   0.04%  n 31450
+close over 50d high                                            all days   5.5%  before winners   3.9%  | win 17.4% avg  -0.16% | later: win 21.2% avg  -0.16%  n 58672
+>=40% under 52w high                                           all days   6.7%  before winners  10.3%  | win 37.4% avg  -0.18% | later: win 39.8% avg   0.11%  n 53252
+ROC63>20%                                                      all days   8.7%  before winners   9.7%  | win 27.5% avg  -0.19% | later: win 29.0% avg  -0.13%  n 119413
+ATR% >=3                                                       all days  24.7%  before winners  35.5%  | win 35.1% avg  -0.21% | later: win 37.2% avg   0.02%  n 279591
+thrust day (up >=4% on 1.5x volume)                            all days   1.0%  before winners   1.2%  | win 30.0% avg  -0.27% | later: win 31.2% avg  -0.27%  n 11380
+SPY wild (ATR% >=2)                                            all days  14.4%  before winners  19.4%  | win 33.0% avg  -0.27% | later: win 36.5% avg   0.19%  n 134483
+ATR% >=4                                                       all days  12.0%  before winners  17.5%  | win 35.7% avg  -0.31% | later: win 39.2% avg   0.03%  n 107146
+SPY down >=5% in 10d                                           all days   4.6%  before winners   6.1%  | win 32.3% avg  -0.32% | later: win 36.6% avg   0.10%  n 49571
+down >=10% in 5d                                               all days   1.9%  before winners   2.7%  | win 34.1% avg  -0.35% | later: win 36.9% avg  -0.07%  n 20792
+down >=20% in 20d                                              all days   1.7%  before winners   2.4%  | win 34.9% avg  -0.36% | later: win 37.3% avg  -0.10%  n 15862
+down day >=4%                                                  all days   2.8%  before winners   3.8%  | win 33.3% avg  -0.36% | later: win 35.0% avg  -0.18%  n 28362
+ATR% >=5                                                       all days   6.6%  before winners   9.4%  | win 34.9% avg  -0.41% | later: win 39.4% avg   0.01%  n 49063
+up >=10% in 5d                                                 all days   1.9%  before winners   2.4%  | win 30.9% avg  -0.45% | later: win 32.3% avg  -0.32%  n 22573
+
+=== 2. Best combinations by average profit on 2006-2016 (at least 2,000 stock-days), with their 2017-2026 result ===
+SPY down >=5% in 10d  +  rel vol<0.8 (quiet)  +  sma20>sma50  +  close within 2 ATR of ST line
+     2006-2016: n 2047 win 51.4% avg 1.53%   2017-2026: n 3329 win 34.9% avg 0.28%  (5 of 6 years positive)
+sector 63d > market  +  SPY RSI14<35  +  SPY>sma200  +  tight 10d range (<=6%)
+     2006-2016: n 2162 win 27.3% avg 1.26%   2017-2026: n 1922 win 22.3% avg -0.11%  (3 of 9 years positive)
+Supertrend down  +  SPY RSI14<35  +  tight 10d range (<=6%)  +  SPY>sma200
+     2006-2016: n 2145 win 28.1% avg 1.23%   2017-2026: n 1928 win 22.6% avg -0.10%  (3 of 9 years positive)
+within 20% of 52w high  +  SPY RSI14<35  +  ADX>=30  +  lower highs (three 5d highs falling)
+     2006-2016: n 2686 win 41.3% avg 1.11%   2017-2026: n 2407 win 34.8% avg 0.22%  (7 of 9 years positive)
+ADX>=30  +  SPY RSI14<35  +  SPY>sma200  +  ATR% <=3
+     2006-2016: n 2337 win 34.0% avg 1.11%   2017-2026: n 3355 win 25.8% avg -0.18%  (4 of 9 years positive)
+$vol20 top half (>=$50M)  +  SPY RSI14<35  +  ATR% <=2  +  SPY>sma200
+     2006-2016: n 3878 win 26.9% avg 1.10%   2017-2026: n 4791 win 20.0% avg -0.37%  (2 of 9 years positive)
+ADX>=25  +  SPY RSI14<35  +  SPY>sma200  +  ATR% <=2
+     2006-2016: n 2089 win 24.7% avg 1.07%   2017-2026: n 2208 win 17.9% avg -0.54%  (2 of 9 years positive)
+MACD hist rising  +  SPY RSI14<35  +  ATR% <=2  +  within 20% of 52w high
+     2006-2016: n 2394 win 26.6% avg 1.07%   2017-2026: n 2154 win 23.7% avg 0.23%  (4 of 9 years positive)
+within 10% of 52w high  +  SPY RSI14<35  +  SPY>sma200  +  sector 63d > market
+     2006-2016: n 3334 win 29.1% avg 1.07%   2017-2026: n 3766 win 26.7% avg 0.06%  (3 of 9 years positive)
+close within 2 ATR of ST line  +  SPY RSI14<35  +  SPY>sma200  +  tight 10d range (<=6%)
+     2006-2016: n 3364 win 26.0% avg 1.07%   2017-2026: n 2963 win 22.2% avg -0.18%  (3 of 9 years positive)
+ext vs sma50 <=3 ATR  +  SPY RSI14<35  +  SPY>sma200  +  tight 10d range (<=6%)
+     2006-2016: n 3648 win 25.7% avg 1.07%   2017-2026: n 3192 win 22.4% avg -0.17%  (3 of 9 years positive)
+rel vol>=1  +  SPY RSI14<35  +  SPY>sma200  +  ATR% <=2
+     2006-2016: n 2946 win 26.3% avg 1.07%   2017-2026: n 2731 win 21.1% avg -0.38%  (2 of 9 years positive)
+RS63 vs SPY>0  +  SPY RSI14<35  +  SPY>sma200  +  tight 10d range (<=6%)
+     2006-2016: n 2574 win 24.6% avg 1.06%   2017-2026: n 1978 win 20.8% avg -0.32%  (3 of 9 years positive)
+RSI14<70  +  SPY RSI14<35  +  SPY>sma200  +  tight 10d range (<=6%)
+     2006-2016: n 3799 win 25.7% avg 1.06%   2017-2026: n 3381 win 21.6% avg -0.23%  (3 of 9 years positive)
+SPY calm (ATR%<1.3)  +  SPY<sma200  +  higher lows (three 5d lows rising)  +  ATR14<ATR50 (calming)
+     2006-2016: n 2132 win 33.0% avg 1.05%   2017-2026: n 2707 win 33.8% avg 1.03%  (2 of 3 years positive)
+
+=== 2. Best combinations by win rate on 2006-2016 (at least 2,000 stock-days), with their 2017-2026 result ===
+rel vol<0.8 (quiet)  +  SPY down >=5% in 10d  +  sma20>sma50
+     2006-2016: n 2239 win 50.5% avg 1.47%   2017-2026: n 3800 win 33.6% avg 0.22%  (5 of 6 years positive)
+ROC126>0  +  >=40% under 52w high  +  close within 2 ATR of ST line  +  MACD>0
+     2006-2016: n 2076 win 50.0% avg 0.85%   2017-2026: n 742 win 43.1% avg 0.20%  (6 of 9 years positive)
+ext vs sma50 <=3 ATR  +  >=40% under 52w high  +  ROC126>0  +  up close
+     2006-2016: n 2755 win 48.7% avg 0.74%   2017-2026: n 1667 win 40.3% avg 0.13%  (5 of 10 years positive)
+ext vs sma20 <=1 ATR  +  >=40% under 52w high  +  ROC126>0  +  up close
+     2006-2016: n 2111 win 48.3% avg 0.71%   2017-2026: n 1249 win 40.2% avg 0.14%  (6 of 10 years positive)
+sma50>sma200  +  >=40% under 52w high  +  up close
+     2006-2016: n 2145 win 48.1% avg 0.70%   2017-2026: n 994 win 37.0% avg -0.19%  (3 of 10 years positive)
+ext vs sma20 <=2 ATR  +  >=40% under 52w high  +  ROC126>0  +  SPY<sma200
+     2006-2016: n 2213 win 47.9% avg 0.68%   2017-2026: n 581 win 46.6% avg 0.70%  (4 of 6 years positive)
+c>sma100  +  >=40% under 52w high  +  sma50>sma200  +  ext vs sma50 <=3 ATR
+     2006-2016: n 2729 win 47.9% avg 0.66%   2017-2026: n 428 win 51.2% avg 1.09%  (7 of 8 years positive)
+close within 3 ATR of ST line  +  >=40% under 52w high  +  ROC126>0  +  SPY<sma200
+     2006-2016: n 2148 win 47.8% avg 0.67%   2017-2026: n 578 win 46.4% avg 0.66%  (4 of 6 years positive)
+ROC20>0  +  >=40% under 52w high  +  ROC126>0  +  ext vs sma50 <=3 ATR
+     2006-2016: n 3148 win 47.6% avg 0.65%   2017-2026: n 1377 win 41.7% avg 0.22%  (6 of 10 years positive)
+>=20% under 52w high  +  touched Supertrend line from above (within 1 ATR)  +  ROC126>0  +  ATR% >=3
+     2006-2016: n 2842 win 47.5% avg 0.69%   2017-2026: n 2360 win 40.3% avg 0.19%  (5 of 10 years positive)
+inside day  +  SPY RSI14<35  +  ATR% >=3  +  RSI2<50 (small dip)
+     2006-2016: n 2052 win 47.5% avg 0.74%   2017-2026: n 1731 win 38.3% avg -0.04%  (5 of 9 years positive)
+ATR14<ATR50 (calming)  +  >=40% under 52w high  +  sma50>sma200  +  c>sma100
+     2006-2016: n 2388 win 47.4% avg 0.62%   2017-2026: n 332 win 51.5% avg 0.96%  (5 of 8 years positive)
+RSI2<10  +  SPY wild (ATR% >=2)  +  rel vol<0.8 (quiet)  +  SPY<sma200
+     2006-2016: n 2374 win 47.4% avg 0.94%   2017-2026: n 1949 win 46.4% avg 0.83%  (4 of 5 years positive)
+RS21 vs SPY>0  +  >=40% under 52w high  +  ROC126>0  +  ext vs sma50 <=3 ATR
+     2006-2016: n 2454 win 47.3% avg 0.61%   2017-2026: n 1271 win 42.6% avg 0.28%  (6 of 10 years positive)
+c<sma200  +  >=40% under 52w high  +  ROC126>0  +  SPY 20d>0
+     2006-2016: n 2166 win 47.1% avg 0.65%   2017-2026: n 1540 win 38.2% avg 0.03%  (6 of 10 years positive)

@@ -1,0 +1,659 @@
+1935754 stock-days, 2006-01-13 to 2026-05-15. Baseline (any member, any day): +5/-3/10d 0.02% | 1:3 (2 ATR stop, 6 ATR target, 30d) 0.66% | trail (8% stop, Supertrend, 120d) 0.42% | hold 20d 0.78% | hold 60d 2.78% | Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) 1.62% | Atrox Balanced (target 3 ATR, stop 1 ATR, 30d) 0.15%
+
+=== 1. Every signal alone. "excess" = trade minus the same-day average of all members with the same exit, averaged per date (t in brackets) ===
+
+--- exit: +5/-3/10d ---
+CCI crosses up through -100                                n  85286 dates 4824  win  44.8%  avg   0.06%  excess   0.08% (t   3.4)  2006-16   0.10%  2017-26   0.07%
+Pattern: Ascending triangle                                n   5259 dates 2444  win  47.7%  avg   0.06%  excess   0.16% (t   3.0)  2006-16   0.18%  2017-26   0.15%
+Heikin-Ashi turns green after 3+ red                       n 130796 dates 4882  win  44.9%  avg   0.03%  excess   0.05% (t   2.4)  2006-16   0.09%  2017-26   0.01%
+OBV at a 50-bar high before price                          n  70831 dates 4985  win  45.3%  avg  -0.03%  excess   0.04% (t   2.2)  2006-16   0.12%  2017-26  -0.05%
+Weekly pattern: Symmetrical triangle (up)                  n   1249 dates  556  win  49.7%  avg   0.19%  excess   0.22% (t   2.0)  2006-16   0.24%  2017-26   0.20%
+Aroon up crosses over Aroon down                           n  38072 dates 4764  win  45.9%  avg   0.05%  excess   0.05% (t   1.7)  2006-16   0.04%  2017-26   0.05%
+Weekly EMA 9 crosses over EMA 21                           n   8501 dates  990  win  45.9%  avg   0.03%  excess   0.09% (t   1.6)  2006-16   0.16%  2017-26   0.02%
+Weekly pattern: Falling wedge                              n   1796 dates  646  win  45.8%  avg   0.17%  excess   0.17% (t   1.6)  2006-16   0.15%  2017-26   0.19%
+MACD crosses over its signal below zero                    n  41382 dates 4590  win  45.0%  avg   0.06%  excess   0.04% (t   1.5)  2006-16   0.08%  2017-26   0.00%
+MACD crosses over its signal                               n  78031 dates 4926  win  45.0%  avg  -0.00%  excess   0.03% (t   1.4)  2006-16   0.06%  2017-26  -0.00%
+Weekly Ichimoku: Tenkan over Kijun above the cloud         n   5201 dates  816  win  45.6%  avg  -0.08%  excess   0.11% (t   1.4)  2006-16   0.28%  2017-26  -0.06%
+Weekly pattern: Ascending triangle                         n    635 dates  386  win  51.7%  avg   0.06%  excess   0.19% (t   1.4)  2006-16   0.33%  2017-26   0.04%
+EMA 9 crosses over EMA 21                                  n  43239 dates 4750  win  45.1%  avg   0.02%  excess   0.03% (t   1.3)  2006-16   0.05%  2017-26   0.01%
+RSI14 crosses above 50                                     n 110733 dates 4971  win  45.2%  avg   0.04%  excess   0.02% (t   1.3)  2006-16   0.05%  2017-26  -0.01%
+Weekly Aroon up crosses over Aroon down                    n   7438 dates  976  win  46.0%  avg   0.03%  excess   0.07% (t   1.1)  2006-16   0.09%  2017-26   0.05%
+Weekly MACD crosses above zero                             n   6468 dates  956  win  45.7%  avg   0.02%  excess   0.06% (t   1.1)  2006-16   0.14%  2017-26  -0.02%
+MACD crosses above zero                                    n  33517 dates 4623  win  45.2%  avg   0.03%  excess   0.03% (t   1.0)  2006-16   0.08%  2017-26  -0.02%
+Weekly Atrox consensus: all 4 engines on, 4 of 4 within 15 bars n    279 dates  189  win  43.7%  avg  -0.03%  excess   0.21% (t   1.0)  2006-16   0.45%  2017-26   0.11%
+Weekly pattern: Inverse head and shoulders                 n     78 dates   67  win  48.7%  avg   0.25%  excess   0.34% (t   0.9)  2006-16   0.15%  2017-26   0.50%
+Atrox engine: AtroNox (Bollinger trend line turns up)      n   7598 dates 2797  win  46.2%  avg   0.02%  excess   0.04% (t   0.9)  2006-16   0.02%  2017-26   0.07%
+Weekly CCI crosses above +100                              n  23836 dates 1024  win  45.6%  avg  -0.05%  excess   0.03% (t   0.7)  2006-16   0.13%  2017-26  -0.08%
+Weekly RSI bullish divergence                              n   1269 dates  372  win  43.4%  avg   0.05%  excess   0.11% (t   0.7)  2006-16   0.32%  2017-26  -0.07%
+Weekly MACD crosses over its signal                        n  16636 dates 1018  win  46.4%  avg   0.04%  excess   0.03% (t   0.6)  2006-16   0.05%  2017-26  -0.00%
+Weekly MACD histogram bullish divergence                   n   2860 dates  579  win  43.0%  avg  -0.07%  excess   0.06% (t   0.5)  2006-16   0.22%  2017-26  -0.09%
+Weekly RSI14 crosses up through 30                         n   2887 dates  491  win  36.7%  avg  -0.40%  excess   0.06% (t   0.5)  2006-16  -0.30%  2017-26   0.37%
+Weekly Ichimoku: close crosses above the cloud             n  10384 dates  976  win  44.8%  avg  -0.07%  excess   0.02% (t   0.4)  2006-16   0.04%  2017-26   0.00%
+Weekly Heikin-Ashi turns green after 3+ red                n  25828 dates 1020  win  45.2%  avg   0.05%  excess   0.01% (t   0.3)  2006-16   0.04%  2017-26  -0.01%
+Chaikin Money Flow crosses above 0                         n  94952 dates 5006  win  44.1%  avg  -0.05%  excess   0.01% (t   0.3)  2006-16   0.01%  2017-26   0.00%
+Weekly Atrox consensus: script defaults (Raptor+Scalper+Elite all within 15 bars) n    516 dates  325  win  42.4%  avg  -0.10%  excess   0.04% (t   0.3)  2006-16   0.15%  2017-26  -0.02%
+Stochastic crosses up through 20                           n  65159 dates 4680  win  44.2%  avg   0.02%  excess   0.01% (t   0.2)  2006-16   0.02%  2017-26  -0.01%
+Supertrend flips up                                        n  27707 dates 4164  win  44.7%  avg  -0.02%  excess   0.01% (t   0.2)  2006-16   0.02%  2017-26  -0.01%
+Pattern: Symmetrical triangle (up)                         n   5307 dates 2368  win  43.9%  avg  -0.10%  excess   0.00% (t   0.0)  2006-16  -0.01%  2017-26   0.01%
+Weekly RSI14 crosses above 50                              n  22657 dates 1031  win  43.8%  avg  -0.09%  excess   0.00% (t   0.0)  2006-16   0.06%  2017-26  -0.07%
+Ichimoku: close crosses above the cloud                    n  52585 dates 4824  win  45.4%  avg   0.04%  excess  -0.00% (t  -0.0)  2006-16   0.01%  2017-26  -0.01%
+Pocket pivot (up volume over every down day of 10)         n 147095 dates 4998  win  44.7%  avg  -0.07%  excess  -0.00% (t  -0.0)  2006-16   0.03%  2017-26  -0.03%
+Close reclaims the 200-bar average                         n  32493 dates 4579  win  44.9%  avg   0.02%  excess  -0.00% (t  -0.1)  2006-16   0.01%  2017-26  -0.01%
+Weekly pattern: Double bottom                              n    162 dates  135  win  49.4%  avg  -0.18%  excess  -0.02% (t  -0.1)  2006-16   0.02%  2017-26  -0.06%
+RSI14 crosses up through 30                                n  20575 dates 3091  win  42.3%  avg  -0.08%  excess  -0.00% (t  -0.1)  2006-16  -0.06%  2017-26   0.05%
+Pattern: Inverse head and shoulders                        n    696 dates  526  win  43.7%  avg  -0.18%  excess  -0.02% (t  -0.1)  2006-16  -0.19%  2017-26   0.13%
+Weekly Squeeze fires up (5+ bars inside Keltner)           n   2155 dates  745  win  46.2%  avg  -0.08%  excess  -0.01% (t  -0.1)  2006-16   0.15%  2017-26  -0.19%
+Squeeze fires up (5+ bars inside Keltner)                  n   8885 dates 3238  win  46.4%  avg  -0.00%  excess  -0.01% (t  -0.2)  2006-16  -0.04%  2017-26   0.02%
+Ichimoku: Tenkan over Kijun above the cloud                n  23116 dates 4063  win  46.5%  avg   0.05%  excess  -0.01% (t  -0.2)  2006-16   0.02%  2017-26  -0.04%
+Weekly Atrox engine: Raptor (Supertrend 6.5 cross + SMA9)  n   1718 dates  577  win  44.5%  avg  -0.04%  excess  -0.02% (t  -0.2)  2006-16   0.22%  2017-26  -0.24%
+Weekly Atrox consensus: Conservative preset (4 of 4 within 3, score 70) n     79 dates   65  win  34.2%  avg  -0.44%  excess  -0.11% (t  -0.3)  2006-16   0.54%  2017-26  -0.43%
+Pattern: Double bottom                                     n   1114 dates  785  win  45.1%  avg   0.09%  excess  -0.04% (t  -0.3)  2006-16   0.09%  2017-26  -0.13%
+Weekly OBV at a 50-bar high before price                   n  18022 dates 1039  win  45.5%  avg  -0.07%  excess  -0.02% (t  -0.4)  2006-16   0.07%  2017-26  -0.12%
+Weekly Chaikin Money Flow crosses above 0                  n  18453 dates 1032  win  44.0%  avg  -0.07%  excess  -0.02% (t  -0.4)  2006-16  -0.07%  2017-26   0.05%
+Weekly Money Flow Index crosses up through 20              n   1920 dates  595  win  43.7%  avg   0.04%  excess  -0.05% (t  -0.4)  2006-16  -0.16%  2017-26   0.05%
+Weekly pattern: Bull flag                                  n   2557 dates  592  win  45.6%  avg   0.00%  excess  -0.05% (t  -0.5)  2006-16   0.04%  2017-26  -0.14%
+Weekly Atrox consensus: Scalping preset (2 of 4 within 4, score 55) n   1421 dates  550  win  44.2%  avg  -0.14%  excess  -0.06% (t  -0.5)  2006-16  -0.01%  2017-26  -0.09%
+Weekly MACD crosses over its signal below zero             n   7351 dates  927  win  44.5%  avg   0.01%  excess  -0.04% (t  -0.6)  2006-16   0.00%  2017-26  -0.08%
+Golden cross (50 over 200)                                 n   5584 dates 2837  win  46.1%  avg  -0.01%  excess  -0.03% (t  -0.6)  2006-16  -0.03%  2017-26  -0.03%
+Weekly Atrox consensus: all 4 engines on, 3 of 4 within 15 bars n    953 dates  442  win  44.4%  avg  -0.11%  excess  -0.08% (t  -0.6)  2006-16  -0.05%  2017-26  -0.11%
+Parabolic SAR flips up                                     n  87920 dates 4958  win  44.2%  avg  -0.05%  excess  -0.01% (t  -0.7)  2006-16  -0.03%  2017-26   0.01%
+Weekly Donchian 55-bar breakout                            n  19042 dates  969  win  44.9%  avg  -0.18%  excess  -0.03% (t  -0.7)  2006-16   0.08%  2017-26  -0.16%
+Weekly Chaikin Money Flow crosses above +0.15              n  17444 dates 1014  win  45.7%  avg  -0.04%  excess  -0.04% (t  -0.8)  2006-16  -0.02%  2017-26  -0.06%
+RSI bullish divergence                                     n   9225 dates 2407  win  42.6%  avg  -0.08%  excess  -0.05% (t  -0.8)  2006-16   0.03%  2017-26  -0.12%
+Chaikin Money Flow crosses above +0.15                     n  69030 dates 4810  win  44.6%  avg  -0.06%  excess  -0.02% (t  -0.9)  2006-16  -0.01%  2017-26  -0.03%
+Weekly Stochastic crosses up through 20                    n  11966 dates  958  win  43.2%  avg  -0.07%  excess  -0.05% (t  -0.9)  2006-16   0.05%  2017-26  -0.17%
+Close over the upper Bollinger band                        n  65095 dates 4682  win  44.8%  avg  -0.08%  excess  -0.02% (t  -0.9)  2006-16  -0.02%  2017-26  -0.03%
+Pattern: Bull flag                                         n   2762 dates 1066  win  39.1%  avg  -0.17%  excess  -0.09% (t  -1.0)  2006-16  -0.26%  2017-26   0.05%
+Close over the upper Keltner channel                       n  89238 dates 4788  win  45.2%  avg  -0.06%  excess  -0.02% (t  -1.1)  2006-16  -0.02%  2017-26  -0.03%
+Close back above the lower Bollinger band                  n  52675 dates 4264  win  44.2%  avg   0.02%  excess  -0.04% (t  -1.1)  2006-16   0.02%  2017-26  -0.09%
+Weekly Donchian 20-bar breakout                            n  25407 dates  997  win  44.3%  avg  -0.19%  excess  -0.05% (t  -1.2)  2006-16   0.02%  2017-26  -0.13%
+Weekly Atrox engine: Scalper (Supertrend 7 cross)          n   1525 dates  550  win  43.6%  avg  -0.18%  excess  -0.14% (t  -1.2)  2006-16  -0.04%  2017-26  -0.23%
+Pattern: Falling wedge                                     n   9422 dates 3095  win  43.8%  avg   0.03%  excess  -0.06% (t  -1.2)  2006-16  -0.09%  2017-26  -0.04%
+Weekly Atrox consensus: Aggressive preset (3 of 4 within 7, score 50) n    645 dates  341  win  43.1%  avg  -0.22%  excess  -0.20% (t  -1.3)  2006-16  -0.07%  2017-26  -0.29%
+Weekly Golden cross (50 over 200)                          n    872 dates  436  win  45.0%  avg  -0.14%  excess  -0.17% (t  -1.3)  2006-16  -0.33%  2017-26  -0.06%
+Atrox engine: Raptor (Supertrend 6.5 cross + SMA9)         n   8476 dates 2884  win  44.7%  avg  -0.13%  excess  -0.07% (t  -1.3)  2006-16  -0.04%  2017-26  -0.09%
++DI crosses over -DI with ADX 20+                          n  28763 dates 4412  win  44.2%  avg  -0.05%  excess  -0.04% (t  -1.3)  2006-16  -0.08%  2017-26  -0.00%
+Weekly Atrox consensus: Balanced preset (3 of 4 within 5)  n    513 dates  303  win  42.7%  avg  -0.28%  excess  -0.21% (t  -1.3)  2006-16  -0.19%  2017-26  -0.23%
+Weekly CCI crosses up through -100                         n  15269 dates  992  win  43.2%  avg  -0.08%  excess  -0.08% (t  -1.4)  2006-16  -0.04%  2017-26  -0.12%
+Weekly Atrox engine: AtroNox (Bollinger trend line turns up) n   1340 dates  492  win  44.3%  avg  -0.17%  excess  -0.17% (t  -1.4)  2006-16  -0.19%  2017-26  -0.16%
+Weekly Close reclaims the 200-bar average                  n   5575 dates  771  win  42.7%  avg  -0.11%  excess  -0.10% (t  -1.4)  2006-16  -0.11%  2017-26  -0.10%
+Weekly Atrox engine: Elite (range filter turns long)       n   3235 dates  758  win  40.2%  avg  -0.41%  excess  -0.13% (t  -1.5)  2006-16  -0.12%  2017-26  -0.14%
+Atrox engine: Scalper (Supertrend 7 cross)                 n   7538 dates 2738  win  44.0%  avg  -0.17%  excess  -0.08% (t  -1.6)  2006-16  -0.03%  2017-26  -0.13%
+Atrox consensus: Balanced preset (3 of 4 within 5)         n   3576 dates 1865  win  44.1%  avg  -0.15%  excess  -0.11% (t  -1.6)  2006-16  -0.13%  2017-26  -0.08%
+Weekly Close back above the lower Bollinger band           n   9069 dates  825  win  41.1%  avg  -0.18%  excess  -0.12% (t  -1.6)  2006-16  -0.16%  2017-26  -0.07%
+Atrox consensus: Scalping preset (2 of 4 within 4, score 55) n   7398 dates 2865  win  44.8%  avg  -0.10%  excess  -0.09% (t  -1.7)  2006-16  -0.02%  2017-26  -0.14%
+Atrox consensus: Aggressive preset (3 of 4 within 7, score 50) n   4278 dates 2009  win  43.7%  avg  -0.19%  excess  -0.11% (t  -1.7)  2006-16  -0.12%  2017-26  -0.09%
+Money Flow Index crosses up through 20                     n  12980 dates 3185  win  43.0%  avg  -0.05%  excess  -0.08% (t  -1.7)  2006-16  -0.08%  2017-26  -0.07%
+CCI crosses above +100                                     n 110341 dates 4947  win  45.0%  avg  -0.05%  excess  -0.03% (t  -1.7)  2006-16  -0.02%  2017-26  -0.05%
+Weekly Parabolic SAR flips up                              n  18877 dates 1032  win  45.3%  avg   0.00%  excess  -0.07% (t  -1.8)  2006-16  -0.02%  2017-26  -0.13%
+Weekly Close over the upper Keltner channel                n  20775 dates  993  win  44.4%  avg  -0.16%  excess  -0.08% (t  -1.8)  2006-16   0.05%  2017-26  -0.22%
+Atrox consensus: all 4 engines on, 3 of 4 within 15 bars   n   5386 dates 2355  win  44.8%  avg  -0.09%  excess  -0.11% (t  -2.0)  2006-16  -0.11%  2017-26  -0.12%
+Donchian 20-bar breakout                                   n  99985 dates 4799  win  45.2%  avg  -0.08%  excess  -0.05% (t  -2.1)  2006-16  -0.05%  2017-26  -0.04%
+MACD histogram bullish divergence                          n  17187 dates 3218  win  44.2%  avg  -0.01%  excess  -0.09% (t  -2.1)  2006-16  -0.08%  2017-26  -0.11%
+Weekly Close over the upper Bollinger band                 n  15618 dates  979  win  43.4%  avg  -0.24%  excess  -0.11% (t  -2.2)  2006-16  -0.04%  2017-26  -0.18%
+Donchian 55-bar breakout                                   n  66293 dates 4595  win  44.8%  avg  -0.14%  excess  -0.06% (t  -2.2)  2006-16  -0.06%  2017-26  -0.05%
+Atrox consensus: Conservative preset (4 of 4 within 3, score 70) n    757 dates  576  win  43.5%  avg  -0.30%  excess  -0.30% (t  -2.3)  2006-16  -0.06%  2017-26  -0.49%
+Weekly Pocket pivot (up volume over every down day of 10)  n  28785 dates 1019  win  45.6%  avg  -0.06%  excess  -0.10% (t  -2.5)  2006-16  -0.01%  2017-26  -0.20%
+Weekly +DI crosses over -DI with ADX 20+                   n   6388 dates  948  win  42.5%  avg  -0.19%  excess  -0.17% (t  -2.7)  2006-16  -0.26%  2017-26  -0.08%
+Atrox engine: Elite (range filter turns long)              n   7619 dates 2630  win  42.5%  avg  -0.21%  excess  -0.15% (t  -2.8)  2006-16  -0.09%  2017-26  -0.20%
+Weekly Supertrend flips up                                 n   5387 dates  847  win  42.4%  avg  -0.28%  excess  -0.19% (t  -2.8)  2006-16  -0.12%  2017-26  -0.27%
+Atrox consensus: all 4 engines on, 4 of 4 within 15 bars   n   2153 dates 1246  win  42.5%  avg  -0.31%  excess  -0.24% (t  -2.9)  2006-16  -0.12%  2017-26  -0.34%
+Atrox consensus: script defaults (Raptor+Scalper+Elite all within 15 bars) n   3315 dates 1724  win  43.4%  avg  -0.22%  excess  -0.21% (t  -3.0)  2006-16  -0.11%  2017-26  -0.29%
+
+--- exit: 1:3 (2 ATR stop, 6 ATR target, 30d) ---
+CCI crosses up through -100                                n  85286 dates 4824  win  43.3%  avg   0.87%  excess   0.14% (t   2.3)  2006-16   0.14%  2017-26   0.14%
+Weekly pattern: Symmetrical triangle (up)                  n   1249 dates  556  win  47.0%  avg   0.98%  excess   0.40% (t   1.9)  2006-16   0.40%  2017-26   0.41%
+Aroon up crosses over Aroon down                           n  38072 dates 4764  win  42.2%  avg   0.75%  excess   0.11% (t   1.8)  2006-16   0.20%  2017-26  -0.00%
+MACD crosses over its signal below zero                    n  41382 dates 4590  win  44.0%  avg   0.98%  excess   0.09% (t   1.3)  2006-16   0.23%  2017-26  -0.07%
+Weekly EMA 9 crosses over EMA 21                           n   8501 dates  990  win  43.0%  avg   0.53%  excess   0.15% (t   1.2)  2006-16   0.13%  2017-26   0.17%
+Weekly pattern: Falling wedge                              n   1796 dates  646  win  44.4%  avg   1.29%  excess   0.27% (t   1.1)  2006-16   0.60%  2017-26  -0.03%
+Weekly CCI crosses up through -100                         n  15269 dates  992  win  44.4%  avg   1.19%  excess   0.10% (t   0.8)  2006-16   0.13%  2017-26   0.07%
+Weekly pattern: Ascending triangle                         n    635 dates  386  win  45.8%  avg   0.55%  excess   0.15% (t   0.6)  2006-16   0.70%  2017-26  -0.42%
+Stochastic crosses up through 20                           n  65159 dates 4680  win  42.9%  avg   0.88%  excess   0.04% (t   0.6)  2006-16   0.06%  2017-26   0.01%
+EMA 9 crosses over EMA 21                                  n  43239 dates 4750  win  42.4%  avg   0.74%  excess   0.03% (t   0.5)  2006-16   0.13%  2017-26  -0.08%
+Weekly RSI14 crosses up through 30                         n   2887 dates  491  win  46.6%  avg   1.30%  excess   0.11% (t   0.3)  2006-16   0.08%  2017-26   0.14%
+Weekly Ichimoku: close crosses above the cloud             n  10384 dates  976  win  42.9%  avg   0.56%  excess   0.03% (t   0.3)  2006-16  -0.00%  2017-26   0.06%
+Close back above the lower Bollinger band                  n  52675 dates 4264  win  43.3%  avg   0.98%  excess   0.02% (t   0.2)  2006-16  -0.02%  2017-26   0.06%
+Weekly Ichimoku: Tenkan over Kijun above the cloud         n   5201 dates  816  win  40.7%  avg   0.38%  excess   0.03% (t   0.2)  2006-16   0.21%  2017-26  -0.15%
+Pattern: Bull flag                                         n   2762 dates 1066  win  44.5%  avg   0.79%  excess   0.05% (t   0.2)  2006-16  -0.43%  2017-26   0.46%
+Weekly Money Flow Index crosses up through 20              n   1920 dates  595  win  45.3%  avg   1.27%  excess   0.04% (t   0.2)  2006-16  -0.09%  2017-26   0.17%
+Weekly RSI bullish divergence                              n   1269 dates  372  win  45.0%  avg   1.34%  excess   0.03% (t   0.1)  2006-16  -0.12%  2017-26   0.16%
+Weekly MACD crosses above zero                             n   6468 dates  956  win  42.2%  avg   0.53%  excess   0.01% (t   0.1)  2006-16  -0.08%  2017-26   0.11%
+Golden cross (50 over 200)                                 n   5584 dates 2837  win  41.2%  avg   0.55%  excess   0.01% (t   0.1)  2006-16   0.03%  2017-26  -0.01%
+Weekly Squeeze fires up (5+ bars inside Keltner)           n   2155 dates  745  win  42.6%  avg   0.53%  excess   0.01% (t   0.1)  2006-16   0.24%  2017-26  -0.24%
+Chaikin Money Flow crosses above 0                         n  94952 dates 5006  win  41.4%  avg   0.59%  excess   0.00% (t   0.0)  2006-16   0.03%  2017-26  -0.03%
+MACD crosses above zero                                    n  33517 dates 4623  win  42.4%  avg   0.71%  excess  -0.01% (t  -0.1)  2006-16   0.12%  2017-26  -0.15%
+Weekly MACD histogram bullish divergence                   n   2860 dates  579  win  41.3%  avg   0.66%  excess  -0.06% (t  -0.2)  2006-16  -0.04%  2017-26  -0.08%
+Weekly pattern: Inverse head and shoulders                 n     78 dates   67  win  37.2%  avg   0.06%  excess  -0.20% (t  -0.3)  2006-16  -0.03%  2017-26  -0.35%
+Supertrend flips up                                        n  27707 dates 4164  win  42.3%  avg   0.65%  excess  -0.02% (t  -0.3)  2006-16   0.19%  2017-26  -0.23%
+Close reclaims the 200-bar average                         n  32493 dates 4579  win  42.8%  avg   0.55%  excess  -0.02% (t  -0.3)  2006-16  -0.07%  2017-26   0.03%
+Ichimoku: close crosses above the cloud                    n  52585 dates 4824  win  42.2%  avg   0.63%  excess  -0.02% (t  -0.3)  2006-16   0.10%  2017-26  -0.15%
+Weekly Aroon up crosses over Aroon down                    n   7438 dates  976  win  42.1%  avg   0.58%  excess  -0.04% (t  -0.3)  2006-16   0.09%  2017-26  -0.19%
+Heikin-Ashi turns green after 3+ red                       n 130796 dates 4882  win  42.2%  avg   0.73%  excess  -0.02% (t  -0.4)  2006-16   0.03%  2017-26  -0.08%
+Money Flow Index crosses up through 20                     n  12980 dates 3185  win  42.8%  avg   0.84%  excess  -0.04% (t  -0.4)  2006-16  -0.20%  2017-26   0.11%
+Weekly Heikin-Ashi turns green after 3+ red                n  25828 dates 1020  win  43.3%  avg   0.89%  excess  -0.04% (t  -0.4)  2006-16   0.04%  2017-26  -0.13%
+Pattern: Double bottom                                     n   1114 dates  785  win  44.0%  avg   0.82%  excess  -0.10% (t  -0.4)  2006-16   0.29%  2017-26  -0.40%
+Atrox engine: Scalper (Supertrend 7 cross)                 n   7538 dates 2738  win  40.9%  avg   0.19%  excess  -0.06% (t  -0.5)  2006-16  -0.04%  2017-26  -0.07%
+Weekly Atrox consensus: Conservative preset (4 of 4 within 3, score 70) n     79 dates   65  win  35.4%  avg  -0.47%  excess  -0.55% (t  -0.6)  2006-16   0.07%  2017-26  -0.84%
+RSI14 crosses above 50                                     n 110733 dates 4971  win  42.1%  avg   0.70%  excess  -0.03% (t  -0.6)  2006-16   0.14%  2017-26  -0.22%
++DI crosses over -DI with ADX 20+                          n  28763 dates 4412  win  41.9%  avg   0.65%  excess  -0.05% (t  -0.7)  2006-16   0.04%  2017-26  -0.14%
+Weekly Close back above the lower Bollinger band           n   9069 dates  825  win  45.5%  avg   1.03%  excess  -0.14% (t  -0.7)  2006-16  -0.22%  2017-26  -0.05%
+Weekly OBV at a 50-bar high before price                   n  18022 dates 1039  win  41.3%  avg   0.45%  excess  -0.07% (t  -0.8)  2006-16   0.06%  2017-26  -0.21%
+Weekly Atrox consensus: all 4 engines on, 3 of 4 within 15 bars n    953 dates  442  win  41.6%  avg   0.15%  excess  -0.24% (t  -0.9)  2006-16  -0.09%  2017-26  -0.35%
+RSI14 crosses up through 30                                n  20575 dates 3091  win  44.1%  avg   0.85%  excess  -0.10% (t  -0.9)  2006-16  -0.21%  2017-26   0.01%
+Weekly pattern: Double bottom                              n    162 dates  135  win  40.1%  avg   0.05%  excess  -0.41% (t  -0.9)  2006-16  -0.77%  2017-26  -0.02%
+Atrox engine: AtroNox (Bollinger trend line turns up)      n   7598 dates 2797  win  42.6%  avg   0.46%  excess  -0.10% (t  -1.0)  2006-16  -0.09%  2017-26  -0.12%
+Squeeze fires up (5+ bars inside Keltner)                  n   8885 dates 3238  win  40.2%  avg   0.27%  excess  -0.10% (t  -1.1)  2006-16   0.03%  2017-26  -0.21%
+Pattern: Falling wedge                                     n   9422 dates 3095  win  42.0%  avg   0.75%  excess  -0.13% (t  -1.1)  2006-16  -0.06%  2017-26  -0.18%
+Weekly Chaikin Money Flow crosses above 0                  n  18453 dates 1032  win  42.5%  avg   0.68%  excess  -0.11% (t  -1.1)  2006-16  -0.08%  2017-26  -0.14%
+Weekly Atrox consensus: Balanced preset (3 of 4 within 5)  n    513 dates  303  win  40.0%  avg  -0.05%  excess  -0.43% (t  -1.1)  2006-16  -0.33%  2017-26  -0.49%
+Weekly Stochastic crosses up through 20                    n  11966 dates  958  win  44.2%  avg   1.09%  excess  -0.17% (t  -1.2)  2006-16  -0.16%  2017-26  -0.18%
+Weekly RSI14 crosses above 50                              n  22657 dates 1031  win  42.4%  avg   0.45%  excess  -0.13% (t  -1.3)  2006-16  -0.02%  2017-26  -0.25%
+Weekly Atrox consensus: script defaults (Raptor+Scalper+Elite all within 15 bars) n    516 dates  325  win  41.7%  avg   0.01%  excess  -0.48% (t  -1.3)  2006-16  -0.26%  2017-26  -0.63%
+Pattern: Ascending triangle                                n   5259 dates 2444  win  39.7%  avg   0.27%  excess  -0.14% (t  -1.3)  2006-16  -0.16%  2017-26  -0.11%
+Atrox consensus: Scalping preset (2 of 4 within 4, score 55) n   7398 dates 2865  win  41.3%  avg   0.14%  excess  -0.14% (t  -1.4)  2006-16  -0.03%  2017-26  -0.24%
+Weekly Donchian 20-bar breakout                            n  25407 dates  997  win  38.9%  avg   0.09%  excess  -0.14% (t  -1.4)  2006-16  -0.09%  2017-26  -0.21%
+Weekly MACD crosses over its signal                        n  16636 dates 1018  win  42.2%  avg   0.46%  excess  -0.14% (t  -1.4)  2006-16   0.03%  2017-26  -0.34%
+Parabolic SAR flips up                                     n  87920 dates 4958  win  40.9%  avg   0.53%  excess  -0.07% (t  -1.4)  2006-16  -0.05%  2017-26  -0.09%
+Ichimoku: Tenkan over Kijun above the cloud                n  23116 dates 4063  win  42.6%  avg   0.59%  excess  -0.11% (t  -1.5)  2006-16   0.01%  2017-26  -0.22%
+Weekly Atrox consensus: Scalping preset (2 of 4 within 4, score 55) n   1421 dates  550  win  40.0%  avg   0.08%  excess  -0.38% (t  -1.6)  2006-16  -0.52%  2017-26  -0.26%
+Chaikin Money Flow crosses above +0.15                     n  69030 dates 4810  win  40.6%  avg   0.40%  excess  -0.08% (t  -1.6)  2006-16  -0.04%  2017-26  -0.13%
+Weekly Atrox consensus: Aggressive preset (3 of 4 within 7, score 50) n    645 dates  341  win  38.6%  avg  -0.09%  excess  -0.57% (t  -1.6)  2006-16  -0.40%  2017-26  -0.69%
+Weekly Atrox consensus: all 4 engines on, 4 of 4 within 15 bars n    279 dates  189  win  36.9%  avg  -0.50%  excess  -0.84% (t  -1.8)  2006-16  -0.76%  2017-26  -0.87%
+Weekly Atrox engine: Scalper (Supertrend 7 cross)          n   1525 dates  550  win  40.9%  avg   0.15%  excess  -0.41% (t  -1.8)  2006-16  -0.24%  2017-26  -0.56%
+Weekly pattern: Bull flag                                  n   2557 dates  592  win  38.0%  avg   0.31%  excess  -0.39% (t  -1.8)  2006-16  -0.21%  2017-26  -0.56%
+Weekly Golden cross (50 over 200)                          n    872 dates  436  win  39.1%  avg   0.25%  excess  -0.50% (t  -1.8)  2006-16  -0.45%  2017-26  -0.54%
+Pattern: Symmetrical triangle (up)                         n   5307 dates 2368  win  38.5%  avg   0.23%  excess  -0.23% (t  -1.8)  2006-16  -0.13%  2017-26  -0.31%
+Atrox engine: Raptor (Supertrend 6.5 cross + SMA9)         n   8476 dates 2884  win  41.9%  avg   0.25%  excess  -0.19% (t  -1.9)  2006-16  -0.06%  2017-26  -0.31%
+Pattern: Inverse head and shoulders                        n    696 dates  526  win  35.9%  avg  -0.40%  excess  -0.54% (t  -2.0)  2006-16  -0.48%  2017-26  -0.60%
+Weekly CCI crosses above +100                              n  23836 dates 1024  win  41.2%  avg   0.34%  excess  -0.19% (t  -2.0)  2006-16  -0.09%  2017-26  -0.30%
+MACD histogram bullish divergence                          n  17187 dates 3218  win  42.8%  avg   0.74%  excess  -0.21% (t  -2.2)  2006-16  -0.12%  2017-26  -0.29%
+Weekly Atrox engine: Raptor (Supertrend 6.5 cross + SMA9)  n   1718 dates  577  win  39.8%  avg   0.03%  excess  -0.47% (t  -2.2)  2006-16  -0.58%  2017-26  -0.38%
+Weekly Donchian 55-bar breakout                            n  19042 dates  969  win  38.2%  avg   0.01%  excess  -0.26% (t  -2.2)  2006-16  -0.17%  2017-26  -0.36%
+Weekly Parabolic SAR flips up                              n  18877 dates 1032  win  42.9%  avg   0.56%  excess  -0.24% (t  -2.2)  2006-16   0.01%  2017-26  -0.53%
+Weekly Supertrend flips up                                 n   5387 dates  847  win  41.0%  avg   0.04%  excess  -0.35% (t  -2.3)  2006-16  -0.38%  2017-26  -0.31%
+MACD crosses over its signal                               n  78031 dates 4926  win  41.7%  avg   0.61%  excess  -0.11% (t  -2.3)  2006-16  -0.07%  2017-26  -0.16%
+Weekly +DI crosses over -DI with ADX 20+                   n   6388 dates  948  win  40.5%  avg   0.10%  excess  -0.34% (t  -2.3)  2006-16  -0.46%  2017-26  -0.20%
+Weekly MACD crosses over its signal below zero             n   7351 dates  927  win  42.0%  avg   0.48%  excess  -0.35% (t  -2.5)  2006-16  -0.11%  2017-26  -0.62%
+RSI bullish divergence                                     n   9225 dates 2407  win  43.7%  avg   0.85%  excess  -0.33% (t  -2.6)  2006-16  -0.14%  2017-26  -0.51%
+Atrox consensus: Aggressive preset (3 of 4 within 7, score 50) n   4278 dates 2009  win  41.0%  avg  -0.00%  excess  -0.31% (t  -2.6)  2006-16  -0.33%  2017-26  -0.30%
+Atrox consensus: all 4 engines on, 4 of 4 within 15 bars   n   2153 dates 1246  win  38.2%  avg  -0.36%  excess  -0.45% (t  -2.7)  2006-16  -0.48%  2017-26  -0.42%
+OBV at a 50-bar high before price                          n  70831 dates 4985  win  40.2%  avg   0.33%  excess  -0.13% (t  -2.8)  2006-16   0.03%  2017-26  -0.30%
+Atrox consensus: Balanced preset (3 of 4 within 5)         n   3576 dates 1865  win  41.1%  avg   0.01%  excess  -0.36% (t  -2.8)  2006-16  -0.34%  2017-26  -0.38%
+Atrox engine: Elite (range filter turns long)              n   7619 dates 2630  win  41.4%  avg   0.12%  excess  -0.34% (t  -2.8)  2006-16  -0.26%  2017-26  -0.41%
+Weekly Close over the upper Keltner channel                n  20775 dates  993  win  39.8%  avg   0.16%  excess  -0.31% (t  -3.1)  2006-16  -0.23%  2017-26  -0.41%
+Atrox consensus: script defaults (Raptor+Scalper+Elite all within 15 bars) n   3315 dates 1724  win  39.2%  avg  -0.30%  excess  -0.43% (t  -3.1)  2006-16  -0.46%  2017-26  -0.41%
+Atrox consensus: Conservative preset (4 of 4 within 3, score 70) n    757 dates  576  win  38.8%  avg  -0.41%  excess  -0.78% (t  -3.2)  2006-16  -0.63%  2017-26  -0.88%
+Weekly Atrox engine: AtroNox (Bollinger trend line turns up) n   1340 dates  492  win  37.7%  avg  -0.16%  excess  -0.72% (t  -3.2)  2006-16  -0.74%  2017-26  -0.71%
+Atrox consensus: all 4 engines on, 3 of 4 within 15 bars   n   5386 dates 2355  win  41.2%  avg   0.06%  excess  -0.37% (t  -3.3)  2006-16  -0.44%  2017-26  -0.31%
+Weekly Close reclaims the 200-bar average                  n   5575 dates  771  win  42.5%  avg   0.70%  excess  -0.54% (t  -3.4)  2006-16  -0.80%  2017-26  -0.34%
+Close over the upper Bollinger band                        n  65095 dates 4682  win  39.3%  avg   0.22%  excess  -0.20% (t  -3.5)  2006-16  -0.15%  2017-26  -0.25%
+Weekly Chaikin Money Flow crosses above +0.15              n  17444 dates 1014  win  41.0%  avg   0.40%  excess  -0.37% (t  -3.7)  2006-16  -0.35%  2017-26  -0.39%
+Weekly Pocket pivot (up volume over every down day of 10)  n  28785 dates 1019  win  42.0%  avg   0.34%  excess  -0.40% (t  -3.7)  2006-16  -0.42%  2017-26  -0.38%
+Close over the upper Keltner channel                       n  89238 dates 4788  win  40.0%  avg   0.32%  excess  -0.19% (t  -3.8)  2006-16  -0.13%  2017-26  -0.25%
+Weekly Close over the upper Bollinger band                 n  15618 dates  979  win  39.7%  avg   0.07%  excess  -0.46% (t  -3.9)  2006-16  -0.42%  2017-26  -0.50%
+CCI crosses above +100                                     n 110341 dates 4947  win  40.2%  avg   0.36%  excess  -0.18% (t  -4.0)  2006-16  -0.10%  2017-26  -0.27%
+Weekly Atrox engine: Elite (range filter turns long)       n   3235 dates  758  win  38.5%  avg  -0.26%  excess  -0.76% (t  -4.0)  2006-16  -1.03%  2017-26  -0.52%
+Donchian 55-bar breakout                                   n  66293 dates 4595  win  38.8%  avg   0.08%  excess  -0.25% (t  -4.4)  2006-16  -0.25%  2017-26  -0.26%
+Donchian 20-bar breakout                                   n  99985 dates 4799  win  39.8%  avg   0.27%  excess  -0.25% (t  -4.8)  2006-16  -0.26%  2017-26  -0.23%
+Pocket pivot (up volume over every down day of 10)         n 147095 dates 4998  win  39.5%  avg   0.32%  excess  -0.20% (t  -4.9)  2006-16  -0.13%  2017-26  -0.29%
+
+--- exit: hold 20d ---
+Aroon up crosses over Aroon down                           n  38072 dates 4764  win  56.1%  avg   0.86%  excess   0.06% (t   1.0)  2006-16   0.11%  2017-26  -0.00%
+Weekly Ichimoku: close crosses above the cloud             n  10384 dates  976  win  55.6%  avg   0.62%  excess   0.11% (t   1.0)  2006-16  -0.07%  2017-26   0.31%
+Weekly pattern: Symmetrical triangle (up)                  n   1249 dates  556  win  58.6%  avg   0.76%  excess   0.20% (t   0.9)  2006-16   0.20%  2017-26   0.19%
+Weekly Atrox consensus: all 4 engines on, 3 of 4 within 15 bars n    953 dates  442  win  53.6%  avg   0.60%  excess   0.23% (t   0.8)  2006-16   0.32%  2017-26   0.17%
+Weekly pattern: Ascending triangle                         n    635 dates  386  win  58.4%  avg   0.71%  excess   0.18% (t   0.8)  2006-16   0.46%  2017-26  -0.11%
+Golden cross (50 over 200)                                 n   5584 dates 2837  win  55.1%  avg   0.57%  excess   0.06% (t   0.5)  2006-16   0.05%  2017-26   0.07%
+Weekly pattern: Falling wedge                              n   1796 dates  646  win  57.4%  avg   1.21%  excess   0.13% (t   0.5)  2006-16   0.11%  2017-26   0.15%
+CCI crosses up through -100                                n  85286 dates 4824  win  56.5%  avg   1.03%  excess   0.03% (t   0.4)  2006-16  -0.04%  2017-26   0.10%
+MACD crosses over its signal below zero                    n  41382 dates 4590  win  56.8%  avg   1.13%  excess   0.03% (t   0.4)  2006-16   0.05%  2017-26  -0.00%
+Pattern: Bull flag                                         n   2762 dates 1066  win  53.5%  avg   1.09%  excess   0.11% (t   0.4)  2006-16  -0.77%  2017-26   0.88%
+Weekly Atrox consensus: Conservative preset (4 of 4 within 3, score 70) n     79 dates   65  win  41.8%  avg  -0.06%  excess   0.41% (t   0.4)  2006-16  -0.21%  2017-26   0.70%
+Weekly Atrox consensus: Balanced preset (3 of 4 within 5)  n    513 dates  303  win  52.2%  avg   0.57%  excess   0.08% (t   0.2)  2006-16  -0.28%  2017-26   0.33%
+Weekly Golden cross (50 over 200)                          n    872 dates  436  win  53.9%  avg   0.71%  excess   0.00% (t   0.0)  2006-16  -0.25%  2017-26   0.18%
+Weekly pattern: Bull flag                                  n   2557 dates  592  win  55.1%  avg   0.67%  excess  -0.01% (t  -0.1)  2006-16   0.02%  2017-26  -0.05%
+Weekly pattern: Double bottom                              n    162 dates  135  win  52.5%  avg   0.17%  excess  -0.05% (t  -0.1)  2006-16   0.03%  2017-26  -0.13%
+Weekly EMA 9 crosses over EMA 21                           n   8501 dates  990  win  55.5%  avg   0.46%  excess  -0.02% (t  -0.2)  2006-16  -0.18%  2017-26   0.16%
+MACD crosses above zero                                    n  33517 dates 4623  win  56.2%  avg   0.82%  excess  -0.01% (t  -0.2)  2006-16   0.02%  2017-26  -0.05%
+Weekly Atrox consensus: script defaults (Raptor+Scalper+Elite all within 15 bars) n    516 dates  325  win  50.8%  avg   0.41%  excess  -0.08% (t  -0.2)  2006-16  -0.14%  2017-26  -0.03%
+Weekly RSI14 crosses up through 30                         n   2887 dates  491  win  58.1%  avg   1.52%  excess  -0.07% (t  -0.2)  2006-16   0.02%  2017-26  -0.14%
+Pattern: Double bottom                                     n   1114 dates  785  win  57.3%  avg   0.87%  excess  -0.05% (t  -0.2)  2006-16   0.24%  2017-26  -0.27%
+Weekly Ichimoku: Tenkan over Kijun above the cloud         n   5201 dates  816  win  54.7%  avg   0.34%  excess  -0.04% (t  -0.3)  2006-16  -0.02%  2017-26  -0.06%
+Weekly Atrox consensus: Scalping preset (2 of 4 within 4, score 55) n   1421 dates  550  win  52.1%  avg   0.28%  excess  -0.08% (t  -0.4)  2006-16  -0.51%  2017-26   0.27%
+Weekly pattern: Inverse head and shoulders                 n     78 dates   67  win  56.4%  avg   0.37%  excess  -0.28% (t  -0.4)  2006-16  -0.37%  2017-26  -0.20%
+Weekly Squeeze fires up (5+ bars inside Keltner)           n   2155 dates  745  win  55.6%  avg   0.48%  excess  -0.07% (t  -0.4)  2006-16   0.08%  2017-26  -0.24%
+Weekly Chaikin Money Flow crosses above 0                  n  18453 dates 1032  win  54.8%  avg   0.73%  excess  -0.05% (t  -0.5)  2006-16  -0.10%  2017-26   0.02%
+Weekly Atrox consensus: Aggressive preset (3 of 4 within 7, score 50) n    645 dates  341  win  52.4%  avg   0.41%  excess  -0.16% (t  -0.5)  2006-16  -0.36%  2017-26  -0.02%
+Heikin-Ashi turns green after 3+ red                       n 130796 dates 4882  win  55.7%  avg   0.88%  excess  -0.03% (t  -0.5)  2006-16  -0.04%  2017-26  -0.02%
+Weekly Atrox engine: Scalper (Supertrend 7 cross)          n   1525 dates  550  win  53.3%  avg   0.33%  excess  -0.13% (t  -0.6)  2006-16  -0.17%  2017-26  -0.10%
+Atrox engine: Scalper (Supertrend 7 cross)                 n   7538 dates 2738  win  53.8%  avg   0.27%  excess  -0.07% (t  -0.6)  2006-16  -0.11%  2017-26  -0.03%
+Weekly Atrox consensus: all 4 engines on, 4 of 4 within 15 bars n    279 dates  189  win  49.1%  avg   0.23%  excess  -0.30% (t  -0.6)  2006-16  -1.47%  2017-26   0.14%
+Pattern: Inverse head and shoulders                        n    696 dates  526  win  56.2%  avg   0.38%  excess  -0.18% (t  -0.7)  2006-16  -0.22%  2017-26  -0.14%
+Stochastic crosses up through 20                           n  65159 dates 4680  win  56.3%  avg   0.98%  excess  -0.04% (t  -0.7)  2006-16  -0.11%  2017-26   0.03%
+EMA 9 crosses over EMA 21                                  n  43239 dates 4750  win  56.1%  avg   0.83%  excess  -0.04% (t  -0.7)  2006-16  -0.04%  2017-26  -0.04%
+Close back above the lower Bollinger band                  n  52675 dates 4264  win  56.8%  avg   1.15%  excess  -0.05% (t  -0.7)  2006-16  -0.03%  2017-26  -0.07%
+Pattern: Symmetrical triangle (up)                         n   5307 dates 2368  win  54.1%  avg   0.58%  excess  -0.11% (t  -0.8)  2006-16  -0.12%  2017-26  -0.10%
+Chaikin Money Flow crosses above 0                         n  94952 dates 5006  win  55.0%  avg   0.64%  excess  -0.04% (t  -0.9)  2006-16  -0.06%  2017-26  -0.00%
+Pattern: Ascending triangle                                n   5259 dates 2444  win  55.7%  avg   0.49%  excess  -0.09% (t  -0.9)  2006-16  -0.07%  2017-26  -0.11%
+Weekly Donchian 20-bar breakout                            n  25407 dates  997  win  53.7%  avg   0.25%  excess  -0.10% (t  -0.9)  2006-16  -0.11%  2017-26  -0.09%
+Atrox engine: AtroNox (Bollinger trend line turns up)      n   7598 dates 2797  win  56.1%  avg   0.62%  excess  -0.10% (t  -1.0)  2006-16  -0.26%  2017-26   0.05%
+Chaikin Money Flow crosses above +0.15                     n  69030 dates 4810  win  54.5%  avg   0.51%  excess  -0.05% (t  -1.0)  2006-16  -0.05%  2017-26  -0.06%
+Weekly Atrox engine: AtroNox (Bollinger trend line turns up) n   1340 dates  492  win  53.1%  avg   0.25%  excess  -0.24% (t  -1.0)  2006-16  -0.59%  2017-26  -0.03%
+Weekly MACD histogram bullish divergence                   n   2860 dates  579  win  53.9%  avg   0.97%  excess  -0.26% (t  -1.0)  2006-16  -0.10%  2017-26  -0.39%
+Weekly RSI bullish divergence                              n   1269 dates  372  win  55.5%  avg   1.40%  excess  -0.35% (t  -1.0)  2006-16  -0.05%  2017-26  -0.60%
+Weekly Donchian 55-bar breakout                            n  19042 dates  969  win  53.4%  avg   0.18%  excess  -0.13% (t  -1.1)  2006-16  -0.12%  2017-26  -0.14%
+Weekly Aroon up crosses over Aroon down                    n   7438 dates  976  win  55.1%  avg   0.53%  excess  -0.15% (t  -1.1)  2006-16  -0.04%  2017-26  -0.28%
+Weekly MACD crosses above zero                             n   6468 dates  956  win  54.7%  avg   0.32%  excess  -0.16% (t  -1.2)  2006-16  -0.15%  2017-26  -0.17%
+Weekly Atrox engine: Raptor (Supertrend 6.5 cross + SMA9)  n   1718 dates  577  win  53.3%  avg   0.24%  excess  -0.27% (t  -1.2)  2006-16  -0.37%  2017-26  -0.18%
+Weekly Money Flow Index crosses up through 20              n   1920 dates  595  win  57.5%  avg   1.17%  excess  -0.36% (t  -1.2)  2006-16  -0.59%  2017-26  -0.13%
+Weekly Heikin-Ashi turns green after 3+ red                n  25828 dates 1020  win  56.0%  avg   0.84%  excess  -0.14% (t  -1.2)  2006-16  -0.07%  2017-26  -0.22%
+Weekly CCI crosses up through -100                         n  15269 dates  992  win  56.7%  avg   1.10%  excess  -0.16% (t  -1.3)  2006-16  -0.16%  2017-26  -0.17%
++DI crosses over -DI with ADX 20+                          n  28763 dates 4412  win  55.4%  avg   0.74%  excess  -0.09% (t  -1.4)  2006-16  -0.06%  2017-26  -0.13%
+Weekly Close back above the lower Bollinger band           n   9069 dates  825  win  56.7%  avg   1.17%  excess  -0.26% (t  -1.4)  2006-16  -0.26%  2017-26  -0.26%
+RSI14 crosses up through 30                                n  20575 dates 3091  win  57.0%  avg   1.06%  excess  -0.15% (t  -1.4)  2006-16  -0.24%  2017-26  -0.06%
+Parabolic SAR flips up                                     n  87920 dates 4958  win  55.3%  avg   0.72%  excess  -0.07% (t  -1.4)  2006-16  -0.14%  2017-26   0.00%
+Weekly CCI crosses above +100                              n  23836 dates 1024  win  55.0%  avg   0.42%  excess  -0.13% (t  -1.4)  2006-16  -0.17%  2017-26  -0.08%
+Weekly Atrox engine: Elite (range filter turns long)       n   3235 dates  758  win  51.1%  avg   0.02%  excess  -0.29% (t  -1.5)  2006-16  -0.30%  2017-26  -0.29%
+MACD histogram bullish divergence                          n  17187 dates 3218  win  55.9%  avg   1.03%  excess  -0.16% (t  -1.6)  2006-16  -0.30%  2017-26  -0.03%
+RSI14 crosses above 50                                     n 110733 dates 4971  win  55.9%  avg   0.82%  excess  -0.07% (t  -1.6)  2006-16  -0.00%  2017-26  -0.15%
+Pattern: Falling wedge                                     n   9422 dates 3095  win  55.4%  avg   1.06%  excess  -0.19% (t  -1.7)  2006-16  -0.20%  2017-26  -0.17%
+Atrox consensus: Scalping preset (2 of 4 within 4, score 55) n   7398 dates 2865  win  53.2%  avg   0.15%  excess  -0.19% (t  -1.7)  2006-16  -0.20%  2017-26  -0.19%
+RSI bullish divergence                                     n   9225 dates 2407  win  56.7%  avg   1.28%  excess  -0.23% (t  -1.8)  2006-16  -0.25%  2017-26  -0.20%
+Supertrend flips up                                        n  27707 dates 4164  win  56.2%  avg   0.82%  excess  -0.13% (t  -1.8)  2006-16  -0.03%  2017-26  -0.23%
+Close reclaims the 200-bar average                         n  32493 dates 4579  win  55.3%  avg   0.57%  excess  -0.12% (t  -1.9)  2006-16  -0.18%  2017-26  -0.05%
+Atrox engine: Raptor (Supertrend 6.5 cross + SMA9)         n   8476 dates 2884  win  54.1%  avg   0.33%  excess  -0.19% (t  -1.9)  2006-16  -0.16%  2017-26  -0.23%
+Weekly RSI14 crosses above 50                              n  22657 dates 1031  win  54.6%  avg   0.44%  excess  -0.19% (t  -1.9)  2006-16  -0.20%  2017-26  -0.18%
+Weekly Stochastic crosses up through 20                    n  11966 dates  958  win  55.7%  avg   0.92%  excess  -0.29% (t  -2.0)  2006-16  -0.34%  2017-26  -0.24%
+Weekly Supertrend flips up                                 n   5387 dates  847  win  52.7%  avg   0.02%  excess  -0.31% (t  -2.0)  2006-16  -0.34%  2017-26  -0.29%
+Weekly OBV at a 50-bar high before price                   n  18022 dates 1039  win  55.2%  avg   0.43%  excess  -0.17% (t  -2.0)  2006-16  -0.03%  2017-26  -0.34%
+Weekly Close over the upper Bollinger band                 n  15618 dates  979  win  53.5%  avg   0.16%  excess  -0.25% (t  -2.1)  2006-16  -0.25%  2017-26  -0.24%
+OBV at a 50-bar high before price                          n  70831 dates 4985  win  54.6%  avg   0.43%  excess  -0.09% (t  -2.1)  2006-16   0.01%  2017-26  -0.21%
+Ichimoku: close crosses above the cloud                    n  52585 dates 4824  win  55.6%  avg   0.69%  excess  -0.11% (t  -2.1)  2006-16  -0.03%  2017-26  -0.20%
+Weekly MACD crosses over its signal                        n  16636 dates 1018  win  55.2%  avg   0.44%  excess  -0.23% (t  -2.3)  2006-16  -0.09%  2017-26  -0.38%
+Ichimoku: Tenkan over Kijun above the cloud                n  23116 dates 4063  win  56.0%  avg   0.66%  excess  -0.17% (t  -2.3)  2006-16  -0.14%  2017-26  -0.19%
+Atrox consensus: Conservative preset (4 of 4 within 3, score 70) n    757 dates  576  win  51.1%  avg  -0.27%  excess  -0.57% (t  -2.3)  2006-16  -0.79%  2017-26  -0.41%
+Weekly Parabolic SAR flips up                              n  18877 dates 1032  win  56.2%  avg   0.68%  excess  -0.26% (t  -2.3)  2006-16  -0.19%  2017-26  -0.35%
+Weekly Close reclaims the 200-bar average                  n   5575 dates  771  win  55.5%  avg   0.89%  excess  -0.37% (t  -2.3)  2006-16  -0.72%  2017-26  -0.11%
+Atrox consensus: Balanced preset (3 of 4 within 5)         n   3576 dates 1865  win  53.7%  avg   0.12%  excess  -0.32% (t  -2.4)  2006-16  -0.46%  2017-26  -0.20%
+Money Flow Index crosses up through 20                     n  12980 dates 3185  win  56.3%  avg   1.03%  excess  -0.27% (t  -2.5)  2006-16  -0.31%  2017-26  -0.23%
+Atrox consensus: Aggressive preset (3 of 4 within 7, score 50) n   4278 dates 2009  win  53.8%  avg   0.10%  excess  -0.33% (t  -2.6)  2006-16  -0.45%  2017-26  -0.22%
+Atrox engine: Elite (range filter turns long)              n   7619 dates 2630  win  52.6%  avg   0.22%  excess  -0.32% (t  -2.6)  2006-16  -0.36%  2017-26  -0.29%
+CCI crosses above +100                                     n 110341 dates 4947  win  54.7%  avg   0.54%  excess  -0.12% (t  -2.6)  2006-16  -0.15%  2017-26  -0.10%
+Weekly Close over the upper Keltner channel                n  20775 dates  993  win  53.8%  avg   0.27%  excess  -0.28% (t  -2.7)  2006-16  -0.27%  2017-26  -0.29%
+MACD crosses over its signal                               n  78031 dates 4926  win  55.4%  avg   0.73%  excess  -0.13% (t  -2.7)  2006-16  -0.21%  2017-26  -0.04%
+Atrox consensus: all 4 engines on, 3 of 4 within 15 bars   n   5386 dates 2355  win  53.6%  avg   0.15%  excess  -0.33% (t  -2.8)  2006-16  -0.51%  2017-26  -0.17%
+Atrox consensus: all 4 engines on, 4 of 4 within 15 bars   n   2153 dates 1246  win  50.2%  avg  -0.37%  excess  -0.49% (t  -2.9)  2006-16  -0.55%  2017-26  -0.45%
+Squeeze fires up (5+ bars inside Keltner)                  n   8885 dates 3238  win  54.7%  avg   0.28%  excess  -0.29% (t  -3.1)  2006-16  -0.20%  2017-26  -0.37%
+Close over the upper Bollinger band                        n  65095 dates 4682  win  54.5%  avg   0.45%  excess  -0.18% (t  -3.1)  2006-16  -0.22%  2017-26  -0.14%
+Weekly Chaikin Money Flow crosses above +0.15              n  17444 dates 1014  win  54.5%  avg   0.49%  excess  -0.31% (t  -3.2)  2006-16  -0.34%  2017-26  -0.28%
+Donchian 55-bar breakout                                   n  66293 dates 4595  win  53.5%  avg   0.24%  excess  -0.18% (t  -3.2)  2006-16  -0.26%  2017-26  -0.10%
+Weekly +DI crosses over -DI with ADX 20+                   n   6388 dates  948  win  53.4%  avg   0.17%  excess  -0.55% (t  -3.2)  2006-16  -0.62%  2017-26  -0.47%
+Weekly Pocket pivot (up volume over every down day of 10)  n  28785 dates 1019  win  55.4%  avg   0.44%  excess  -0.33% (t  -3.3)  2006-16  -0.40%  2017-26  -0.25%
+Pocket pivot (up volume over every down day of 10)         n 147095 dates 4998  win  54.5%  avg   0.50%  excess  -0.14% (t  -3.3)  2006-16  -0.10%  2017-26  -0.17%
+Atrox consensus: script defaults (Raptor+Scalper+Elite all within 15 bars) n   3315 dates 1724  win  50.2%  avg  -0.49%  excess  -0.51% (t  -3.4)  2006-16  -0.57%  2017-26  -0.47%
+Close over the upper Keltner channel                       n  89238 dates 4788  win  54.7%  avg   0.47%  excess  -0.19% (t  -3.6)  2006-16  -0.18%  2017-26  -0.19%
+Weekly MACD crosses over its signal below zero             n   7351 dates  927  win  54.2%  avg   0.44%  excess  -0.57% (t  -3.7)  2006-16  -0.21%  2017-26  -0.96%
+Donchian 20-bar breakout                                   n  99985 dates 4799  win  54.5%  avg   0.45%  excess  -0.20% (t  -3.9)  2006-16  -0.26%  2017-26  -0.13%
+
+--- exit: trail (8% stop, Supertrend, 120d) ---
+Pocket pivot (up volume over every down day of 10)         n 147095 dates 4998  win  38.7%  avg   0.69%  excess   0.42% (t   7.8)  2006-16   0.36%  2017-26   0.48%
+Close over the upper Keltner channel                       n  89238 dates 4788  win  38.8%  avg   0.75%  excess   0.50% (t   6.3)  2006-16   0.53%  2017-26   0.47%
+Aroon up crosses over Aroon down                           n  38072 dates 4764  win  40.8%  avg   0.86%  excess   0.44% (t   6.0)  2006-16   0.50%  2017-26   0.38%
+Donchian 20-bar breakout                                   n  99985 dates 4799  win  38.9%  avg   0.73%  excess   0.42% (t   5.7)  2006-16   0.31%  2017-26   0.54%
+Donchian 55-bar breakout                                   n  66293 dates 4595  win  38.4%  avg   0.58%  excess   0.47% (t   5.5)  2006-16   0.37%  2017-26   0.57%
+Supertrend flips up                                        n  27707 dates 4164  win  40.9%  avg   1.19%  excess   0.59% (t   5.5)  2006-16   0.61%  2017-26   0.58%
+Atrox engine: AtroNox (Bollinger trend line turns up)      n   7598 dates 2797  win  41.5%  avg   1.23%  excess   1.01% (t   5.3)  2006-16   0.86%  2017-26   1.15%
+Close over the upper Bollinger band                        n  65095 dates 4682  win  38.3%  avg   0.57%  excess   0.41% (t   5.2)  2006-16   0.37%  2017-26   0.44%
+Weekly EMA 9 crosses over EMA 21                           n   8501 dates  990  win  39.9%  avg   1.21%  excess   1.05% (t   5.2)  2006-16   0.86%  2017-26   1.26%
+Atrox engine: Scalper (Supertrend 7 cross)                 n   7538 dates 2738  win  39.7%  avg   0.83%  excess   0.79% (t   4.6)  2006-16   0.71%  2017-26   0.86%
+Weekly CCI crosses above +100                              n  23836 dates 1024  win  39.2%  avg   0.83%  excess   0.61% (t   4.5)  2006-16   0.73%  2017-26   0.47%
+CCI crosses above +100                                     n 110341 dates 4947  win  39.0%  avg   0.62%  excess   0.34% (t   4.5)  2006-16   0.29%  2017-26   0.40%
+Chaikin Money Flow crosses above +0.15                     n  69030 dates 4810  win  39.2%  avg   0.52%  excess   0.29% (t   4.5)  2006-16   0.28%  2017-26   0.29%
+OBV at a 50-bar high before price                          n  70831 dates 4985  win  39.2%  avg   0.54%  excess   0.22% (t   4.3)  2006-16   0.25%  2017-26   0.18%
+Atrox consensus: Scalping preset (2 of 4 within 4, score 55) n   7398 dates 2865  win  39.6%  avg   0.82%  excess   0.65% (t   4.1)  2006-16   0.66%  2017-26   0.64%
+Atrox engine: Raptor (Supertrend 6.5 cross + SMA9)         n   8476 dates 2884  win  39.7%  avg   0.82%  excess   0.60% (t   3.9)  2006-16   0.66%  2017-26   0.55%
+Weekly MACD crosses above zero                             n   6468 dates  956  win  39.8%  avg   1.18%  excess   0.84% (t   3.9)  2006-16   0.79%  2017-26   0.90%
+Weekly Ichimoku: close crosses above the cloud             n  10384 dates  976  win  40.7%  avg   0.81%  excess   0.49% (t   3.7)  2006-16   0.58%  2017-26   0.40%
+Weekly Aroon up crosses over Aroon down                    n   7438 dates  976  win  40.5%  avg   0.96%  excess   0.68% (t   3.6)  2006-16   0.54%  2017-26   0.84%
+Weekly Donchian 20-bar breakout                            n  25407 dates  997  win  38.2%  avg   0.50%  excess   0.48% (t   3.5)  2006-16   0.46%  2017-26   0.50%
+Weekly MACD crosses over its signal                        n  16636 dates 1018  win  39.9%  avg   0.88%  excess   0.52% (t   3.5)  2006-16   0.67%  2017-26   0.34%
+Weekly Ichimoku: Tenkan over Kijun above the cloud         n   5201 dates  816  win  41.2%  avg   1.06%  excess   0.74% (t   3.3)  2006-16   0.89%  2017-26   0.59%
+Weekly Parabolic SAR flips up                              n  18877 dates 1032  win  39.5%  avg   0.90%  excess   0.48% (t   3.2)  2006-16   0.74%  2017-26   0.19%
+Weekly OBV at a 50-bar high before price                   n  18022 dates 1039  win  39.8%  avg   0.71%  excess   0.32% (t   3.2)  2006-16   0.47%  2017-26   0.16%
+Golden cross (50 over 200)                                 n   5584 dates 2837  win  40.2%  avg   1.02%  excess   0.48% (t   3.2)  2006-16   0.59%  2017-26   0.38%
+MACD crosses above zero                                    n  33517 dates 4623  win  40.4%  avg   0.80%  excess   0.22% (t   3.0)  2006-16   0.41%  2017-26   0.02%
+Close reclaims the 200-bar average                         n  32493 dates 4579  win  41.5%  avg   0.53%  excess   0.23% (t   3.0)  2006-16   0.09%  2017-26   0.37%
+Weekly RSI14 crosses above 50                              n  22657 dates 1031  win  40.1%  avg   0.66%  excess   0.35% (t   3.0)  2006-16   0.42%  2017-26   0.28%
+Weekly pattern: Ascending triangle                         n    635 dates  386  win  44.6%  avg   1.28%  excess   1.13% (t   2.9)  2006-16   2.12%  2017-26   0.08%
+Ichimoku: Tenkan over Kijun above the cloud                n  23116 dates 4063  win  39.9%  avg   0.90%  excess   0.26% (t   2.9)  2006-16   0.38%  2017-26   0.12%
+Weekly Squeeze fires up (5+ bars inside Keltner)           n   2155 dates  745  win  42.0%  avg   1.15%  excess   0.77% (t   2.8)  2006-16   0.71%  2017-26   0.83%
+Weekly pattern: Symmetrical triangle (up)                  n   1249 dates  556  win  43.5%  avg   1.40%  excess   0.87% (t   2.7)  2006-16   0.97%  2017-26   0.77%
+Weekly Pocket pivot (up volume over every down day of 10)  n  28785 dates 1019  win  40.5%  avg   0.63%  excess   0.32% (t   2.7)  2006-16   0.29%  2017-26   0.36%
+Weekly Supertrend flips up                                 n   5387 dates  847  win  38.3%  avg   0.77%  excess   0.65% (t   2.6)  2006-16   0.63%  2017-26   0.68%
+Ichimoku: close crosses above the cloud                    n  52585 dates 4824  win  40.4%  avg   0.59%  excess   0.15% (t   2.5)  2006-16   0.25%  2017-26   0.04%
+Pattern: Ascending triangle                                n   5259 dates 2444  win  40.2%  avg   0.75%  excess   0.33% (t   2.3)  2006-16   0.08%  2017-26   0.58%
+Weekly Close over the upper Keltner channel                n  20775 dates  993  win  38.7%  avg   0.54%  excess   0.33% (t   2.2)  2006-16   0.32%  2017-26   0.33%
+Weekly Close over the upper Bollinger band                 n  15618 dates  979  win  38.3%  avg   0.43%  excess   0.43% (t   2.2)  2006-16   0.38%  2017-26   0.48%
+Weekly Donchian 55-bar breakout                            n  19042 dates  969  win  38.0%  avg   0.34%  excess   0.28% (t   2.0)  2006-16   0.38%  2017-26   0.17%
+Weekly Atrox engine: Raptor (Supertrend 6.5 cross + SMA9)  n   1718 dates  577  win  38.8%  avg   0.83%  excess   0.63% (t   1.8)  2006-16   0.84%  2017-26   0.44%
+Atrox consensus: Aggressive preset (3 of 4 within 7, score 50) n   4278 dates 2009  win  38.9%  avg   0.61%  excess   0.34% (t   1.7)  2006-16   0.29%  2017-26   0.38%
+EMA 9 crosses over EMA 21                                  n  43239 dates 4750  win  39.9%  avg   0.65%  excess   0.11% (t   1.7)  2006-16   0.24%  2017-26  -0.03%
+Pattern: Bull flag                                         n   2762 dates 1066  win  37.6%  avg   1.23%  excess   0.55% (t   1.5)  2006-16   0.16%  2017-26   0.89%
+Pattern: Symmetrical triangle (up)                         n   5307 dates 2368  win  38.6%  avg   0.62%  excess   0.26% (t   1.5)  2006-16   0.10%  2017-26   0.41%
+Weekly Atrox consensus: all 4 engines on, 3 of 4 within 15 bars n    953 dates  442  win  38.0%  avg   0.71%  excess   0.65% (t   1.5)  2006-16   1.49%  2017-26   0.03%
+Pattern: Double bottom                                     n   1114 dates  785  win  42.9%  avg   1.45%  excess   0.52% (t   1.4)  2006-16   0.95%  2017-26   0.21%
+Atrox consensus: all 4 engines on, 3 of 4 within 15 bars   n   5386 dates 2355  win  39.1%  avg   0.65%  excess   0.27% (t   1.4)  2006-16   0.10%  2017-26   0.43%
+Weekly Atrox consensus: Scalping preset (2 of 4 within 4, score 55) n   1421 dates  550  win  37.6%  avg   0.81%  excess   0.55% (t   1.4)  2006-16   0.52%  2017-26   0.58%
+Weekly Chaikin Money Flow crosses above 0                  n  18453 dates 1032  win  40.8%  avg   0.63%  excess   0.13% (t   1.4)  2006-16   0.05%  2017-26   0.22%
+Weekly Atrox engine: Scalper (Supertrend 7 cross)          n   1525 dates  550  win  39.5%  avg   1.01%  excess   0.55% (t   1.4)  2006-16   0.90%  2017-26   0.23%
+Squeeze fires up (5+ bars inside Keltner)                  n   8885 dates 3238  win  38.6%  avg   0.39%  excess   0.16% (t   1.4)  2006-16   0.25%  2017-26   0.07%
+Atrox consensus: Balanced preset (3 of 4 within 5)         n   3576 dates 1865  win  39.2%  avg   0.62%  excess   0.31% (t   1.3)  2006-16   0.09%  2017-26   0.50%
+Weekly MACD crosses over its signal below zero             n   7351 dates  927  win  39.2%  avg   0.92%  excess   0.23% (t   1.2)  2006-16   0.31%  2017-26   0.14%
+Weekly Atrox consensus: Balanced preset (3 of 4 within 5)  n    513 dates  303  win  37.8%  avg   0.84%  excess   0.58% (t   0.9)  2006-16   1.32%  2017-26   0.07%
+Chaikin Money Flow crosses above 0                         n  94952 dates 5006  win  40.9%  avg   0.39%  excess   0.04% (t   0.9)  2006-16   0.00%  2017-26   0.08%
+Weekly Atrox consensus: script defaults (Raptor+Scalper+Elite all within 15 bars) n    516 dates  325  win  38.2%  avg   0.84%  excess   0.52% (t   0.9)  2006-16   1.55%  2017-26  -0.17%
+Weekly +DI crosses over -DI with ADX 20+                   n   6388 dates  948  win  37.1%  avg   0.45%  excess   0.16% (t   0.8)  2006-16   0.14%  2017-26   0.18%
+Weekly pattern: Inverse head and shoulders                 n     78 dates   67  win  37.2%  avg   0.85%  excess   1.17% (t   0.8)  2006-16   3.08%  2017-26  -0.47%
+Weekly Atrox engine: Elite (range filter turns long)       n   3235 dates  758  win  35.7%  avg   0.38%  excess   0.24% (t   0.8)  2006-16   0.31%  2017-26   0.18%
+Weekly Atrox consensus: Aggressive preset (3 of 4 within 7, score 50) n    645 dates  341  win  36.4%  avg   0.62%  excess   0.46% (t   0.8)  2006-16   1.31%  2017-26  -0.14%
+Atrox consensus: all 4 engines on, 4 of 4 within 15 bars   n   2153 dates 1246  win  36.5%  avg   0.21%  excess   0.20% (t   0.6)  2006-16  -0.12%  2017-26   0.46%
+Weekly pattern: Double bottom                              n    162 dates  135  win  42.6%  avg   0.87%  excess   0.41% (t   0.6)  2006-16   0.77%  2017-26   0.02%
+Weekly pattern: Bull flag                                  n   2557 dates  592  win  38.0%  avg   0.66%  excess   0.16% (t   0.5)  2006-16   0.44%  2017-26  -0.13%
++DI crosses over -DI with ADX 20+                          n  28763 dates 4412  win  39.4%  avg   0.46%  excess   0.03% (t   0.4)  2006-16   0.19%  2017-26  -0.14%
+Weekly Close reclaims the 200-bar average                  n   5575 dates  771  win  39.7%  avg   0.57%  excess   0.09% (t   0.4)  2006-16   0.34%  2017-26  -0.10%
+Weekly Heikin-Ashi turns green after 3+ red                n  25828 dates 1020  win  40.9%  avg   0.61%  excess   0.05% (t   0.4)  2006-16  -0.07%  2017-26   0.17%
+Weekly MACD histogram bullish divergence                   n   2860 dates  579  win  39.8%  avg   0.67%  excess   0.08% (t   0.3)  2006-16  -0.16%  2017-26   0.29%
+Weekly Chaikin Money Flow crosses above +0.15              n  17444 dates 1014  win  40.2%  avg   0.64%  excess   0.03% (t   0.2)  2006-16   0.12%  2017-26  -0.06%
+Pattern: Inverse head and shoulders                        n    696 dates  526  win  37.1%  avg   0.25%  excess   0.07% (t   0.2)  2006-16  -0.07%  2017-26   0.19%
+Atrox consensus: script defaults (Raptor+Scalper+Elite all within 15 bars) n   3315 dates 1724  win  36.3%  avg   0.02%  excess  -0.04% (t  -0.2)  2006-16  -0.00%  2017-26  -0.06%
+Atrox engine: Elite (range filter turns long)              n   7619 dates 2630  win  36.7%  avg   0.22%  excess  -0.04% (t  -0.2)  2006-16  -0.04%  2017-26  -0.03%
+Weekly pattern: Falling wedge                              n   1796 dates  646  win  38.9%  avg   0.65%  excess  -0.07% (t  -0.2)  2006-16  -0.10%  2017-26  -0.04%
+Parabolic SAR flips up                                     n  87920 dates 4958  win  40.8%  avg   0.28%  excess  -0.02% (t  -0.3)  2006-16  -0.06%  2017-26   0.03%
+Weekly RSI bullish divergence                              n   1269 dates  372  win  38.1%  avg   0.57%  excess  -0.12% (t  -0.3)  2006-16  -0.18%  2017-26  -0.07%
+Atrox consensus: Conservative preset (4 of 4 within 3, score 70) n    757 dates  576  win  36.9%  avg  -0.06%  excess  -0.15% (t  -0.4)  2006-16  -0.17%  2017-26  -0.13%
+Weekly Atrox engine: AtroNox (Bollinger trend line turns up) n   1340 dates  492  win  37.0%  avg   0.44%  excess  -0.16% (t  -0.5)  2006-16   0.27%  2017-26  -0.43%
+Weekly Stochastic crosses up through 20                    n  11966 dates  958  win  40.0%  avg   0.55%  excess  -0.10% (t  -0.7)  2006-16   0.07%  2017-26  -0.28%
+RSI14 crosses above 50                                     n 110733 dates 4971  win  40.3%  avg   0.42%  excess  -0.05% (t  -1.0)  2006-16  -0.00%  2017-26  -0.09%
+Heikin-Ashi turns green after 3+ red                       n 130796 dates 4882  win  42.1%  avg   0.29%  excess  -0.06% (t  -1.1)  2006-16  -0.01%  2017-26  -0.11%
+Weekly Golden cross (50 over 200)                          n    872 dates  436  win  39.6%  avg   0.16%  excess  -0.38% (t  -1.2)  2006-16   0.05%  2017-26  -0.67%
+Weekly Atrox consensus: Conservative preset (4 of 4 within 3, score 70) n     79 dates   65  win  32.9%  avg  -1.15%  excess  -1.51% (t  -1.5)  2006-16  -0.89%  2017-26  -1.81%
+MACD crosses over its signal                               n  78031 dates 4926  win  41.5%  avg   0.34%  excess  -0.07% (t  -1.5)  2006-16  -0.06%  2017-26  -0.09%
+Weekly Atrox consensus: all 4 engines on, 4 of 4 within 15 bars n    279 dates  189  win  36.2%  avg  -0.50%  excess  -1.13% (t  -2.1)  2006-16  -0.80%  2017-26  -1.26%
+Weekly CCI crosses up through -100                         n  15269 dates  992  win  41.4%  avg   0.51%  excess  -0.29% (t  -2.8)  2006-16  -0.33%  2017-26  -0.25%
+Weekly RSI14 crosses up through 30                         n   2887 dates  491  win  42.0%  avg  -0.07%  excess  -0.61% (t  -3.0)  2006-16  -0.69%  2017-26  -0.54%
+Weekly Money Flow Index crosses up through 20              n   1920 dates  595  win  41.9%  avg   0.03%  excess  -0.72% (t  -3.8)  2006-16  -0.93%  2017-26  -0.51%
+MACD histogram bullish divergence                          n  17187 dates 3218  win  44.2%  avg   0.13%  excess  -0.26% (t  -3.8)  2006-16  -0.25%  2017-26  -0.27%
+CCI crosses up through -100                                n  85286 dates 4824  win  44.1%  avg   0.11%  excess  -0.21% (t  -4.1)  2006-16  -0.24%  2017-26  -0.17%
+Pattern: Falling wedge                                     n   9422 dates 3095  win  43.8%  avg   0.08%  excess  -0.36% (t  -4.4)  2006-16  -0.34%  2017-26  -0.38%
+RSI bullish divergence                                     n   9225 dates 2407  win  43.3%  avg   0.01%  excess  -0.41% (t  -5.3)  2006-16  -0.43%  2017-26  -0.40%
+Weekly Close back above the lower Bollinger band           n   9069 dates  825  win  43.2%  avg  -0.05%  excess  -0.53% (t  -5.8)  2006-16  -0.67%  2017-26  -0.38%
+MACD crosses over its signal below zero                    n  41382 dates 4590  win  44.0%  avg   0.16%  excess  -0.35% (t  -7.3)  2006-16  -0.38%  2017-26  -0.33%
+Stochastic crosses up through 20                           n  65159 dates 4680  win  44.1%  avg   0.08%  excess  -0.32% (t  -7.6)  2006-16  -0.39%  2017-26  -0.25%
+Money Flow Index crosses up through 20                     n  12980 dates 3185  win  46.7%  avg  -0.08%  excess  -0.45% (t  -8.9)  2006-16  -0.53%  2017-26  -0.38%
+RSI14 crosses up through 30                                n  20575 dates 3091  win  45.4%  avg  -0.25%  excess  -0.41% (t  -9.3)  2006-16  -0.50%  2017-26  -0.32%
+Close back above the lower Bollinger band                  n  52675 dates 4264  win  44.9%  avg  -0.09%  excess  -0.38% (t  -9.5)  2006-16  -0.41%  2017-26  -0.35%
+
+=== 2. Patterns with their own stop (where the pattern fails) and measured-move target, 40-day limit, against 5 random members bought the same day with the same stop and target distances ===
+Pattern: Double bottom                         n  1114  win 62.6%  avg 1.54%  reward:risk 0.8  vs random same-day 0.30% (t 1.1)
+Pattern: Inverse head and shoulders            n   696  win 46.3%  avg -0.05%  reward:risk 1.7  vs random same-day -0.80% (t -2.4)
+Pattern: Ascending triangle                    n  5259  win 51.9%  avg 0.60%  reward:risk 1.6  vs random same-day -0.36% (t -1.2)
+Pattern: Symmetrical triangle (up)             n  5307  win 47.4%  avg 0.77%  reward:risk 2.2  vs random same-day -0.28% (t -2.1)
+Pattern: Falling wedge                         n  9422  win 42.6%  avg 0.74%  reward:risk 2.0  vs random same-day 0.04% (t 0.4)
+Pattern: Bull flag                             n  2762  win 40.6%  avg 1.12%  reward:risk 3.4  vs random same-day -0.13% (t -0.6)
+Weekly pattern: Double bottom                  n   162  win 63.0%  avg 1.56%  reward:risk 0.8  vs random same-day 0.03% (t 0.0)
+Weekly pattern: Inverse head and shoulders     n    78  win 53.8%  avg 0.22%  reward:risk 1.3  vs random same-day -0.90% (t -1.0)
+Weekly pattern: Ascending triangle             n   635  win 59.2%  avg 1.36%  reward:risk 1.5  vs random same-day 0.26% (t 0.7)
+Weekly pattern: Symmetrical triangle (up)      n  1249  win 59.8%  avg 1.81%  reward:risk 1.9  vs random same-day 0.04% (t 0.2)
+Weekly pattern: Falling wedge                  n  1796  win 47.5%  avg 1.25%  reward:risk 1.7  vs random same-day 0.06% (t 0.2)
+Weekly pattern: Bull flag                      n  2557  win 52.5%  avg 1.47%  reward:risk 3.0  vs random same-day -0.30% (t -1.5)
+
+=== 3. Signal + up to two conditions, picked on 2006-2016 by per-date excess (t), then 2017-2026 ===
+
+--- exit: +5/-3/10d (7064 combinations tried; top 12 of the first half) ---
+OBV at a 50-bar high before price  +  ATR under 2%
+      n 34309 dates 4223 win 48.8% avg 0.07%  | 2006-16 excess 0.18% (t 5.0)  | 2017-26 excess 0.01% (t 0.3)
+RSI14 crosses above 50  +  ATR under 2%
+      n 41089 dates 4078 win 48.9% avg 0.09%  | 2006-16 excess 0.18% (t 4.8)  | 2017-26 excess 0.07% (t 1.5)
+Pocket pivot (up volume over every down day of 10)  +  ATR under 2%
+      n 74565 dates 4312 win 48.0% avg -0.00%  | 2006-16 excess 0.14% (t 4.7)  | 2017-26 excess -0.04% (t -1.3)
+RSI14 crosses above 50  +  SPY under 200-day + ATR under 2%
+      n 2132 dates 449 win 47.7% avg 0.09%  | 2006-16 excess 0.67% (t 4.6)  | 2017-26 excess -0.56% (t -2.9)
+Weekly Ichimoku: Tenkan over Kijun above the cloud  +  weekly Supertrend up + ATR under 2%
+      n 2108 dates 527 win 48.5% avg -0.06%  | 2006-16 excess 0.59% (t 4.5)  | 2017-26 excess -0.11% (t -0.8)
+Pocket pivot (up volume over every down day of 10)  +  daily Supertrend up + ATR under 2%
+      n 67369 dates 4257 win 48.0% avg -0.01%  | 2006-16 excess 0.14% (t 4.5)  | 2017-26 excess -0.03% (t -0.8)
+OBV at a 50-bar high before price  +  weekly Supertrend down + ATR under 2%
+      n 8255 dates 3003 win 49.3% avg 0.10%  | 2006-16 excess 0.30% (t 4.4)  | 2017-26 excess 0.02% (t 0.4)
+Heikin-Ashi turns green after 3+ red  +  stock under 200-day + ATR under 2%
+      n 11138 dates 2754 win 48.9% avg 0.14%  | 2006-16 excess 0.27% (t 4.3)  | 2017-26 excess 0.03% (t 0.5)
+Pocket pivot (up volume over every down day of 10)  +  stock over 200-day + ATR under 2%
+      n 68809 dates 4279 win 48.0% avg -0.01%  | 2006-16 excess 0.13% (t 4.3)  | 2017-26 excess -0.04% (t -1.0)
+Aroon up crosses over Aroon down  +  daily Supertrend up + ATR under 2%
+      n 10377 dates 3070 win 50.5% avg 0.15%  | 2006-16 excess 0.23% (t 4.3)  | 2017-26 excess 0.17% (t 2.8)
+OBV at a 50-bar high before price  +  daily Supertrend up + ATR under 2%
+      n 26684 dates 4060 win 49.0% avg 0.06%  | 2006-16 excess 0.16% (t 4.2)  | 2017-26 excess -0.00% (t -0.1)
+Weekly RSI14 crosses above 50  +  within 10% of 52w high + ATR under 2%
+      n 4528 dates 770 win 50.4% avg 0.12%  | 2006-16 excess 0.39% (t 4.2)  | 2017-26 excess 0.03% (t 0.3)
+   of 154 combinations with t >= 3 in 2006-16, 14 also had t >= 2 in 2017-26; 124 of all 7064 had t >= 2 in 2017-26 (about 162 expected by chance)
+
+--- exit: 1:3 (2 ATR stop, 6 ATR target, 30d) (7064 combinations tried; top 12 of the first half) ---
+MACD crosses over its signal below zero  +  ATR under 2%
+      n 11736 dates 3047 win 42.2% avg 0.63%  | 2006-16 excess 0.48% (t 5.0)  | 2017-26 excess 0.17% (t 1.6)
+MACD crosses over its signal below zero  +  SPY over 200-day + ATR under 2%
+      n 11197 dates 2807 win 41.7% avg 0.56%  | 2006-16 excess 0.46% (t 4.8)  | 2017-26 excess 0.11% (t 1.0)
+RSI14 crosses above 50  +  SPY under 200-day + ATR under 2%
+      n 2132 dates 449 win 42.5% avg 0.64%  | 2006-16 excess 1.24% (t 4.7)  | 2017-26 excess -0.69% (t -2.1)
+Close reclaims the 200-bar average  +  within 10% of 52w high + ATR under 2%
+      n 5906 dates 2464 win 45.4% avg 0.79%  | 2006-16 excess 0.51% (t 4.7)  | 2017-26 excess 0.05% (t 0.4)
+Close reclaims the 200-bar average  +  stock over 200-day + ATR under 2%
+      n 10454 dates 3205 win 43.0% avg 0.67%  | 2006-16 excess 0.44% (t 4.6)  | 2017-26 excess 0.11% (t 1.0)
+Close reclaims the 200-bar average  +  ATR under 2%
+      n 10454 dates 3205 win 43.0% avg 0.67%  | 2006-16 excess 0.44% (t 4.6)  | 2017-26 excess 0.11% (t 1.0)
+RSI14 crosses above 50  +  weekly Supertrend down + ATR under 2%
+      n 12426 dates 3204 win 41.8% avg 0.62%  | 2006-16 excess 0.42% (t 4.3)  | 2017-26 excess -0.21% (t -2.0)
+RSI14 crosses above 50  +  ATR under 2%
+      n 41089 dates 4078 win 41.0% avg 0.53%  | 2006-16 excess 0.28% (t 4.2)  | 2017-26 excess -0.09% (t -1.2)
+RSI14 crosses above 50  +  stock under 200-day + ATR under 2%
+      n 9288 dates 2874 win 41.9% avg 0.64%  | 2006-16 excess 0.45% (t 4.1)  | 2017-26 excess -0.10% (t -0.9)
+Close reclaims the 200-bar average  +  SPY under 200-day + ATR under 2%
+      n 759 dates 303 win 48.7% avg 1.38%  | 2006-16 excess 1.34% (t 4.1)  | 2017-26 excess -0.49% (t -1.0)
+OBV at a 50-bar high before price  +  SPY under 200-day + within 10% of 52w high
+      n 4113 dates 788 win 43.6% avg 0.34%  | 2006-16 excess 1.02% (t 4.0)  | 2017-26 excess -0.99% (t -2.7)
+Ichimoku: close crosses above the cloud  +  ATR under 2%
+      n 19752 dates 3767 win 42.1% avg 0.62%  | 2006-16 excess 0.30% (t 3.9)  | 2017-26 excess 0.12% (t 1.3)
+   of 64 combinations with t >= 3 in 2006-16, 0 also had t >= 2 in 2017-26; 57 of all 7064 had t >= 2 in 2017-26 (about 162 expected by chance)
+
+--- exit: hold 20d (7064 combinations tried; top 12 of the first half) ---
+MACD crosses over its signal below zero  +  ATR under 2%
+      n 11736 dates 3047 win 56.6% avg 0.73%  | 2006-16 excess 0.45% (t 4.7)  | 2017-26 excess -0.03% (t -0.3)
+MACD crosses over its signal below zero  +  SPY over 200-day + ATR under 2%
+      n 11197 dates 2807 win 56.2% avg 0.66%  | 2006-16 excess 0.44% (t 4.4)  | 2017-26 excess -0.03% (t -0.3)
+Aroon up crosses over Aroon down  +  stock under 200-day + RSI14 under 50
+      n 4315 dates 1852 win 56.7% avg 1.47%  | 2006-16 excess 1.06% (t 4.2)  | 2017-26 excess 0.08% (t 0.4)
+Close reclaims the 200-bar average  +  SPY under 200-day + ATR under 2%
+      n 759 dates 303 win 59.3% avg 1.19%  | 2006-16 excess 1.33% (t 4.1)  | 2017-26 excess -0.73% (t -1.4)
+Aroon up crosses over Aroon down  +  RSI14 under 50
+      n 6862 dates 2555 win 56.3% avg 1.31%  | 2006-16 excess 0.75% (t 4.0)  | 2017-26 excess 0.16% (t 0.9)
+RSI14 crosses above 50  +  stock under 200-day + ATR under 2%
+      n 9288 dates 2874 win 56.6% avg 0.56%  | 2006-16 excess 0.43% (t 4.0)  | 2017-26 excess -0.27% (t -2.2)
+Close reclaims the 200-bar average  +  within 10% of 52w high + ATR under 2%
+      n 5906 dates 2464 win 58.9% avg 0.78%  | 2006-16 excess 0.41% (t 3.9)  | 2017-26 excess -0.05% (t -0.4)
+MACD crosses over its signal below zero  +  weekly Supertrend up + ATR under 2%
+      n 7094 dates 2465 win 56.8% avg 0.79%  | 2006-16 excess 0.40% (t 3.7)  | 2017-26 excess 0.13% (t 1.0)
+Aroon up crosses over Aroon down  +  weekly Supertrend down + RSI14 under 50
+      n 4124 dates 1790 win 56.1% avg 1.31%  | 2006-16 excess 0.94% (t 3.7)  | 2017-26 excess -0.03% (t -0.1)
+Stochastic crosses up through 20  +  stock under 200-day + daily Supertrend up
+      n 2993 dates 1418 win 57.0% avg 1.25%  | 2006-16 excess 1.06% (t 3.6)  | 2017-26 excess -0.41% (t -1.6)
+MACD crosses over its signal  +  stock under 200-day + ATR under 2%
+      n 5530 dates 2300 win 55.8% avg 0.57%  | 2006-16 excess 0.47% (t 3.6)  | 2017-26 excess -0.15% (t -1.0)
+Close reclaims the 200-bar average  +  stock over 200-day + ATR under 2%
+      n 10454 dates 3205 win 57.3% avg 0.67%  | 2006-16 excess 0.33% (t 3.6)  | 2017-26 excess 0.14% (t 1.2)
+   of 30 combinations with t >= 3 in 2006-16, 0 also had t >= 2 in 2017-26; 108 of all 7064 had t >= 2 in 2017-26 (about 162 expected by chance)
+
+=== 4. Check on the trail exit. Its all-days baseline includes days when Supertrend is already down (sold at once), so any signal that needs an uptrend shows "excess". Fair baselines: any member-day with daily Supertrend up 0.83% per trade (n 1079827); Supertrend up for 20 days or fewer 1.03% (n 496773) ===
+Supertrend flips up                                  with daily Supertrend up: n 27707  win 40.9%  avg 1.19%
+Weekly EMA 9 crosses over EMA 21                     with daily Supertrend up: n 7850  win 40.1%  avg 1.30%
+Pocket pivot (up volume over every down day of 10)   with daily Supertrend up: n 130571  win 38.6%  avg 0.78%
+Close over the upper Keltner channel                 with daily Supertrend up: n 86361  win 39.0%  avg 0.76%
+Aroon up crosses over Aroon down                     with daily Supertrend up: n 25945  win 40.7%  avg 1.28%
+Donchian 20-bar breakout                             with daily Supertrend up: n 93672  win 39.1%  avg 0.77%
+Donchian 55-bar breakout                             with daily Supertrend up: n 66117  win 38.5%  avg 0.58%
+Close over the upper Bollinger band                  with daily Supertrend up: n 57733  win 38.5%  avg 0.64%
+Weekly CCI crosses above +100                        with daily Supertrend up: n 22491  win 39.2%  avg 0.88%
+
+=== 5. Atrox Quad Consensus (TradingView), daily and weekly, on every exit. Excess is per date against all members with the same exit ===
+Atrox engine: AtroNox (Bollinger trend line turns up)  (n 7598)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  74.3%  avg   1.23%  excess  -0.16% (t  -1.3)  2006-16  -0.20%  2017-26  -0.12%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  31.2%  avg   0.12%  excess   0.02% (t   0.4)  2006-16  -0.01%  2017-26   0.05%
+     +5/-3/10d                                        win  46.2%  avg   0.02%  excess   0.04% (t   0.9)  2006-16   0.02%  2017-26   0.07%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  42.6%  avg   0.46%  excess  -0.10% (t  -1.0)  2006-16  -0.09%  2017-26  -0.12%
+     hold 20d                                         win  56.1%  avg   0.62%  excess  -0.10% (t  -1.0)  2006-16  -0.26%  2017-26   0.05%
+     hold 60d                                         win  59.1%  avg   2.18%  excess  -0.17% (t  -0.9)  2006-16  -0.30%  2017-26  -0.03%
+Atrox engine: Raptor (Supertrend 6.5 cross + SMA9)  (n 8476)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  72.6%  avg   0.88%  excess  -0.40% (t  -3.1)  2006-16  -0.26%  2017-26  -0.53%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  29.0%  avg  -0.12%  excess  -0.14% (t  -2.2)  2006-16  -0.18%  2017-26  -0.10%
+     +5/-3/10d                                        win  44.7%  avg  -0.13%  excess  -0.07% (t  -1.3)  2006-16  -0.04%  2017-26  -0.09%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  41.9%  avg   0.25%  excess  -0.19% (t  -1.9)  2006-16  -0.06%  2017-26  -0.31%
+     hold 20d                                         win  54.1%  avg   0.33%  excess  -0.19% (t  -1.9)  2006-16  -0.16%  2017-26  -0.23%
+     hold 60d                                         win  57.9%  avg   1.81%  excess  -0.46% (t  -2.5)  2006-16  -0.28%  2017-26  -0.62%
+Atrox engine: Scalper (Supertrend 7 cross)  (n 7538)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  72.7%  avg   0.95%  excess  -0.15% (t  -1.1)  2006-16  -0.03%  2017-26  -0.25%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  28.6%  avg  -0.14%  excess  -0.08% (t  -1.2)  2006-16  -0.11%  2017-26  -0.05%
+     +5/-3/10d                                        win  44.0%  avg  -0.17%  excess  -0.08% (t  -1.6)  2006-16  -0.03%  2017-26  -0.13%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  40.9%  avg   0.19%  excess  -0.06% (t  -0.5)  2006-16  -0.04%  2017-26  -0.07%
+     hold 20d                                         win  53.8%  avg   0.27%  excess  -0.07% (t  -0.6)  2006-16  -0.11%  2017-26  -0.03%
+     hold 60d                                         win  58.1%  avg   1.85%  excess  -0.19% (t  -1.0)  2006-16  -0.06%  2017-26  -0.31%
+Atrox engine: Elite (range filter turns long)  (n 7619)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  70.4%  avg   1.37%  excess  -0.52% (t  -3.5)  2006-16  -0.76%  2017-26  -0.31%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  28.4%  avg  -0.20%  excess  -0.27% (t  -3.5)  2006-16  -0.17%  2017-26  -0.36%
+     +5/-3/10d                                        win  42.5%  avg  -0.21%  excess  -0.15% (t  -2.8)  2006-16  -0.09%  2017-26  -0.20%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  41.4%  avg   0.12%  excess  -0.34% (t  -2.8)  2006-16  -0.26%  2017-26  -0.41%
+     hold 20d                                         win  52.6%  avg   0.22%  excess  -0.32% (t  -2.6)  2006-16  -0.36%  2017-26  -0.29%
+     hold 60d                                         win  57.1%  avg   2.11%  excess  -0.51% (t  -2.1)  2006-16  -1.06%  2017-26  -0.01%
+Atrox consensus: script defaults (Raptor+Scalper+Elite all within 15 bars)  (n 3315)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  69.0%  avg   0.24%  excess  -0.55% (t  -2.8)  2006-16  -0.56%  2017-26  -0.54%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  27.4%  avg  -0.32%  excess  -0.33% (t  -3.6)  2006-16  -0.38%  2017-26  -0.28%
+     +5/-3/10d                                        win  43.4%  avg  -0.22%  excess  -0.21% (t  -3.0)  2006-16  -0.11%  2017-26  -0.29%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  39.2%  avg  -0.30%  excess  -0.43% (t  -3.1)  2006-16  -0.46%  2017-26  -0.41%
+     hold 20d                                         win  50.2%  avg  -0.49%  excess  -0.51% (t  -3.4)  2006-16  -0.57%  2017-26  -0.47%
+     hold 60d                                         win  54.8%  avg   0.56%  excess  -0.77% (t  -2.8)  2006-16  -0.76%  2017-26  -0.79%
+Atrox consensus: all 4 engines on, 3 of 4 within 15 bars  (n 5386)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  72.3%  avg   0.90%  excess  -0.27% (t  -1.8)  2006-16  -0.33%  2017-26  -0.21%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  29.4%  avg  -0.09%  excess  -0.23% (t  -3.0)  2006-16  -0.31%  2017-26  -0.15%
+     +5/-3/10d                                        win  44.8%  avg  -0.09%  excess  -0.11% (t  -2.0)  2006-16  -0.11%  2017-26  -0.12%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  41.2%  avg   0.06%  excess  -0.37% (t  -3.3)  2006-16  -0.44%  2017-26  -0.31%
+     hold 20d                                         win  53.6%  avg   0.15%  excess  -0.33% (t  -2.8)  2006-16  -0.51%  2017-26  -0.17%
+     hold 60d                                         win  57.0%  avg   1.44%  excess  -0.67% (t  -3.2)  2006-16  -0.89%  2017-26  -0.48%
+Atrox consensus: all 4 engines on, 4 of 4 within 15 bars  (n 2153)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  68.3%  avg   0.13%  excess  -0.64% (t  -2.7)  2006-16  -0.74%  2017-26  -0.55%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  26.6%  avg  -0.38%  excess  -0.29% (t  -2.7)  2006-16  -0.28%  2017-26  -0.31%
+     +5/-3/10d                                        win  42.5%  avg  -0.31%  excess  -0.24% (t  -2.9)  2006-16  -0.12%  2017-26  -0.34%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  38.2%  avg  -0.36%  excess  -0.45% (t  -2.7)  2006-16  -0.48%  2017-26  -0.42%
+     hold 20d                                         win  50.2%  avg  -0.37%  excess  -0.49% (t  -2.9)  2006-16  -0.55%  2017-26  -0.45%
+     hold 60d                                         win  53.9%  avg   0.48%  excess  -0.81% (t  -2.4)  2006-16  -0.88%  2017-26  -0.74%
+Atrox consensus: Balanced preset (3 of 4 within 5)  (n 3576)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  72.2%  avg   0.86%  excess  -0.28% (t  -1.6)  2006-16  -0.39%  2017-26  -0.18%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  29.1%  avg  -0.11%  excess  -0.17% (t  -2.0)  2006-16  -0.26%  2017-26  -0.08%
+     +5/-3/10d                                        win  44.1%  avg  -0.15%  excess  -0.11% (t  -1.6)  2006-16  -0.13%  2017-26  -0.08%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  41.1%  avg   0.01%  excess  -0.36% (t  -2.8)  2006-16  -0.34%  2017-26  -0.38%
+     hold 20d                                         win  53.7%  avg   0.12%  excess  -0.32% (t  -2.4)  2006-16  -0.46%  2017-26  -0.20%
+     hold 60d                                         win  56.8%  avg   1.24%  excess  -0.87% (t  -3.5)  2006-16  -1.16%  2017-26  -0.60%
+Atrox consensus: Conservative preset (4 of 4 within 3, score 70)  (n 757)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  68.8%  avg   0.35%  excess  -0.47% (t  -1.3)  2006-16  -0.62%  2017-26  -0.36%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  26.7%  avg  -0.40%  excess  -0.38% (t  -2.2)  2006-16  -0.17%  2017-26  -0.55%
+     +5/-3/10d                                        win  43.5%  avg  -0.30%  excess  -0.30% (t  -2.3)  2006-16  -0.06%  2017-26  -0.49%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  38.8%  avg  -0.41%  excess  -0.78% (t  -3.2)  2006-16  -0.63%  2017-26  -0.88%
+     hold 20d                                         win  51.1%  avg  -0.27%  excess  -0.57% (t  -2.3)  2006-16  -0.79%  2017-26  -0.41%
+     hold 60d                                         win  54.8%  avg   0.62%  excess  -0.76% (t  -1.6)  2006-16  -0.78%  2017-26  -0.74%
+Atrox consensus: Aggressive preset (3 of 4 within 7, score 50)  (n 4278)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  71.8%  avg   0.81%  excess  -0.23% (t  -1.4)  2006-16  -0.20%  2017-26  -0.26%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  29.0%  avg  -0.14%  excess  -0.15% (t  -1.9)  2006-16  -0.22%  2017-26  -0.10%
+     +5/-3/10d                                        win  43.7%  avg  -0.19%  excess  -0.11% (t  -1.7)  2006-16  -0.12%  2017-26  -0.09%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  41.0%  avg  -0.00%  excess  -0.31% (t  -2.6)  2006-16  -0.33%  2017-26  -0.30%
+     hold 20d                                         win  53.8%  avg   0.10%  excess  -0.33% (t  -2.6)  2006-16  -0.45%  2017-26  -0.22%
+     hold 60d                                         win  56.3%  avg   1.22%  excess  -0.75% (t  -3.3)  2006-16  -0.84%  2017-26  -0.67%
+Atrox consensus: Scalping preset (2 of 4 within 4, score 55)  (n 7398)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  72.5%  avg   0.95%  excess  -0.36% (t  -2.7)  2006-16  -0.22%  2017-26  -0.50%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  29.3%  avg  -0.10%  excess  -0.07% (t  -1.0)  2006-16  -0.09%  2017-26  -0.05%
+     +5/-3/10d                                        win  44.8%  avg  -0.10%  excess  -0.09% (t  -1.7)  2006-16  -0.02%  2017-26  -0.14%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  41.3%  avg   0.14%  excess  -0.14% (t  -1.4)  2006-16  -0.03%  2017-26  -0.24%
+     hold 20d                                         win  53.2%  avg   0.15%  excess  -0.19% (t  -1.7)  2006-16  -0.20%  2017-26  -0.19%
+     hold 60d                                         win  57.7%  avg   1.73%  excess  -0.46% (t  -2.4)  2006-16  -0.40%  2017-26  -0.51%
+Weekly Atrox engine: AtroNox (Bollinger trend line turns up)  (n 1340)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  72.9%  avg   1.37%  excess  -0.25% (t  -0.9)  2006-16  -1.01%  2017-26   0.23%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  27.9%  avg  -0.13%  excess  -0.22% (t  -1.4)  2006-16  -0.46%  2017-26  -0.08%
+     +5/-3/10d                                        win  44.3%  avg  -0.17%  excess  -0.17% (t  -1.4)  2006-16  -0.19%  2017-26  -0.16%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  37.7%  avg  -0.16%  excess  -0.72% (t  -3.2)  2006-16  -0.74%  2017-26  -0.71%
+     hold 20d                                         win  53.1%  avg   0.25%  excess  -0.24% (t  -1.0)  2006-16  -0.59%  2017-26  -0.03%
+     hold 60d                                         win  57.4%  avg   2.72%  excess  -0.48% (t  -1.1)  2006-16  -0.89%  2017-26  -0.24%
+Weekly Atrox engine: Raptor (Supertrend 6.5 cross + SMA9)  (n 1718)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  73.6%  avg   1.31%  excess  -0.21% (t  -0.9)  2006-16  -0.20%  2017-26  -0.22%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  28.9%  avg  -0.12%  excess  -0.19% (t  -1.3)  2006-16  -0.15%  2017-26  -0.22%
+     +5/-3/10d                                        win  44.5%  avg  -0.04%  excess  -0.02% (t  -0.2)  2006-16   0.22%  2017-26  -0.24%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  39.8%  avg   0.03%  excess  -0.47% (t  -2.2)  2006-16  -0.58%  2017-26  -0.38%
+     hold 20d                                         win  53.3%  avg   0.24%  excess  -0.27% (t  -1.2)  2006-16  -0.37%  2017-26  -0.18%
+     hold 60d                                         win  60.7%  avg   2.95%  excess   0.26% (t   0.6)  2006-16  -0.51%  2017-26   0.96%
+Weekly Atrox engine: Scalper (Supertrend 7 cross)  (n 1525)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  73.0%  avg   1.16%  excess  -0.48% (t  -1.8)  2006-16  -0.58%  2017-26  -0.39%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  27.9%  avg  -0.17%  excess  -0.22% (t  -1.5)  2006-16  -0.04%  2017-26  -0.39%
+     +5/-3/10d                                        win  43.6%  avg  -0.18%  excess  -0.14% (t  -1.2)  2006-16  -0.04%  2017-26  -0.23%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  40.9%  avg   0.15%  excess  -0.41% (t  -1.8)  2006-16  -0.24%  2017-26  -0.56%
+     hold 20d                                         win  53.3%  avg   0.33%  excess  -0.13% (t  -0.6)  2006-16  -0.17%  2017-26  -0.10%
+     hold 60d                                         win  59.1%  avg   2.59%  excess  -0.31% (t  -0.7)  2006-16  -0.61%  2017-26  -0.04%
+Weekly Atrox engine: Elite (range filter turns long)  (n 3235)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  69.4%  avg   0.88%  excess  -0.38% (t  -1.6)  2006-16  -0.51%  2017-26  -0.26%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  27.0%  avg  -0.48%  excess  -0.34% (t  -2.7)  2006-16  -0.46%  2017-26  -0.24%
+     +5/-3/10d                                        win  40.2%  avg  -0.41%  excess  -0.13% (t  -1.5)  2006-16  -0.12%  2017-26  -0.14%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  38.5%  avg  -0.26%  excess  -0.76% (t  -4.0)  2006-16  -1.03%  2017-26  -0.52%
+     hold 20d                                         win  51.1%  avg   0.02%  excess  -0.29% (t  -1.5)  2006-16  -0.30%  2017-26  -0.29%
+     hold 60d                                         win  55.6%  avg   1.86%  excess  -0.38% (t  -1.1)  2006-16  -0.63%  2017-26  -0.15%
+Weekly Atrox consensus: script defaults (Raptor+Scalper+Elite all within 15 bars)  (n 516)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  73.8%  avg   1.58%  excess   0.36% (t   0.8)  2006-16   1.10%  2017-26  -0.14%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  30.2%  avg   0.06%  excess  -0.02% (t  -0.1)  2006-16   0.29%  2017-26  -0.23%
+     +5/-3/10d                                        win  42.4%  avg  -0.10%  excess   0.04% (t   0.3)  2006-16   0.15%  2017-26  -0.02%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  41.7%  avg   0.01%  excess  -0.48% (t  -1.3)  2006-16  -0.26%  2017-26  -0.63%
+     hold 20d                                         win  50.8%  avg   0.41%  excess  -0.08% (t  -0.2)  2006-16  -0.14%  2017-26  -0.03%
+     hold 60d                                         win  60.1%  avg   3.24%  excess   0.66% (t   0.9)  2006-16   0.42%  2017-26   0.82%
+Weekly Atrox consensus: all 4 engines on, 3 of 4 within 15 bars  (n 953)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  74.6%  avg   1.69%  excess   0.23% (t   0.7)  2006-16   0.48%  2017-26   0.04%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  29.5%  avg  -0.06%  excess  -0.22% (t  -1.2)  2006-16   0.00%  2017-26  -0.38%
+     +5/-3/10d                                        win  44.4%  avg  -0.11%  excess  -0.08% (t  -0.6)  2006-16  -0.05%  2017-26  -0.11%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  41.6%  avg   0.15%  excess  -0.24% (t  -0.9)  2006-16  -0.09%  2017-26  -0.35%
+     hold 20d                                         win  53.6%  avg   0.60%  excess   0.23% (t   0.8)  2006-16   0.32%  2017-26   0.17%
+     hold 60d                                         win  60.0%  avg   3.02%  excess   0.48% (t   0.9)  2006-16   0.59%  2017-26   0.40%
+Weekly Atrox consensus: all 4 engines on, 4 of 4 within 15 bars  (n 279)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  72.8%  avg   1.40%  excess   0.78% (t   1.5)  2006-16   0.55%  2017-26   0.86%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  31.2%  avg   0.29%  excess   0.23% (t   0.7)  2006-16   0.42%  2017-26   0.16%
+     +5/-3/10d                                        win  43.7%  avg  -0.03%  excess   0.21% (t   1.0)  2006-16   0.45%  2017-26   0.11%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  36.9%  avg  -0.50%  excess  -0.84% (t  -1.8)  2006-16  -0.76%  2017-26  -0.87%
+     hold 20d                                         win  49.1%  avg   0.23%  excess  -0.30% (t  -0.6)  2006-16  -1.47%  2017-26   0.14%
+     hold 60d                                         win  57.3%  avg   2.50%  excess   0.06% (t   0.1)  2006-16  -1.66%  2017-26   0.71%
+Weekly Atrox consensus: Balanced preset (3 of 4 within 5)  (n 513)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  75.2%  avg   1.83%  excess   0.28% (t   0.7)  2006-16  -0.08%  2017-26   0.53%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  27.9%  avg  -0.25%  excess  -0.55% (t  -2.6)  2006-16  -0.26%  2017-26  -0.75%
+     +5/-3/10d                                        win  42.7%  avg  -0.28%  excess  -0.21% (t  -1.3)  2006-16  -0.19%  2017-26  -0.23%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  40.0%  avg  -0.05%  excess  -0.43% (t  -1.1)  2006-16  -0.33%  2017-26  -0.49%
+     hold 20d                                         win  52.2%  avg   0.57%  excess   0.08% (t   0.2)  2006-16  -0.28%  2017-26   0.33%
+     hold 60d                                         win  60.6%  avg   3.19%  excess   0.13% (t   0.2)  2006-16  -0.89%  2017-26   0.83%
+Weekly Atrox consensus: Conservative preset (4 of 4 within 3, score 70)  (n 79)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  67.1%  avg   0.85%  excess   1.09% (t   1.0)  2006-16  -0.16%  2017-26   1.69%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  25.3%  avg  -0.27%  excess  -0.17% (t  -0.3)  2006-16   0.32%  2017-26  -0.40%
+     +5/-3/10d                                        win  34.2%  avg  -0.44%  excess  -0.11% (t  -0.3)  2006-16   0.54%  2017-26  -0.43%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  35.4%  avg  -0.47%  excess  -0.55% (t  -0.6)  2006-16   0.07%  2017-26  -0.84%
+     hold 20d                                         win  41.8%  avg  -0.06%  excess   0.41% (t   0.4)  2006-16  -0.21%  2017-26   0.70%
+     hold 60d                                         win  57.0%  avg   1.66%  excess   0.04% (t   0.0)  2006-16  -2.38%  2017-26   1.20%
+Weekly Atrox consensus: Aggressive preset (3 of 4 within 7, score 50)  (n 645)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  73.6%  avg   1.44%  excess  -0.27% (t  -0.7)  2006-16  -0.79%  2017-26   0.09%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  27.4%  avg  -0.29%  excess  -0.59% (t  -2.9)  2006-16  -0.50%  2017-26  -0.66%
+     +5/-3/10d                                        win  43.1%  avg  -0.22%  excess  -0.20% (t  -1.3)  2006-16  -0.07%  2017-26  -0.29%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  38.6%  avg  -0.09%  excess  -0.57% (t  -1.6)  2006-16  -0.40%  2017-26  -0.69%
+     hold 20d                                         win  52.4%  avg   0.41%  excess  -0.16% (t  -0.5)  2006-16  -0.36%  2017-26  -0.02%
+     hold 60d                                         win  59.8%  avg   2.94%  excess  -0.10% (t  -0.2)  2006-16  -0.82%  2017-26   0.40%
+Weekly Atrox consensus: Scalping preset (2 of 4 within 4, score 55)  (n 1421)
+     Atrox defaults (target 2.5 ATR, stop 12 ATR, 60d) win  73.8%  avg   1.52%  excess  -0.03% (t  -0.1)  2006-16   0.05%  2017-26  -0.10%
+     Atrox Balanced (target 3 ATR, stop 1 ATR, 30d)   win  28.9%  avg  -0.06%  excess  -0.10% (t  -0.6)  2006-16  -0.02%  2017-26  -0.16%
+     +5/-3/10d                                        win  44.2%  avg  -0.14%  excess  -0.06% (t  -0.5)  2006-16  -0.01%  2017-26  -0.09%
+     1:3 (2 ATR stop, 6 ATR target, 30d)              win  40.0%  avg   0.08%  excess  -0.38% (t  -1.6)  2006-16  -0.52%  2017-26  -0.26%
+     hold 20d                                         win  52.1%  avg   0.28%  excess  -0.08% (t  -0.4)  2006-16  -0.51%  2017-26   0.27%
+     hold 60d                                         win  59.7%  avg   2.84%  excess   0.06% (t   0.1)  2006-16  -0.44%  2017-26   0.47%

@@ -1,0 +1,69 @@
+=== Per trade, one open trade per stock ===
+A: 40%+ under high, up over 6 months
+   +5% / -3% / 10d  n   4015  win 43.0%  avg 0.27%  avgWin 5.03%  avgLoss -3.32%  PF 1.15  | 2006-16 0.32% (n 2614)  2017-26 0.20% (n 1401)  | 12 of 21 years positive
+      by year: 06:7/2.2 07:12/-0.1 08:159/-1.1 09:2130/0.4 10:38/0.8 11:12/-0.8 12:107/-0.3 13:24/2.6 14:5/0.8 15:27/-0.8 16:93/0.1 17:4/-3.4 18:23/0.4 19:70/-0.2 20:473/0.6 21:80/1.0 22:172/0.2 23:181/0.4 24:74/-1.2 25:140/0.2 26:184/-0.5
+   +9% / -3% / 20d  n   3139  win 31.2%  avg 0.53%  avgWin 9.07%  avgLoss -3.35%  PF 1.23  | 2006-16 0.58% (n 2012)  2017-26 0.43% (n 1127)  | 12 of 21 years positive
+   +5% / -5% / 10d  n   3283  win 55.1%  avg 0.41%  avgWin 5.01%  avgLoss -5.23%  PF 1.17  | 2006-16 0.56% (n 2107)  2017-26 0.14% (n 1176)  | 10 of 21 years positive
+B: A, only while SPY is under its 200-day
+   +5% / -3% / 10d  n   1367  win 45.3%  avg 0.47%  avgWin 4.98%  avgLoss -3.26%  PF 1.26  | 2006-16 0.44% (n 1091)  2017-26 0.59% (n 276)  | 9 of 13 years positive
+      by year: 06:1/-3.2 08:156/-1.1 09:910/0.7 10:7/-0.8 12:4/0.8 15:5/-0.0 16:8/3.8 18:19/0.7 19:7/0.2 20:6/0.8 22:160/0.2 23:35/2.4 25:49/0.6
+   +9% / -3% / 20d  n   1112  win 34.2%  avg 0.87%  avgWin 8.93%  avgLoss -3.31%  PF 1.40  | 2006-16 0.77% (n 865)  2017-26 1.22% (n 247)  | 10 of 13 years positive
+   +5% / -5% / 10d  n   1152  win 59.5%  avg 0.84%  avgWin 4.96%  avgLoss -5.23%  PF 1.40  | 2006-16 0.92% (n 909)  2017-26 0.53% (n 243)  | 7 of 13 years positive
+C: A, above 100-day, 50-day over 200-day
+   +5% / -3% / 10d  n   1161  win 46.6%  avg 0.54%  avgWin 4.95%  avgLoss -3.30%  PF 1.31  | 2006-16 0.50% (n 991)  2017-26 0.79% (n 170)  | 9 of 14 years positive
+      by year: 08:3/-0.5 09:915/0.5 10:22/-0.7 12:17/-0.1 13:6/2.2 16:28/0.8 19:6/-2.4 20:49/1.2 21:41/1.5 22:16/0.3 23:35/0.2 24:2/-3.2 25:9/0.4 26:12/1.5
+   +9% / -3% / 20d  n    885  win 35.1%  avg 1.00%  avgWin 8.93%  avgLoss -3.29%  PF 1.47  | 2006-16 0.98% (n 746)  2017-26 1.15% (n 139)  | 8 of 14 years positive
+   +5% / -5% / 10d  n    934  win 60.7%  avg 0.94%  avgWin 4.93%  avgLoss -5.22%  PF 1.46  | 2006-16 0.88% (n 788)  2017-26 1.24% (n 146)  | 10 of 14 years positive
+D: panic dip in a bear market (RSI2<10, quiet volume, SPY wild and under 200-day)
+   +5% / -3% / 10d  n   3372  win 51.9%  avg 0.88%  avgWin 4.69%  avgLoss -3.24%  PF 1.56  | 2006-16 0.73% (n 1808)  2017-26 1.04% (n 1564)  | 9 of 12 years positive
+      by year: 07:99/1.0 08:591/0.1 09:436/-0.0 10:48/2.3 11:566/1.7 15:23/-0.1 16:45/1.1 18:413/2.8 19:7/3.6 20:320/1.6 22:701/-0.5 25:123/2.4
+   +9% / -3% / 20d  n   3309  win 42.6%  avg 1.57%  avgWin 8.15%  avgLoss -3.30%  PF 1.83  | 2006-16 1.29% (n 1769)  2017-26 1.89% (n 1540)  | 11 of 12 years positive
+   +5% / -5% / 10d  n   3232  win 63.9%  avg 1.15%  avgWin 4.59%  avgLoss -4.93%  PF 1.65  | 2006-16 0.99% (n 1726)  2017-26 1.33% (n 1506)  | 9 of 12 years positive
+control: any stock, any day
+   +5% / -3% / 10d  n 326334  win 43.3%  avg -0.02%  avgWin 3.97%  avgLoss -3.08%  PF 0.99  | 2006-16 -0.07% (n 146521)  2017-26 0.02% (n 179813)  | 13 of 21 years positive
+   +9% / -3% / 20d  n 216975  win 33.7%  avg 0.13%  avgWin 6.83%  avgLoss -3.27%  PF 1.06  | 2006-16 0.06% (n 98053)  2017-26 0.19% (n 118922)  | 14 of 21 years positive
+   +5% / -5% / 10d  n 268241  win 52.4%  avg 0.04%  avgWin 3.86%  avgLoss -4.15%  PF 1.02  | 2006-16 -0.01% (n 121068)  2017-26 0.09% (n 147173)  | 14 of 21 years positive
+control: any stock while SPY is under its 200-day
+   +5% / -3% / 10d  n  97410  win 40.8%  avg -0.08%  avgWin 4.54%  avgLoss -3.27%  PF 0.96  | 2006-16 -0.19% (n 54110)  2017-26 0.05% (n 43300)  | 10 of 17 years positive
+      by year: 06:1141/0.1 07:2692/0.1 08:20343/-0.7 09:9117/-0.3 10:4271/0.8 11:7454/-0.1 12:354/2.9 14:599/1.6 15:4226/-0.3 16:3913/0.4 18:4470/-0.4 19:2009/2.5 20:8901/-0.2 22:19866/-0.2 23:2125/1.4 25:4540/0.3 26:1389/0.2
+   +9% / -3% / 20d  n  73249  win 30.0%  avg 0.05%  avgWin 7.97%  avgLoss -3.34%  PF 1.02  | 2006-16 -0.11% (n 40942)  2017-26 0.24% (n 32307)  | 10 of 17 years positive
+   +5% / -5% / 10d  n  79657  win 52.7%  avg 0.02%  avgWin 4.43%  avgLoss -4.90%  PF 1.01  | 2006-16 -0.11% (n 44231)  2017-26 0.19% (n 35426)  | 11 of 17 years positive
+control: 40%+ under high (no 6-month rise needed)
+   +5% / -3% / 10d  n  38438  win 38.2%  avg -0.15%  avgWin 4.94%  avgLoss -3.30%  PF 0.93  | 2006-16 -0.30% (n 22026)  2017-26 0.05% (n 16412)  | 12 of 21 years positive
+      by year: 06:244/-0.1 07:651/-0.7 08:8002/-0.7 09:8157/-0.1 10:320/0.6 11:1257/0.0 12:762/0.3 13:202/0.4 14:116/0.0 15:986/-0.4 16:1329/0.0 17:407/0.3 18:735/-0.2 19:985/0.5 20:4658/-0.1 21:194/0.3 22:3680/-0.0 23:1434/0.2 24:670/0.1 25:1668/0.2 26:1981/-0.0
+   +9% / -3% / 20d  n  30905  win 27.8%  avg 0.09%  avgWin 8.98%  avgLoss -3.33%  PF 1.04  | 2006-16 -0.08% (n 18041)  2017-26 0.32% (n 12864)  | 18 of 21 years positive
+   +5% / -5% / 10d  n  31712  win 50.9%  avg -0.08%  avgWin 4.91%  avgLoss -5.25%  PF 0.97  | 2006-16 -0.27% (n 18353)  2017-26 0.17% (n 13359)  | 15 of 21 years positive
+
+=== Portfolio, 10 equal slots, random pick among the day's candidates (mean of 5 runs), cash earns nothing ===
+SPY buy and hold: 10.7% a year
+A: 40%+ under high, up over 6 months         +5/-3/10d  -1.8% a year (-2.1 to -1.2)  worst drop 58%  Sharpe -0.05  trades 4244  win 39.0%  invested 10%
+A: 40%+ under high, up over 6 months         +9/-3/20d  -1.1% a year (-1.5 to -0.0)  worst drop 55%  Sharpe -0.01  trades 2866  win 26.5%  invested 13%
+B: A, only while SPY is under its 200-day    +5/-3/10d  -0.5% a year (-0.9 to -0.1)  worst drop 39%  Sharpe -0.02  trades 1278  win 39.1%  invested 2%
+B: A, only while SPY is under its 200-day    +9/-3/20d  -0.5% a year (-0.8 to -0.1)  worst drop 39%  Sharpe -0.03  trades 892  win 26.0%  invested 3%
+C: A, above 100-day, 50-day over 200-day     +5/-3/10d  1.8% a year (1.6 to 2.1)  worst drop 35%  Sharpe 0.26  trades 1247  win 44.1%  invested 3%
+C: A, above 100-day, 50-day over 200-day     +9/-3/20d  1.5% a year (1.3 to 1.9)  worst drop 34%  Sharpe 0.23  trades 792  win 30.5%  invested 4%
+D: panic dip in a bear market (RSI2<10, quie +5/-3/10d  0.2% a year (-0.1 to 0.5)  worst drop 50%  Sharpe 0.07  trades 1612  win 41.9%  invested 6%
+D: panic dip in a bear market (RSI2<10, quie +9/-3/20d  1.0% a year (0.4 to 1.3)  worst drop 48%  Sharpe 0.15  trades 1285  win 30.5%  invested 10%
+
+Year by year, +5/-3/10d (mean of 5 runs):
+2006  A    0.4%   B   -0.3%   C    0.0%   D    0.0%
+2007  A   -1.7%   B    0.0%   C    0.0%   D    1.5%
+2008  A  -24.0%   B  -21.4%   C   -0.8%   D  -31.4%
+2009  A  -23.2%   B   -8.8%   C   18.1%   D   -6.9%
+2010  A    7.9%   B   -0.9%   C   -0.9%   D    6.4%
+2011  A   -2.6%   B    0.0%   C    0.0%   D    2.0%
+2012  A   -1.2%   B    0.5%   C   -0.5%   D    0.0%
+2013  A    7.9%   B    0.0%   C    2.7%   D    0.0%
+2014  A   -0.9%   B    0.0%   C    0.0%   D    0.0%
+2015  A   -7.1%   B   -0.0%   C    0.0%   D    1.3%
+2016  A    7.5%   B    3.6%   C    3.4%   D    2.1%
+2017  A   -0.2%   B    0.0%   C    0.0%   D    0.0%
+2018  A   -1.6%   B   -0.5%   C    0.0%   D   -1.4%
+2019  A   -3.8%   B    1.3%   C   -1.3%   D    3.9%
+2020  A    2.8%   B   -0.8%   C    5.4%   D   19.9%
+2021  A   17.8%   B    0.0%   C    9.6%   D    0.0%
+2022  A   -4.7%   B   -1.7%   C   -1.1%   D    7.5%
+2023  A   21.8%   B   16.4%   C    0.7%   D    0.0%
+2024  A   -9.9%   B    0.0%   C   -1.0%   D    0.0%
+2025  A    3.8%   B    8.0%   C    0.9%   D    9.5%
+2026  A  -12.7%   B    0.0%   C    4.5%   D    0.0%

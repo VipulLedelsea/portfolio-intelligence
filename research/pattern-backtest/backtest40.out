@@ -1,0 +1,74 @@
+stocks with data 641, 2006-01-13 to 2026-11-06
+
+=== Per trade (every qualifying stock, one open trade per stock) ===
+leaders + rising market      TRAIL  n   9323  win 39.2%  avg 0.91%  avgWin 10.75%  avgLoss -5.42%  PF 1.28  days 36.6  per day 0.025%  t 7.4
+leaders + rising market      HALF   n  10689  win 57.8%  avg 0.44%  avgWin 5.27%  avgLoss -6.16%  PF 1.17  days 30.5  per day 0.014%  t 6.0
+leaders + rising market      T5     n  19535  win 58.6%  avg 0.26%  avgWin 5.00%  avgLoss -6.46%  PF 1.10  days 14.9  per day 0.017%  t 5.8
+leaders, any market          TRAIL  n  11565  win 40.7%  avg 1.05%  avgWin 11.09%  avgLoss -5.83%  PF 1.31  days 37.6  per day 0.028%  t 9.0
+leaders, any market          HALF   n  13711  win 59.8%  avg 0.53%  avgWin 5.34%  avgLoss -6.63%  PF 1.20  days 30.7  per day 0.017%  t 7.9
+leaders, any market          T5     n  26744  win 60.7%  avg 0.34%  avgWin 4.98%  avgLoss -6.81%  PF 1.13  days 14.5  per day 0.024%  t 8.8
+any stock + rising market    TRAIL  n  25090  win 41.6%  avg 1.22%  avgWin 10.42%  avgLoss -5.33%  PF 1.39  days 37.7  per day 0.032%  t 16.6
+any stock + rising market    HALF   n  29499  win 59.4%  avg 0.73%  avgWin 5.29%  avgLoss -5.94%  PF 1.30  days 31.3  per day 0.023%  t 17.1
+any stock + rising market    T5     n  56299  win 58.8%  avg 0.38%  avgWin 5.00%  avgLoss -6.22%  PF 1.15  days 15.2  per day 0.025%  t 15.0
+any stock, any market        TRAIL  n  29343  win 42.9%  avg 1.43%  avgWin 11.31%  avgLoss -6.00%  PF 1.42  days 39.2  per day 0.037%  t 18.8
+any stock, any market        HALF   n  36610  win 61.0%  avg 0.76%  avgWin 5.44%  avgLoss -6.58%  PF 1.30  days 31.1  per day 0.024%  t 18.2
+any stock, any market        T5     n  74353  win 61.3%  avg 0.44%  avgWin 4.99%  avgLoss -6.76%  PF 1.17  days 14.8  per day 0.030%  t 19.1
+
+=== By year, average per trade, TRAIL exit ===
+2006  leaders+market n  311   2.66%   leaders n  396   2.65%   any stock n   993   2.50%
+2007  leaders+market n  298  -1.21%   leaders n  394  -0.27%   any stock n  1009  -1.84%
+2008  leaders+market n  119  -1.80%   leaders n  334  -5.60%   any stock n   861  -5.04%
+2009  leaders+market n  370   4.02%   leaders n  388   3.99%   any stock n   968   9.04%
+2010  leaders+market n  384   4.51%   leaders n  444   4.60%   any stock n  1112   4.64%
+2011  leaders+market n  306  -0.77%   leaders n  499  -0.87%   any stock n  1305  -0.54%
+2012  leaders+market n  296   0.24%   leaders n  448   2.60%   any stock n  1154   3.59%
+2013  leaders+market n  551   2.48%   leaders n  486   2.66%   any stock n  1242   2.86%
+2014  leaders+market n  500  -0.48%   leaders n  556   0.67%   any stock n  1399   1.14%
+2015  leaders+market n  425  -2.38%   leaders n  516  -1.73%   any stock n  1276  -1.59%
+2016  leaders+market n  481   1.50%   leaders n  605   2.43%   any stock n  1482   3.22%
+2017  leaders+market n  525   2.45%   leaders n  523   2.49%   any stock n  1332   2.52%
+2018  leaders+market n  389  -2.01%   leaders n  590  -2.03%   any stock n  1456  -2.12%
+2019  leaders+market n  642   0.66%   leaders n  676   1.56%   any stock n  1711   2.71%
+2020  leaders+market n  559   2.22%   leaders n  657   3.33%   any stock n  1692   3.13%
+2021  leaders+market n  587   1.09%   leaders n  602   1.47%   any stock n  1580   2.28%
+2022  leaders+market n  287  -2.93%   leaders n  704  -1.49%   any stock n  1786  -1.68%
+2023  leaders+market n  650   0.92%   leaders n  712   1.72%   any stock n  1844   2.04%
+2024  leaders+market n  637   0.85%   leaders n  665   1.49%   any stock n  1671   1.20%
+2025  leaders+market n  601   2.04%   leaders n  719   1.65%   any stock n  1836   1.15%
+2026  leaders+market n  405   0.08%   leaders n  651  -0.04%   any stock n  1634   1.09%
+
+=== Portfolio (equal slots, no leverage, cash earns nothing) ===
+SPY buy and hold (dividends included)                10.7% a year  worst drop 55%  Sharpe 0.63
+leaders + rising market, TRAIL, 10 slots, strongest first 5.3% a year  worst drop 35%  Sharpe 0.36  trades 1123  win 36.2%  invested 71%
+leaders + rising market, TRAIL, 10 slots, random pick (5 runs) 3.6% a year (1.3 to 5.7)  worst drop 28%  Sharpe 0.31  trades 1128  win 36.8%  invested 71%
+leaders + rising market, TRAIL, 20 slots, strongest first 4.4% a year  worst drop 29%  Sharpe 0.34  trades 2218  win 37.1%  invested 71%
+leaders + rising market, TRAIL, 20 slots, random pick (5 runs) 3.9% a year (3.0 to 5.4)  worst drop 27%  Sharpe 0.35  trades 2258  win 36.7%  invested 71%
+leaders + rising market, HALF, 10 slots, random pick (5 runs) 2.8% a year (1.6 to 3.6)  worst drop 25%  Sharpe 0.31  trades 1300  win 55.7%  invested 52%
+leaders + rising market, T5, 10 slots, random pick (5 runs) 3.2% a year (1.3 to 4.9)  worst drop 28%  Sharpe 0.30  trades 2715  win 57.1%  invested 66%
+leaders, any market, TRAIL, 10 slots, random pick (5 runs) 3.8% a year (2.4 to 5.2)  worst drop 63%  Sharpe 0.29  trades 1666  win 37.3%  invested 99%
+leaders, any market, TRAIL, 20 slots, random pick (5 runs) 5.3% a year (4.0 to 5.9)  worst drop 57%  Sharpe 0.38  trades 3214  win 37.7%  invested 97%
+any stock + rising market, TRAIL, 20 slots, random pick (5 runs) 4.4% a year (3.6 to 4.9)  worst drop 27%  Sharpe 0.41  trades 2264  win 37.8%  invested 71%
+any stock, any market, TRAIL, 20 slots, random pick (5 runs) 6.6% a year (5.1 to 7.2)  worst drop 54%  Sharpe 0.46  trades 3487  win 36.9%  invested 99%
+
+=== Year by year: SPY vs leaders + rising market, TRAIL, 10 slots random (mean of 5) vs leaders any market, TRAIL, 10 slots random ===
+2006  SPY   12.0%   leaders+market   10.1%   leaders any market   12.4%
+2007  SPY    5.1%   leaders+market    0.5%   leaders any market    0.7%
+2008  SPY  -36.8%   leaders+market   -2.3%   leaders any market  -48.1%
+2009  SPY   26.4%   leaders+market   12.6%   leaders any market    3.4%
+2010  SPY   15.1%   leaders+market   -2.4%   leaders any market   14.9%
+2011  SPY    1.9%   leaders+market   -1.8%   leaders any market   -1.3%
+2012  SPY   16.0%   leaders+market    7.0%   leaders any market   21.6%
+2013  SPY   32.3%   leaders+market   21.9%   leaders any market   37.3%
+2014  SPY   13.5%   leaders+market   -3.3%   leaders any market    7.4%
+2015  SPY    1.2%   leaders+market  -13.3%   leaders any market    1.4%
+2016  SPY   12.0%   leaders+market   10.0%   leaders any market   17.0%
+2017  SPY   21.7%   leaders+market   22.6%   leaders any market   22.8%
+2018  SPY   -4.6%   leaders+market   -8.7%   leaders any market  -11.2%
+2019  SPY   31.2%   leaders+market    6.5%   leaders any market   16.8%
+2020  SPY   18.3%   leaders+market    7.5%   leaders any market    9.6%
+2021  SPY   28.7%   leaders+market   15.7%   leaders any market   18.6%
+2022  SPY  -18.2%   leaders+market  -15.9%   leaders any market  -15.6%
+2023  SPY   26.2%   leaders+market    2.7%   leaders any market    1.3%
+2024  SPY   24.9%   leaders+market    8.0%   leaders any market   10.1%
+2025  SPY   17.7%   leaders+market    0.0%   leaders any market   -1.2%
+2026  SPY    8.7%   leaders+market   10.6%   leaders any market   -0.4%
