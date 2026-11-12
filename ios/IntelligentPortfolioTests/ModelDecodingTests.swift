@@ -121,13 +121,15 @@ final class ModelDecodingTests: XCTestCase {
     }
 
     func testLorentzianReadingDecodes() throws {
-        let json = #"{"prediction":4,"neighbors":8,"signal":1,"filters_pass":false,"votes_long":6,"votes_short":2,"bars":251}"#
+        let json = #"{"prediction":4,"neighbors":8,"signal":1,"filters_pass":false,"votes_long":6,"votes_short":2,"bars":251,"history":[{"d":"2026-11-11","p":4,"s":1}],"streak_bars":5,"trajectory":"steady"}"#
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let reading = try decoder.decode(LorentzianReading.self, from: Data(json.utf8))
         XCTAssertEqual(reading.prediction, 4)
         XCTAssertEqual(reading.votesLong, 6)
         XCTAssertFalse(reading.filtersPass)
+        XCTAssertEqual(reading.history?.first?.p, 4)
+        XCTAssertEqual(reading.streakBars, 5)
     }
 
     func testFinishedIdeasDecode() throws {

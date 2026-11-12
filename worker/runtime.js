@@ -873,7 +873,7 @@ function snapshotFromPayload(symbol, dailyItem, signalItem, quote, market = MARK
   if (daily.length < 35) throw new Error(`Insufficient daily history for ${symbol}`);
   if (signal.length < 22) throw new Error(`Insufficient confirmed 4-hour history for ${symbol}`);
   // Kept beside the snapshot, not on it, so the year of bars never reaches storage or an API response.
-  DAILY_OHLC.set(`${market.id}:${symbol}`, daily.slice(-260).map(bar => ({ open: bar.open, high: bar.high, low: bar.low, close: bar.close })));
+  DAILY_OHLC.set(`${market.id}:${symbol}`, daily.slice(-260).map(bar => ({ date: String(bar.date).slice(0, 10), open: bar.open, high: bar.high, low: bar.low, close: bar.close })));
   const closes = daily.map(row => row.close);
   const highs = daily.map(row => row.high);
   const lows = daily.map(row => row.low);
@@ -2967,6 +2967,19 @@ function lorentzianReading(dailyBars) {
   try { return lorentzianClassification(dailyBars); } catch { return null; }
 }
 
+// One line on where the Lorentzian reading has been, for the ranking agent: today's number, how long it has leaned, a fresh turn or a stale lean.
+function lorentzianStory(z, long) {
+  const lean = z.prediction > 0 ? "long" : z.prediction < 0 ? "short" : "no lean";
+  const parts = [`${z.prediction > 0 ? "+" : ""}${z.prediction} of ${z.neighbors}`];
+  if (z.prediction !== 0 && Number.isFinite(z.streak_bars)) {
+    parts.push(`leaning ${lean} for ${z.streak_bars} day${z.streak_bars === 1 ? "" : "s"}${z.streak_bars <= 3 && z.previous_lean ? `, turned from ${z.previous_lean > 0 ? "long" : "short"}` : ""}`);
+    if (z.trajectory) parts.push(z.trajectory);
+    parts.push((z.prediction > 0) === long ? "agrees with this idea" : "disagrees with this idea");
+  }
+  if (z.filters_pass === false) parts.push("its own filters do not confirm");
+  return parts.join(", ");
+}
+
 // ---- Signals: every indicator we hold on an idea, each read by code as for, against or neutral for the idea's direction ----
 // The ranking model and the bull and bear debate both receive this list. Each signal carries an `evidence` note saying whether the indicator
 // has been backtested here and what the test found, so an untested or no-edge indicator is weighed as such instead of being taken on faith.
@@ -3019,8 +3032,8 @@ function ideaSignals(item, snapshot, trend) {
   if (item.crowded === true) add("same_sector_crowded", "Same bet as a higher-ranked idea", "yes", "yes", "against", "A rule, not a test.", "Another idea in the same sector and direction ranks higher.");
   if (item.chart_pattern) add("chart_pattern", "Chart pattern", String(item.chart_pattern).toLowerCase(), String(item.chart_pattern).toLowerCase(), "neutral", "Backtested: chart patterns showed no reliable edge.", "A classic chart pattern seen in the last few sessions.");
   const z = item.lorentzian;
-  if (z && Number.isFinite(Number(z.prediction))) add("lorentzian", "Lorentzian Classification reading", z.prediction, `${z.prediction > 0 ? "+" : ""}${z.prediction} of ${z.neighbors}`, way(sign * z.prediction > 0, sign * z.prediction < 0),
-    "Backtested on 20 years of S&P 500 daily bars: it did not predict the next 4 to 10 days. A very weak signal.", "From -8 (leans short) to +8 (leans long): votes of 8 similar past days.");
+  if (z && Number.isFinite(Number(z.prediction))) add("lorentzian", "Lorentzian Classification reading", z.prediction, lorentzianStory(z, long), way(sign * z.prediction > 0, sign * z.prediction < 0),
+    "Backtested on 20 years of S&P 500 daily bars: it did not predict the next 4 to 10 days. A very weak signal.", "From -8 (leans short) to +8 (leans long): votes of 8 similar past days. The display text says how long it has leaned and whether it just turned.");
   return out;
 }
 

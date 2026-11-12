@@ -858,6 +858,12 @@ struct RankedDetailSheet: View {
                                              referenceLines: [])
                                 .aspectRatio(1.5, contentMode: .fit)
                                 .frame(minHeight: 220, maxHeight: 440)
+                            if let reading = idea.lorentzian, let strip = LorentzianStrip.values(reading, candles: candles) {
+                                LorentzianStrip(values: strip, neighbors: reading.neighbors)
+                                    .frame(height: 44)
+                                Text("Lorentzian reading by day, information only. Green leans long, red leans short; a dot marks a day the indicator's own signal flipped.")
+                                    .font(.caption2).foregroundStyle(AppTheme.muted).fixedSize(horizontal: false, vertical: true)
+                            }
                             ViewThatFits(in: .horizontal) {
                                 HStack(spacing: 14) { legend }
                                 VStack(alignment: .leading, spacing: 4) { legend }
@@ -997,6 +1003,47 @@ struct RankedDetailSheet: View {
     }
 }
 
+/// A slim histogram of the Lorentzian prediction under the candles, one bar per candle so the two line up. Information only, so it stays muted.
+private struct LorentzianStrip: View {
+    struct Value: Equatable { let p: Int; let flip: Bool }
+    let values: [Value?]
+    let neighbors: Int
+
+    /// One entry per candle, matched by date; nil where the indicator has no reading for that candle. Nil overall if nothing matches.
+    static func values(_ reading: LorentzianReading, candles: [Candle]) -> [Value?]? {
+        guard let history = reading.history, !history.isEmpty, candles.count > 1 else { return nil }
+        let byDate = Dictionary(history.compactMap { day in day.d.map { ($0, day) } }, uniquingKeysWith: { a, _ in a })
+        var previous: Int?
+        let mapped: [Value?] = candles.map { candle in
+            guard let day = byDate[candle.date] else { return nil }
+            defer { previous = day.s }
+            return Value(p: day.p, flip: previous != nil && previous != day.s && day.s != 0)
+        }
+        return mapped.contains(where: { $0 != nil }) ? mapped : nil
+    }
+
+    var body: some View {
+        Canvas { context, size in
+            let count = values.count
+            guard count > 1 else { return }
+            let step = size.width / CGFloat(count - 1), mid = size.height / 2, scale = (size.height / 2 - 4) / CGFloat(max(neighbors, 1))
+            var axis = Path(); axis.move(to: CGPoint(x: 0, y: mid)); axis.addLine(to: CGPoint(x: size.width, y: mid))
+            context.stroke(axis, with: .color(AppTheme.line), lineWidth: 1)
+            for (index, value) in values.enumerated() {
+                guard let value else { continue }
+                let x = CGFloat(index) * step, h = CGFloat(abs(value.p)) * scale
+                let color = value.p > 0 ? AppTheme.mint : AppTheme.red
+                if value.p != 0 {
+                    let rect = CGRect(x: x - max(1, step * 0.28), y: value.p > 0 ? mid - h : mid, width: max(2, step * 0.56), height: h)
+                    context.fill(Path(rect), with: .color(color.opacity(0.7)))
+                }
+                if value.flip { context.fill(Path(ellipseIn: CGRect(x: x - 2.5, y: size.height - 5, width: 5, height: 5)), with: .color(AppTheme.amber)) }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 /// The Lorentzian Classification indicator's reading, shown for information only. The wording follows what the indicator's source
 /// actually does: a past day votes long when the price had fallen over the four days before it, and short when it had risen.
 private struct LorentzianBlock: View {
@@ -1023,6 +1070,10 @@ private struct LorentzianBlock: View {
             .accessibilityHidden(true)
             Text("\(lean): of \(reading.neighbors) similar past days, \(reading.votesLong) vote long and \(reading.votesShort) vote short (\(String(format: "%+d", reading.prediction)) of \(reading.neighbors)). \(agreement ?? "")")
                 .font(.subheadline).foregroundStyle(.white.opacity(0.85)).fixedSize(horizontal: false, vertical: true)
+            if let streak = reading.streakBars, reading.prediction != 0 {
+                Text("It has leaned \(reading.prediction > 0 ? "long" : "short") for \(streak) day\(streak == 1 ? "" : "s")\(reading.trajectory.map { ", and is \($0)" } ?? "").")
+                    .font(.caption).foregroundStyle(.white.opacity(0.7))
+            }
             if !reading.filtersPass {
                 Text("The indicator's own volatility and trend filters would not confirm a new signal today.")
                     .font(.caption).foregroundStyle(AppTheme.amber).fixedSize(horizontal: false, vertical: true)
