@@ -1227,6 +1227,8 @@ const MARKET_INDEXES = {
 
 // Share of scanned stocks in a daily uptrend at or above this reads as a strong majority, at or below the lower bound as a weak one.
 const BREADTH_STRONG_PCT = 60, BREADTH_WEAK_PCT = 40;
+// The market reads up or down once the index has moved this far (percent) today; a move this big counts whatever the share of stocks says.
+const DAY_MOVE_PCT = 0.5, BIG_DAY_PCT = 1;
 
 // The forex "market" is the US Dollar Index, so what its trend means depends on which side of the pair the dollar sits: a rising dollar
 // lifts USD/xxx and pushes xxx/USD down, and says nothing about a cross with no dollar in it (read as mixed, which every caller treats as neutral).
@@ -1266,6 +1268,30 @@ function marketTrend(info, index, snapshots, withBreadth = true, marketId = null
     headline = "Mixed: the index is rising, but few stocks are";
     note = `The index is in an uptrend, but only ${breadthDaily}% of stocks are in uptrends. A narrow rally is less reliable.`;
   }
+  // trend_state is the lagging trend-line reading. Ranking, scoring and the learning log read it, so they do not change with each day's move.
+  const trendState = state;
+  // The card (state, headline, note) shows how the market is doing today, read from the index's move on the day and the share of stocks up today. The Supertrend lines lag
+  // a sharp day, so they only add context to the note (and stay in daily / four_hour). Forex keeps the trend-line reading below.
+  const dayChange = Number.isFinite(Number(index.return_1d_pct)) ? Number(index.return_1d_pct) : null;
+  const upToday = showBreadth ? (all.length ? round(all.filter(snapshot => Number(snapshot.return_1d_pct) > 0).length / all.length * 100, 0) : null) : null;
+  if (marketId !== "FX" && dayChange != null) {
+    const big = Math.abs(dayChange) >= BIG_DAY_PCT;
+    const sign = dayChange >= 0 ? "+" : "-", size = `${sign}${Math.abs(round(dayChange, 2))}%`;
+    const stocks = upToday != null ? `${upToday}% of stocks are up today` : "";
+    const context = indexState === "UP" ? "The longer trend is up." : indexState === "DOWN" ? "The longer trend is down."
+      : daily === "UP" ? "The longer trend is still up." : "The longer trend is still down.";
+    if (dayChange <= -DAY_MOVE_PCT && (big || upToday == null || upToday <= 50)) {
+      state = "DOWN"; headline = `Market is down today (${size})`;
+      note = `${stocks ? stocks + ". " : ""}${context} Long ideas are going against today's move.`;
+    } else if (dayChange >= DAY_MOVE_PCT && (big || upToday == null || upToday >= 50)) {
+      state = "UP"; headline = `Market is up today (${size})`;
+      note = `${stocks ? stocks + ". " : ""}${context} New long ideas are moving with the market.`;
+    } else {
+      state = "MIXED";
+      headline = Math.abs(dayChange) < DAY_MOVE_PCT ? `Market is flat today (${size})` : `Mixed today: the index is ${size} but stocks are split`;
+      note = `${stocks ? stocks + ". " : ""}${context} No clear push either way today.`;
+    }
+  }
   if (marketId === "FX") {
     headline = indexState === "UP" ? "The US dollar is in an uptrend" : indexState === "DOWN" ? "The US dollar is in a downtrend"
       : daily === "UP" ? "The US dollar is in an uptrend, with a short-term pullback" : "The US dollar is in a downtrend, with a short-term bounce";
@@ -1274,12 +1300,13 @@ function marketTrend(info, index, snapshots, withBreadth = true, marketId = null
       : "The dollar's daily and 4-hour trends disagree, so it is not a clear help or headwind for any pair.";
   }
   return {
-    state, index_state: indexState, headline, note,
+    state, trend_state: trendState, index_state: indexState, headline, note,
     market: marketId, index_symbol: info.symbol, label: info.label,
     daily, four_hour: fourHour,
     adx: round(numeric(index.daily_adx?.value), 0),
     day_change_pct: Number.isFinite(Number(index.return_1d_pct)) ? round(Number(index.return_1d_pct), 2) : null,
     breadth_daily_pct: breadthDaily,
+    breadth_today_pct: upToday,
     breadth_4h_pct: showBreadth ? share(snapshot => snapshot.supertrend?.direction) : null,
     stocks_counted: showBreadth ? all.length : null,
     as_of: index.market_time || null,
@@ -2019,7 +2046,7 @@ function rankRulesReason(item) {
 }
 
 function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, marketId = "US", filings = new Map(), learnedRules = [], spy = null }) {
-  const marketState = trend?.state || "UNKNOWN";
+  const marketState = trend?.trend_state || trend?.state || "UNKNOWN";
   const regime = marketId === "US" ? marketRegimeLabel(spy) : null;
   const agrees = (direction, symbol) => { const state = marketStateFor(marketState, symbol, marketId); return state === "UP" ? (direction === "LONG" ? 100 : 25) : state === "DOWN" ? (direction === "SHORT" ? 100 : 25) : 55; };
   const marketNote = marketId === "FX" ? `US dollar index ${marketState.toLowerCase()}` : `market ${marketState.toLowerCase()}`;
@@ -3047,7 +3074,7 @@ function ideaSignals(item, snapshot, trend) {
     "Backtested: see entry_timing for what each spot earned.", "Whether the price is still near where the signal fired.");
   if (Number.isFinite(Number(item.age_days))) add("signal_age_days", "Signal age", Number(item.age_days), `${item.age_days} days`, way(item.age_days <= 3, item.age_days >= 11), "Backtested: see entry_timing by age.", "Days since the signal. Older means more of the move is gone.");
   // For forex this is the dollar's trend as it bears on this pair (see marketStateFor), so a rising dollar reads "down" for EUR/USD.
-  const state = marketStateFor(trend?.state, item.symbol, item.market);
+  const state = marketStateFor(trend?.trend_state || trend?.state, item.symbol, item.market);
   if (state) add("market_trend", item.market === "FX" ? "US dollar trend, as it bears on this pair" : "Market trend", state.toLowerCase(), state.toLowerCase(), state === "MIXED" ? "neutral" : way((state === "UP") === long, (state === "UP") !== long), SIGNAL_UNTESTED,
     item.market === "FX" ? "Direction the US Dollar Index is pushing this pair. Mixed for a cross with no dollar in it. Against the idea's direction is a headwind." : "Direction of the broad market index. Against the idea's direction is a headwind.");
   if (Number.isFinite(Number(trend?.breadth_daily_pct))) { const v = Number(trend.breadth_daily_pct); add("market_breadth_pct", "Stocks in a daily uptrend", v, `${v}%`, long ? way(v >= 60, v <= 40) : way(v <= 40, v >= 60), SIGNAL_UNTESTED, "Share of scanned stocks in an uptrend. Broad strength supports longs."); }
