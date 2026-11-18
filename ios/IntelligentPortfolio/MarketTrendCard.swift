@@ -44,11 +44,37 @@ struct MarketTrendCard: View {
                 if let breadth = trend.breadthDailyPct { chip("\(Int(breadth))% of stocks up") }
             }
             Text(trend.note).font(.footnote).foregroundStyle(AppTheme.muted)
+            if let outlook = trend.outlook { outlookBlock(outlook) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .panel()
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Market trend, \(trend.label): \(trend.headline). \(trend.note)")
+    }
+
+    /// How much of a portfolio the market supports holding in stocks, in the style of Investor's Business Daily. A bar of 0-100% with the range filled.
+    private func outlookBlock(_ o: MarketOutlook) -> some View {
+        let tint = o.state == "UP" ? AppTheme.mint : o.state == "PRESS" ? AppTheme.amber : AppTheme.red
+        return VStack(alignment: .leading, spacing: 6) {
+            Divider().overlay(AppTheme.line)
+            Text("SUGGESTED IN STOCKS · \(o.label.uppercased())")
+                .font(.caption2.bold()).tracking(0.8).foregroundStyle(AppTheme.muted)
+            Text("\(o.exposureMinPct)–\(o.exposureMaxPct)% of your portfolio").font(.title3.bold()).foregroundStyle(tint)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(AppTheme.raised)
+                    Capsule().fill(tint)
+                        .frame(width: geo.size.width * CGFloat(o.exposureMaxPct - o.exposureMinPct) / 100)
+                        .offset(x: geo.size.width * CGFloat(o.exposureMinPct) / 100)
+                }
+            }
+            .frame(height: 8)
+            HStack { Text("0%"); Spacer(); Text("100%") }.font(.caption2).foregroundStyle(AppTheme.muted)
+            Text(o.note).font(.footnote).foregroundStyle(AppTheme.muted).fixedSize(horizontal: false, vertical: true)
+            Text(o.disclaimer).font(.caption2).foregroundStyle(AppTheme.muted.opacity(0.8)).fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Suggested share of your portfolio in stocks: \(o.exposureMinPct) to \(o.exposureMaxPct) percent. \(o.label). \(o.note)")
     }
 
     private func chip(_ text: String) -> some View {

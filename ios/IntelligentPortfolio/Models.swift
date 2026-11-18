@@ -1122,6 +1122,22 @@ struct MarketTrend: Decodable, Sendable {
     let breadthDailyPct: Double?
     /// Recent closes of the index, oldest first, for the desk display's line chart. Absent on older server data.
     let spark: [Double]?
+    /// IBD-style read of how much of a portfolio the market supports holding in stocks. US only; absent elsewhere and on older server data.
+    let outlook: MarketOutlook?
+}
+
+struct MarketOutlook: Decodable, Sendable {
+    let asOf: String
+    let state: String
+    let label: String
+    let exposureMinPct: Int
+    let exposureMaxPct: Int
+    let distributionDays: Int
+    let followThroughDate: String?
+    let rallyAttemptDay: Int?
+    let headline: String
+    let note: String
+    let disclaimer: String
 }
 
 

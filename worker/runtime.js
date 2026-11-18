@@ -873,7 +873,7 @@ function snapshotFromPayload(symbol, dailyItem, signalItem, quote, market = MARK
   if (daily.length < 35) throw new Error(`Insufficient daily history for ${symbol}`);
   if (signal.length < 22) throw new Error(`Insufficient confirmed 4-hour history for ${symbol}`);
   // Kept beside the snapshot, not on it, so the year of bars never reaches storage or an API response.
-  DAILY_OHLC.set(`${market.id}:${symbol}`, daily.slice(-260).map(bar => ({ date: String(bar.date).slice(0, 10), open: bar.open, high: bar.high, low: bar.low, close: bar.close })));
+  DAILY_OHLC.set(`${market.id}:${symbol}`, daily.slice(-260).map(bar => ({ date: String(bar.date).slice(0, 10), open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.volume })));
   const closes = daily.map(row => row.close);
   const highs = daily.map(row => row.high);
   const lows = daily.map(row => row.low);
@@ -1239,6 +1239,74 @@ function marketStateFor(state, symbol, marketId) {
   if (pair.startsWith("USD")) return state;
   if (pair.endsWith("USD")) return state === "UP" ? "DOWN" : "UP";
   return "MIXED";
+}
+
+// IBD-style market outlook: how much of a portfolio the market's condition supports being in stocks. Built from the public descriptions of IBD's method
+// (their own exposure figure is subscriber-only, so ours can differ). It reads a year of daily bars of the S&P 500 and Nasdaq-100 (SPY and QQQ) and replays the
+// state machine from research/pattern-backtest/ibd_exposure.mjs: a follow-through day (day 4 or later of a rally attempt, +1.25% on more volume, either index)
+// starts an uptrend; distribution days (down 0.2%+ on more volume, kept 25 sessions or until the index is 5% above that day's close, counted from the
+// follow-through) put it under pressure at 5 and back in correction at 7 (with both indexes under their 50-day averages), or after an 8% fall from the uptrend's peak.
+// A 20-year test (ibd_exposure.mjs) found it limits crash losses but is not a timing signal, so it is shown as guidance and nothing reads it.
+const OUTLOOK = { ftdGain: 0.0125, distDrop: 0.002, expire: 25, rallyOff: 0.05, pressAt: 5, corrAt: 7, ddCorr: 0.08, maxDay: 30, start: 50 };
+function marketOutlook(spyBars, qqqBars) {
+  if (!Array.isArray(spyBars) || !Array.isArray(qqqBars)) return null;
+  const q = new Map(qqqBars.map(bar => [bar.date, bar])), rows = spyBars.filter(bar => q.has(bar.date)).map(bar => [bar, q.get(bar.date)]);
+  const n = rows.length;
+  if (n < OUTLOOK.start + 40 || rows.some(([a, b]) => !(a.close > 0 && b.close > 0 && a.low > 0 && b.low > 0))) return null;
+  const idx = [0, 1].map(k => ({ c: rows.map(r => Number(r[k].close)), l: rows.map(r => Number(r[k].low)), v: rows.map(r => Number(r[k].volume) || 0) }));
+  if (idx.some(x => !x.v.some(value => value > 0))) return null;
+  const dates = rows.map(r => String(r[0].date).slice(0, 10)), sma50 = (x, t) => { let sum = 0; for (let i = t - 49; i <= t; i++) sum += x.c[i]; return sum / 50; };
+  const isDist = idx.map(x => x.c.map((c, i) => i > 0 && c / x.c[i - 1] - 1 <= -OUTLOOK.distDrop && x.v[i] > x.v[i - 1]));
+  let since = 0;
+  const count = (k, t) => { let total = 0; for (let i = Math.max(1, since, t - OUTLOOK.expire + 1); i <= t; i++) if (isDist[k][i] && idx[k].c[t] < idx[k].c[i] * (1 + OUTLOOK.rallyOff)) total++; return total; };
+  const t0 = OUTLOOK.start;
+  let peak = idx.map(x => x.c[t0]), attempt = [null, null], ftd = null, upSince = -1;
+  const high = k => Math.max(...idx[k].c.slice(0, t0 + 1));
+  let state = idx.every((x, k) => x.c[t0] > sma50(x, t0) && x.c[t0] / high(k) > 0.95) ? "UP" : "CORR";
+  if (state === "UP") upSince = t0 - 30;
+  since = Math.max(0, t0 - OUTLOOK.expire);
+  let dist = 0;
+  for (let t = t0; t < n; t++) {
+    dist = Math.max(count(0, t), count(1, t));
+    if (state === "CORR") peak = idx.map(x => x.c[t]); else peak = peak.map((p, k) => Math.max(p, idx[k].c[t]));
+    const fall = Math.min(...idx.map((x, k) => x.c[t] / peak[k] - 1)), weak = idx.every(x => x.c[t] < sma50(x, t)); // selling alone is not a correction: both indexes must also be under their 50-day averages
+    if (state === "CORR") {
+      for (let k = 0; k < 2; k++) {
+        let a = attempt[k];
+        if (a && (idx[k].l[t] < a.low || t - a.day1 + 1 > OUTLOOK.maxDay)) a = null; // undercut the day-1 low, or gone stale: start over
+        if (!a && idx[k].c[t] > idx[k].c[t - 1]) a = { day1: t, low: idx[k].l[t] };
+        attempt[k] = a;
+      }
+      for (let k = 0; k < 2; k++) {
+        const a = attempt[k], x = idx[k];
+        if (a && t - a.day1 + 1 >= 4 && x.c[t] / x.c[t - 1] - 1 >= OUTLOOK.ftdGain && x.v[t] > x.v[t - 1] && x.c[t] > a.low) { state = "UP"; upSince = t; since = t + 1; ftd = { t, k, low: x.l[t] }; attempt = [null, null]; dist = 0; break; }
+      }
+    } else if (state === "UP") {
+      if (fall <= -OUTLOOK.ddCorr || (dist >= OUTLOOK.corrAt && weak)) { state = "CORR"; attempt = [null, null]; }
+      else if (ftd && t - ftd.t <= 15 && idx[ftd.k].c[t] < ftd.low) { state = "CORR"; attempt = [null, null]; ftd.failed = true; }
+      else if (dist >= OUTLOOK.pressAt) state = "PRESS";
+    } else if (fall <= -OUTLOOK.ddCorr || (dist >= OUTLOOK.corrAt && weak)) { state = "CORR"; attempt = [null, null]; }
+    else if (dist <= OUTLOOK.pressAt - 2 && idx.every(x => x.c[t] > sma50(x, t))) state = "UP";
+  }
+  const last = n - 1, age = last - upSince, dists = [count(0, last), count(1, last)];
+  dist = Math.max(...dists);
+  let band, label;
+  if (state === "CORR") { band = [0, 20]; label = "Market in correction"; }
+  else if (state === "PRESS") { band = dist >= OUTLOOK.pressAt + 1 ? [20, 40] : [40, 60]; label = "Uptrend under pressure"; }
+  else { band = age < 2 ? [20, 40] : age < 5 ? [40, 60] : age < 10 ? [60, 80] : [80, 100]; if (dist >= 4 && band[0] > 60) band = [60, 80]; label = "Confirmed uptrend"; }
+  const day = state === "CORR" ? Math.max(0, ...attempt.map(a => a ? last - a.day1 + 1 : 0)) : 0;
+  const ftdDate = ftd ? dates[ftd.t] : null, sinceFtd = ftd ? last - ftd.t : null;
+  const why = state === "CORR"
+    ? (day ? `The market is in a rally attempt (day ${day}). IBD waits for a follow-through day (day 4 or later, the index up 1.25% or more on heavier volume) before adding money.` : "The market is falling or has no rally attempt yet. IBD keeps exposure low until a rally attempt shows a follow-through day.")
+    : state === "PRESS" ? `${dist} distribution days in the last 25 sessions (down days on heavier volume: sign of big investors selling). At ${OUTLOOK.pressAt} the uptrend is under pressure; at ${OUTLOOK.corrAt} it counts as a correction.`
+    : age < 10 ? `A follow-through day on ${ftdDate || "recent"} confirmed the uptrend. IBD adds money in steps, so the range rises over the first 10 sessions while selling stays low.`
+    : `The uptrend is confirmed with ${dist} distribution day${dist === 1 ? "" : "s"} in the last 25 sessions.${dist >= 4 ? " At 5 it moves under pressure." : ""}`;
+  return {
+    as_of: dates[last], state, label, exposure_min_pct: band[0], exposure_max_pct: band[1], distribution_days: dist, distribution_days_spy: dists[0], distribution_days_qqq: dists[1],
+    follow_through_date: ftdDate, sessions_since_follow_through: sinceFtd, rally_attempt_day: day || null,
+    headline: `${band[0]}–${band[1]}% of your portfolio in stocks`, note: why,
+    disclaimer: "A general read of the market in the style of Investor's Business Daily, from public price and volume rules. It does not know your goals, taxes, age or other holdings and is not personal advice.",
+  };
 }
 
 function marketTrend(info, index, snapshots, withBreadth = true, marketId = null) {
@@ -2658,6 +2726,7 @@ async function discover(market = MARKETS.US, env = {}, previous = null) {
   const indexSnapshots = new Map(indexes.map(info => [info.symbol, snapshots.get(info.symbol)]));
   for (const symbol of indexSymbols) snapshots.delete(symbol);
   const trends = indexes.map((info, position) => marketTrend(info, indexSnapshots.get(info.symbol), snapshots, position === 0, market.id)).filter(Boolean);
+  if (market.id === "US" && trends[0]) { try { trends[0].outlook = marketOutlook(DAILY_OHLC.get("US:SPY"), DAILY_OHLC.get("US:QQQ")); } catch { trends[0].outlook = null; } }
   const allCandidates = [...snapshots.entries()].map(([symbol, snapshot]) => scoreCandidate(snapshot, metadata.get(symbol))).sort((a, b) => b.score - a.score || a.symbol.localeCompare(b.symbol));
   const dipScan = market.id === "US" ? buildDipScan(snapshots, indexSnapshots.get("SPY"), metadata) : null;
   const patternScan = market.id === "US" ? buildPatternScan(snapshots, metadata) : null;
