@@ -782,6 +782,10 @@ private struct RankedRow: View {
                 FactColumn(title: "Risk", value: PlainWords.risk(entry: idea.entry, stop: idea.stop, stopPct: idea.stopPct))
             }
             StrengthBar(score: idea.score)
+            if let z = idea.lorentzian, z.prediction != 0, (z.prediction > 0) != (idea.direction == "LONG"), abs(z.prediction) >= 4 {
+                Text("Lorentzian leans \(z.prediction > 0 ? "long" : "short") (\(String(format: "%+d", z.prediction))), so TradingView's Lorentzian may disagree with this idea. Information only.")
+                    .font(.caption).foregroundStyle(AppTheme.amber).fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .panel()
