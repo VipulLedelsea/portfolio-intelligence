@@ -802,6 +802,7 @@ struct RankedDetailSheet: View {
     @EnvironmentObject private var model: AppModel
     let idea: RankedIdea
     @State private var showingNumbers = false
+    @State private var showingLorentzian = false
     @State private var logging = false
     private var long: Bool { idea.isLong }
     private func money(_ value: Double) -> String { PriceFormat.string(value, prefix: idea.currencySymbol, decimals: idea.priceDecimals) }
@@ -857,15 +858,26 @@ struct RankedDetailSheet: View {
                     }
                     if candles.count > 1 {
                         VStack(alignment: .leading, spacing: 8) {
+                            let overlay = idea.lorentzian.flatMap { LorentzianOverlay.make($0, candles: candles) }
+                            if overlay != nil {
+                                Button { withAnimation(.snappy(duration: 0.2)) { showingLorentzian.toggle() } } label: {
+                                    Label("Lorentzian", systemImage: showingLorentzian ? "checkmark.circle.fill" : "waveform.path.ecg")
+                                        .font(.caption.weight(.semibold))
+                                        .padding(.horizontal, 10).padding(.vertical, 5)
+                                        .foregroundStyle(showingLorentzian ? AppTheme.amber : AppTheme.muted)
+                                        .background(showingLorentzian ? AppTheme.amber.opacity(0.16) : AppTheme.raised, in: Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityAddTraits(showingLorentzian ? .isSelected : [])
+                            }
                             CandlestickChart(series: candles,
                                              levels: ScenarioLevels(reference: idea.entry, current: idea.price, risk: idea.stop, target1: chartTarget1, target2: chartTarget2),
-                                             referenceLines: [])
+                                             referenceLines: [],
+                                             lorentzian: showingLorentzian ? overlay : nil)
                                 .aspectRatio(1.5, contentMode: .fit)
                                 .frame(minHeight: 220, maxHeight: 440)
-                            if let reading = idea.lorentzian, let strip = LorentzianStrip.values(reading, candles: candles) {
-                                LorentzianStrip(values: strip, neighbors: reading.neighbors)
-                                    .frame(height: 44)
-                                Text("Lorentzian reading by day, information only. Green leans long, red leans short; a dot marks a day the indicator's own signal flipped.")
+                            if showingLorentzian && overlay != nil {
+                                Text("Lorentzian overlay, information only. Candles are tinted green or red by the lean (solid when the day closed up, hollow when down); the line is the indicator's kernel estimate; arrows mark a day its own signal flipped.")
                                     .font(.caption2).foregroundStyle(AppTheme.muted).fixedSize(horizontal: false, vertical: true)
                             }
                             ViewThatFits(in: .horizontal) {
@@ -1004,47 +1016,6 @@ struct RankedDetailSheet: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .tile()
-    }
-}
-
-/// A slim histogram of the Lorentzian prediction under the candles, one bar per candle so the two line up. Information only, so it stays muted.
-private struct LorentzianStrip: View {
-    struct Value: Equatable { let p: Int; let flip: Bool }
-    let values: [Value?]
-    let neighbors: Int
-
-    /// One entry per candle, matched by date; nil where the indicator has no reading for that candle. Nil overall if nothing matches.
-    static func values(_ reading: LorentzianReading, candles: [Candle]) -> [Value?]? {
-        guard let history = reading.history, !history.isEmpty, candles.count > 1 else { return nil }
-        let byDate = Dictionary(history.compactMap { day in day.d.map { ($0, day) } }, uniquingKeysWith: { a, _ in a })
-        var previous: Int?
-        let mapped: [Value?] = candles.map { candle in
-            guard let day = byDate[candle.date] else { return nil }
-            defer { previous = day.s }
-            return Value(p: day.p, flip: previous != nil && previous != day.s && day.s != 0)
-        }
-        return mapped.contains(where: { $0 != nil }) ? mapped : nil
-    }
-
-    var body: some View {
-        Canvas { context, size in
-            let count = values.count
-            guard count > 1 else { return }
-            let step = size.width / CGFloat(count - 1), mid = size.height / 2, scale = (size.height / 2 - 4) / CGFloat(max(neighbors, 1))
-            var axis = Path(); axis.move(to: CGPoint(x: 0, y: mid)); axis.addLine(to: CGPoint(x: size.width, y: mid))
-            context.stroke(axis, with: .color(AppTheme.line), lineWidth: 1)
-            for (index, value) in values.enumerated() {
-                guard let value else { continue }
-                let x = CGFloat(index) * step, h = CGFloat(abs(value.p)) * scale
-                let color = value.p > 0 ? AppTheme.mint : AppTheme.red
-                if value.p != 0 {
-                    let rect = CGRect(x: x - max(1, step * 0.28), y: value.p > 0 ? mid - h : mid, width: max(2, step * 0.56), height: h)
-                    context.fill(Path(rect), with: .color(color.opacity(0.7)))
-                }
-                if value.flip { context.fill(Path(ellipseIn: CGRect(x: x - 2.5, y: size.height - 5, width: 5, height: 5)), with: .color(AppTheme.amber)) }
-            }
-        }
-        .accessibilityHidden(true)
     }
 }
 

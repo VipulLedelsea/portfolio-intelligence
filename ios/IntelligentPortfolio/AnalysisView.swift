@@ -292,10 +292,57 @@ struct ReferenceLinesList: View {
     }
 }
 
+/// One candle's Lorentzian reading: the prediction (-8 to +8), the indicator's own signal (1 long, -1 short, 0 none) and whether the signal just flipped.
+struct LorentzianBar: Equatable {
+    let p: Int
+    let signal: Int
+    let flip: Bool
+}
+
+/// The Lorentzian Classification drawn over the candles, as TradingView does: candles tinted by the lean, arrows where the signal flips,
+/// the Nadaraya-Watson kernel line, and a badge with the latest reading. Information only, so it stays muted and is off until asked for.
+struct LorentzianOverlay {
+    let bars: [LorentzianBar?]
+    let kernel: [Double]
+    let neighbors: Int
+    let prediction: Int
+    let filtersPass: Bool
+
+    /// One entry per candle, matched by date; nil where the indicator has no reading for that candle. Nil overall if nothing matches.
+    static func make(_ reading: LorentzianReading, candles: [Candle]) -> LorentzianOverlay? {
+        guard let history = reading.history, !history.isEmpty, candles.count > 1 else { return nil }
+        let byDate = Dictionary(history.compactMap { day in day.d.map { ($0, day) } }, uniquingKeysWith: { a, _ in a })
+        var previous: Int?
+        let mapped: [LorentzianBar?] = candles.map { candle in
+            guard let day = byDate[candle.date] else { return nil }
+            defer { previous = day.s }
+            return LorentzianBar(p: day.p, signal: day.s, flip: previous != nil && previous != day.s && day.s != 0)
+        }
+        guard mapped.contains(where: { $0 != nil }) else { return nil }
+        return LorentzianOverlay(bars: mapped, kernel: kernelLine(candles.map(\.close)), neighbors: reading.neighbors,
+                                 prediction: reading.prediction, filtersPass: reading.filtersPass)
+    }
+
+    /// The indicator's kernel estimate (rational quadratic, lookback 8, relative weight 8), using each bar and the bars before it.
+    static func kernelLine(_ closes: [Double]) -> [Double] {
+        let h = 8.0, r = 8.0
+        let weights = (0..<80).map { j in pow(1 + Double(j * j) / (h * h * 2 * r), -r) }
+        return closes.indices.map { i in
+            var num = 0.0, den = 0.0
+            for j in 0...min(i, weights.count - 1) { num += closes[i - j] * weights[j]; den += weights[j] }
+            return num / den
+        }
+    }
+
+    func lean(_ bar: LorentzianBar) -> Color { bar.p > 0 ? AppTheme.mint : bar.p < 0 ? AppTheme.red : AppTheme.muted }
+    func strength(_ bar: LorentzianBar) -> Double { bar.p == 0 ? 0.5 : 0.4 + 0.6 * Double(abs(bar.p)) / Double(max(neighbors, 1)) }
+}
+
 struct CandlestickChart: View {
     let series: [Candle]
     let levels: ScenarioLevels
     var referenceLines: [ReferenceLine] = []
+    var lorentzian: LorentzianOverlay? = nil
 
     var body: some View {
         Canvas { context, size in
@@ -306,21 +353,70 @@ struct CandlestickChart: View {
             let pad = (baseHigh - baseLow) * 0.2
             let shown = referenceLines.filter { $0.value >= baseLow - pad && $0.value <= baseHigh + pad }
             let allPrices = basePrices + shown.map(\.value)
-            guard let low = allPrices.min(), let high = allPrices.max(), high > low else { return }
+            guard var low = allPrices.min(), var high = allPrices.max(), high > low else { return }
+            if lorentzian != nil { let room = (high - low) * 0.06; low -= room; high += room } // space for the flip arrows
             let range = high - low
             let xStep = size.width / CGFloat(series.count - 1)
             let y: (Double) -> CGFloat = { value in size.height - CGFloat((value - low) / range) * size.height }
 
             for (index, candle) in series.enumerated() {
                 let x = CGFloat(index) * xStep
-                let color = candle.close >= candle.open ? AppTheme.mint : AppTheme.red
+                let up = candle.close >= candle.open
+                var color = up ? AppTheme.mint : AppTheme.red
+                if let overlay = lorentzian, index < overlay.bars.count, let bar = overlay.bars[index] {
+                    color = overlay.lean(bar).opacity(overlay.strength(bar))
+                } else if lorentzian != nil {
+                    color = AppTheme.muted.opacity(0.35)
+                }
                 var wick = Path()
                 wick.move(to: CGPoint(x: x, y: y(candle.high)))
                 wick.addLine(to: CGPoint(x: x, y: y(candle.low)))
                 context.stroke(wick, with: .color(color), lineWidth: 1)
                 let top = min(y(candle.open), y(candle.close))
                 let height = max(1, abs(y(candle.open) - y(candle.close)))
-                context.fill(Path(CGRect(x: x - max(1, xStep * 0.28), y: top, width: max(2, xStep * 0.56), height: height)), with: .color(color))
+                let body = Path(CGRect(x: x - max(1, xStep * 0.28), y: top, width: max(2, xStep * 0.56), height: height))
+                if lorentzian != nil && !up { // tinted candles show up and down as filled and hollow
+                    context.fill(body, with: .color(color.opacity(0.3)))
+                    context.stroke(body, with: .color(color), lineWidth: 1)
+                } else {
+                    context.fill(body, with: .color(color))
+                }
+            }
+
+            if let overlay = lorentzian {
+                // Kernel line: teal while it rises, red while it falls.
+                for index in 1..<min(series.count, overlay.kernel.count) {
+                    var segment = Path()
+                    segment.move(to: CGPoint(x: CGFloat(index - 1) * xStep, y: y(overlay.kernel[index - 1])))
+                    segment.addLine(to: CGPoint(x: CGFloat(index) * xStep, y: y(overlay.kernel[index])))
+                    let rising = overlay.kernel[index] >= overlay.kernel[index - 1]
+                    context.stroke(segment, with: .color((rising ? AppTheme.mint : AppTheme.red).opacity(0.9)), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                }
+                // Arrows where the indicator's own signal flips: up under the bar for long, down over it for short.
+                for (index, candle) in series.enumerated() where index < overlay.bars.count {
+                    guard let bar = overlay.bars[index], bar.flip else { continue }
+                    let x = CGFloat(index) * xStep
+                    var arrow = Path()
+                    if bar.signal > 0 {
+                        let base = y(candle.low)
+                        arrow.move(to: CGPoint(x: x, y: base + 3)); arrow.addLine(to: CGPoint(x: x - 4.5, y: base + 11)); arrow.addLine(to: CGPoint(x: x + 4.5, y: base + 11))
+                    } else {
+                        let base = y(candle.high)
+                        arrow.move(to: CGPoint(x: x, y: base - 3)); arrow.addLine(to: CGPoint(x: x - 4.5, y: base - 11)); arrow.addLine(to: CGPoint(x: x + 4.5, y: base - 11))
+                    }
+                    arrow.closeSubpath()
+                    context.fill(arrow, with: .color(bar.signal > 0 ? AppTheme.mint : AppTheme.red))
+                }
+                // Badge with the latest reading.
+                let lean = overlay.prediction > 0 ? "long" : overlay.prediction < 0 ? "short" : "no lean"
+                let label = "Lorentzian \(String(format: "%+d", overlay.prediction)) \(lean)" + (overlay.filtersPass ? "" : " · filters off")
+                let tint = overlay.prediction > 0 ? AppTheme.mint : overlay.prediction < 0 ? AppTheme.red : AppTheme.muted
+                let text = context.resolve(Text(label).font(.system(size: 10, weight: .semibold)).foregroundColor(tint))
+                let measured = text.measure(in: size)
+                let pill = CGRect(x: 4, y: 4, width: measured.width + 12, height: measured.height + 6)
+                context.fill(Path(roundedRect: pill, cornerRadius: pill.height / 2), with: .color(AppTheme.panel.opacity(0.9)))
+                context.stroke(Path(roundedRect: pill, cornerRadius: pill.height / 2), with: .color(tint.opacity(0.5)), lineWidth: 1)
+                context.draw(text, at: CGPoint(x: pill.midX, y: pill.midY), anchor: .center)
             }
 
             for (value, color) in [(levels.reference, AppTheme.amber), (levels.risk, AppTheme.red), (levels.target1, AppTheme.mint), (levels.target2, AppTheme.mint)] {

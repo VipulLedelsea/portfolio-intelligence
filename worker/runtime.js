@@ -2208,7 +2208,7 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
     item.reason = rankRulesReason(item);
     item.sources = ["rules"];
     if (index < 12) item.bars = snapshots.get(item.symbol)?.chart_daily || [];
-    if (index < 12) item.lorentzian = lorentzianReading(DAILY_OHLC.get(`${item.market || "US"}:${item.symbol}`));
+    if (index < 12) { const key = `${item.market || "US"}:${item.symbol}`; item.lorentzian = lorentzianReading(LONG_DAILY_OHLC.get(key) || DAILY_OHLC.get(key)); }
     item.signals = ideaSignals(item, snapshots.get(item.symbol), trend);
     item.signal_tally = { for: item.signals.filter(x => x.reading === "for").length, against: item.signals.filter(x => x.reading === "against").length, neutral: item.signals.filter(x => x.reading === "neutral").length };
     item.evidence_id = item.evidence_key; // kept on the item: a ranking read back from storage no longer holds the RANK_EVIDENCE object itself
@@ -2735,8 +2735,9 @@ async function discover(market = MARKETS.US, env = {}, previous = null) {
   let ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id, learnedRules, spy: indexSnapshots.get("SPY") });
   if (market.id === "US" && ranking.items.length) {
     // Second pass with the SEC filing flags for the ideas that survived the first one.
-    const filings = await loadFilingFlags(env, [...new Set(ranking.items.map(item => item.symbol))]);
-    if (filings.size) ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id, filings, learnedRules, spy: indexSnapshots.get("SPY") });
+    const top = [...new Set(ranking.items.slice(0, 12).map(item => item.symbol))];
+    const [filings] = await Promise.all([loadFilingFlags(env, [...new Set(ranking.items.map(item => item.symbol))]), loadLongDaily(top, market)]);
+    if (filings.size || top.some(symbol => LONG_DAILY_OHLC.has(`US:${symbol}`))) ranking = buildRanking({ candidates, dipScan, patternScan, snapshots, trend: trends[0], marketId: market.id, filings, learnedRules, spy: indexSnapshots.get("SPY") });
   }
   const lateCandidates = allCandidates.filter(candidate => !candidate.entry_eligible);
   // When each fresh setup was first seen. There is no closing time: a setup leaves the list when its price runs away or the trend fails, not when time runs out.
@@ -3081,6 +3082,20 @@ async function recordScannerPicks(env, payload) {
 // Information only: the Lorentzian Classification indicator's reading on the stock's last year of daily bars (worker/lorentzian.js,
 // a port of jdehorty's open-source script). No score, stop or exit uses it. Null when the port is not bundled or there are too few bars.
 const DAILY_OHLC = new Map();
+// About three years of daily bars for the top ideas only, so the Lorentzian indicator has more past days to compare with, as it does on
+// TradingView. It is a nearest-neighbour method: more history gives it more similar days to find. Kept apart from DAILY_OHLC, which the rest of the code reads as one year.
+const LONG_DAILY_OHLC = new Map(), LORENTZIAN_BARS = 750;
+async function loadLongDaily(symbols, market) {
+  if (market.id !== "US" || !symbols.length) return;
+  try {
+    const encoded = encodeURIComponent(symbols.join(",")).replaceAll("%2C", ",");
+    const found = bySymbol(await fetchJson(`${ROBINHOOD_HISTORICALS}?symbols=${encoded}&bounds=regular&interval=day&span=5year`));
+    for (const [symbol, item] of found) {
+      const bars = normalizeBars(item, "day", market);
+      if (bars.length > 260) LONG_DAILY_OHLC.set(`US:${symbol}`, bars.slice(-LORENTZIAN_BARS).map(bar => ({ date: String(bar.date).slice(0, 10), open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.volume })));
+    }
+  } catch { /* the reading falls back to the one-year bars */ }
+}
 function lorentzianReading(dailyBars) {
   if (typeof lorentzianClassification !== "function" || !Array.isArray(dailyBars) || dailyBars.length < 210) return null;
   try { return lorentzianClassification(dailyBars); } catch { return null; }
