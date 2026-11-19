@@ -6,9 +6,12 @@ import { fileURLToPath } from "node:url";
 const source = readFileSync(fileURLToPath(new URL("../worker/runtime.js", import.meta.url)), "utf8");
 const start = source.indexOf("// ---- Bull vs bear debate"), end = source.indexOf("const debateRowId");
 assert.ok(start > 0 && end > start, "The debate code block must exist");
+// marketStateFor lives outside this block (beside marketTrend), so the real function is lifted in with it.
+const stateStart = source.indexOf("function marketStateFor"), stateFor = source.slice(stateStart, source.indexOf("\n}\n", stateStart) + 3);
+assert.ok(stateStart > 0, "marketStateFor must exist");
 const code = `const round=(v,d=2)=>Math.round(v*10**d)/10**d;const WORKERS_AI_RANKING_MODEL="x";
 function parseModelJson(t){const a=t.indexOf("{"),b=t.lastIndexOf("}");return JSON.parse(t.slice(a,b+1))}
-const cleanError=e=>String(e);\n${source.slice(start, end)}\nexport { debateFacts, runDebate, verifyDebateClaims };`;
+const cleanError=e=>String(e);\n${stateFor}\n${source.slice(start, end)}\nexport { debateFacts, runDebate, verifyDebateClaims };`;
 const { debateFacts, runDebate, verifyDebateClaims } = await import("data:text/javascript;base64," + Buffer.from(code).toString("base64"));
 const item = { symbol: "MPC", direction: "LONG", tag: "Sharp dip", alignment_score: 70, stop_pct: 11.5, rr_t1: 0.5, from_entry_atr: 0.2, age_days: 1, volume_ratio: null, atr_pct: 3.1, crowded: true,
   evidence: { ev_pct: 1.14, win_rate_pct: 72, n: 1010, experimental: false }, filing: { earnings_in_days: 5, earnings_confirmed: true, cautions: [] } };

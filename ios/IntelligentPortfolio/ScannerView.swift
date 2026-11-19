@@ -782,6 +782,10 @@ private struct RankedRow: View {
                 FactColumn(title: "Risk", value: PlainWords.risk(entry: idea.entry, stop: idea.stop, stopPct: idea.stopPct))
             }
             StrengthBar(score: idea.score)
+            if let z = idea.lorentzian, z.prediction != 0, (z.prediction > 0) != (idea.direction == "LONG"), abs(z.prediction) >= 4 {
+                Text("Lorentzian leans \(z.prediction > 0 ? "long" : "short") (\(String(format: "%+d", z.prediction))), so TradingView's Lorentzian may disagree with this idea. Information only.")
+                    .font(.caption).foregroundStyle(AppTheme.amber).fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .panel()
@@ -915,7 +919,7 @@ struct RankedDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
             .sheet(isPresented: $logging) {
-                AddHoldingSheet(market: idea.market == "IN" ? "IN" : "US", symbol: idea.symbol, shares: SizingMath.shareText(idea), price: String(idea.price)).environmentObject(model)
+                AddHoldingSheet(market: idea.market == "IN" ? "IN" : "US", symbol: idea.symbol, shares: SizingMath.shareText(idea), price: AmountText.editable(idea.price, maxDecimals: 6)).environmentObject(model)
             }
         }
     }
@@ -1349,6 +1353,8 @@ struct TodayView: View {
                                 .tint(AppTheme.amber)
                         }
                         .panel()
+                    } else if model.failedLoads.contains(.briefing) {
+                        LoadFailedView(message: "Couldn't load today's briefing.") { await model.refreshBriefing() }
                     } else {
                         ProgressView("Loading today's briefing…").tint(AppTheme.amber).frame(maxWidth: .infinity)
                     }

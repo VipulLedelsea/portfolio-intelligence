@@ -36,6 +36,13 @@ struct MemoryView: View {
                         ForEach(memory.recent ?? []) { record in
                             MemoryRow(record: record)
                         }
+                    } else if model.memory != nil {
+                        // Loaded, with nothing recorded yet: say so instead of waiting for a summary that will not come.
+                        Text("No research calls recorded yet. Calls you look up on the website are tracked here once they are graded.")
+                            .foregroundStyle(AppTheme.muted)
+                            .panel()
+                    } else if model.failedLoads.contains(.memory) {
+                        LoadFailedView(message: "Couldn't load your research calls.") { await model.refreshMemory() }
                     } else {
                         ProgressView("Loading your research calls…").tint(AppTheme.amber)
                     }

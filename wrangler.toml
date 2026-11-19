@@ -15,7 +15,8 @@ migrations_dir = "drizzle"
 # One scan per market, each in its own invocation (the free plan allows 50 outgoing requests per run):
 # BSE at :05 and forex at :10 every hour, US and BSE every 15 minutes during their trading hours (UTC). There is no manual refresh anywhere.
 [triggers]
-crons = ["5 * * * *", "10 * * * *", "*/15 13-21 * * 1-5", "*/15 3-10 * * 1-5"]
+# Grading of past picks, post-mortems and the learning report run on their own trigger at :30 so they never share a scan's request budget.
+crons = ["5 * * * *", "10 * * * *", "30 * * * *", "*/15 13-21 * * 1-5", "*/15 3-10 * * 1-5"]
 
 # Secrets (never commit these); set each with `npx wrangler secret put NAME`:
 #   STRIPE_SECRET_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, PAYWALL_ENABLED ("true" to enable the paywall)

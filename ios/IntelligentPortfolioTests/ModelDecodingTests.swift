@@ -141,4 +141,46 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(ideas[0].returnPct, 31.29)
         XCTAssertNil(ideas[1].returnPct, "a finished idea with no recorded return still decodes")
     }
+
+    // MARK: - Typed amounts and calendar days
+
+    func testAmountsTypedOrPrefilledReadBack() {
+        let us = Locale(identifier: "en_US"), de = Locale(identifier: "de_DE")
+        XCTAssertEqual(AmountText.parse("1234.5", locale: us), 1234.5)
+        XCTAssertEqual(AmountText.parse("1,234.5", locale: us), 1234.5)
+        XCTAssertEqual(AmountText.parse("1,234", locale: us), 1234)
+        XCTAssertEqual(AmountText.parse("12,5", locale: us), 12.5)
+        XCTAssertEqual(AmountText.parse("1.234,5", locale: de), 1234.5)
+        XCTAssertEqual(AmountText.parse("12,5", locale: de), 12.5)
+        XCTAssertEqual(AmountText.parse("12.5", locale: de), 12.5)
+        XCTAssertEqual(AmountText.parse("1.234", locale: de), 1234)
+        XCTAssertEqual(AmountText.parse("1,234,567", locale: us), 1234567)
+        XCTAssertNil(AmountText.parse("", locale: us))
+        XCTAssertNil(AmountText.parse("abc", locale: us))
+        XCTAssertNil(AmountText.parse("-5", locale: us))
+        // What the app puts in an editable field must always read back as the same number, in any locale.
+        for locale in [us, de, Locale(identifier: "en_IN"), Locale(identifier: "fr_FR")] {
+            for value in [1234.5, 0.25, 1000, 15, 123456.7891] {
+                XCTAssertEqual(AmountText.parse(AmountText.editable(value, locale: locale), locale: locale), value, "\(value) in \(locale.identifier)")
+            }
+        }
+    }
+
+    func testPurchaseDayIsTheLocalCalendarDay() {
+        var losAngeles = Calendar(identifier: .gregorian), kolkata = Calendar(identifier: .gregorian)
+        losAngeles.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        kolkata.timeZone = TimeZone(identifier: "Asia/Kolkata")!
+        // 03:30 UTC on 13 November is still the evening of the 12th in Los Angeles and already 09:00 on the 13th in India.
+        let moment = ISO8601DateFormatter().date(from: "2026-11-13T03:30:00Z")!
+        XCTAssertEqual(CalendarDay.text(moment, calendar: losAngeles), "2026-11-12")
+        XCTAssertEqual(CalendarDay.text(moment, calendar: kolkata), "2026-11-13")
+        // A stored purchase day comes back as the same day wherever it is read.
+        for calendar in [losAngeles, kolkata] {
+            let stored = CalendarDay.date(from: "2026-11-10T00:00:00.000Z", calendar: calendar)!
+            XCTAssertEqual(CalendarDay.text(stored, calendar: calendar), "2026-11-10")
+            XCTAssertEqual(CalendarDay.text(CalendarDay.date(from: "2026-11-10", calendar: calendar)!, calendar: calendar), "2026-11-10")
+        }
+        // A real moment (a sale) stays a moment.
+        XCTAssertEqual(CalendarDay.date(from: "2026-11-10T15:45:00.000Z"), PairingExpiryParser.date(from: "2026-11-10T15:45:00.000Z"))
+    }
 }
