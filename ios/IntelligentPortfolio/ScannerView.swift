@@ -741,7 +741,28 @@ private func scannerTint(_ strategy: String) -> Color {
     switch strategy {
     case "SUPERTREND": AppTheme.mint
     case "DIP": AppTheme.amber
+    case "PATTERN": AppTheme.sky
     default: AppTheme.muted
+    }
+}
+
+/// Which strategy the idea comes from: the Supertrend trend flip, a dip in an uptrend, or a candlestick pattern on a breakout.
+private struct StrategyTag: View {
+    let strategy: String
+    private var name: String {
+        switch strategy.uppercased() {
+        case "SUPERTREND": "Supertrend"
+        case "DIP": "Dip"
+        case "PATTERN": "Pattern"
+        default: strategy.capitalized
+        }
+    }
+    var body: some View {
+        let tint = scannerTint(strategy.uppercased())
+        Text("From: \(name)").font(.caption.weight(.semibold)).foregroundStyle(tint)
+            .padding(.horizontal, 9).padding(.vertical, 3)
+            .background(tint.opacity(0.14), in: Capsule())
+            .accessibilityLabel("Strategy: \(name)")
     }
 }
 
@@ -775,7 +796,9 @@ private struct RankedRow: View {
                 Spacer(minLength: 8)
                 SideTag(direction: idea.direction)
             }
+            StrategyTag(strategy: idea.strategy)
             Text(idea.plainReason).font(.subheadline).foregroundStyle(.white.opacity(0.85)).fixedSize(horizontal: false, vertical: true)
+            if let found = idea.chartPatterns, !found.isEmpty { LabelChips(chips: found.map(\.chip)) }
             HStack(alignment: .top, spacing: 8) {
                 FactColumn(title: "Price now", value: money(idea.price))
                 FactColumn(title: PlainWords.exitLabel(idea.direction), value: money(idea.stop))
@@ -850,6 +873,7 @@ struct RankedDetailSheet: View {
                         Spacer(minLength: 8)
                         SideTag(direction: idea.direction)
                     }
+                    StrategyTag(strategy: idea.strategy)
                     Text(idea.plainReason).font(.callout).fixedSize(horizontal: false, vertical: true)
                     HStack(alignment: .top, spacing: 8) {
                         if let zone = idea.buyZoneText(money) { FactColumn(title: long ? "Buy near" : "Short near", value: zone).tile() }
