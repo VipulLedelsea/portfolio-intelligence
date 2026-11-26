@@ -87,7 +87,7 @@ struct HoldingsView: View {
                 Button("Cancel", role: .cancel) { undoTarget = nil }
             } message: {
                 if let entry = undoTarget?.lastEntry {
-                    Text("\(entry.side == "BUY" ? "Bought" : "Sold") \(shareText(entry.shares)) shares at \(money(undoTarget?.currencySymbol ?? "$", undoTarget?.priceDecimals ?? 2, entry.price)). It stays in History marked as undone and no longer counts in Performance.")
+                    Text("\(entry.side == "BUY" ? (undoTarget?.isShort == true ? "Shorted" : "Bought") : (undoTarget?.isShort == true ? "Covered" : "Sold")) \(shareText(entry.shares)) shares at \(money(undoTarget?.currencySymbol ?? "$", undoTarget?.priceDecimals ?? 2, entry.price)). It stays in History marked as undone and no longer counts in Performance.")
                 }
             }
             .task {
@@ -415,6 +415,7 @@ private struct HoldingCard: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(holding.symbol).font(.headline)
                     Text(holding.market).font(.caption).foregroundStyle(AppTheme.muted)
+                    if holding.isShort { Text("SHORT").font(.caption.bold()).foregroundStyle(AppTheme.amber) }
                 }
                 Text("\(shareText(holding.shares)) shares · avg \(money(holding.currencySymbol, holding.priceDecimals, holding.buyPrice))")
                     .font(.footnote)
@@ -462,7 +463,7 @@ private struct HoldingCard: View {
     @ViewBuilder
     private var details: some View {
         let symbol = holding.currencySymbol, decimals = holding.priceDecimals
-        Text("Bought \(holding.boughtAt) at \(money(symbol, decimals, holding.buyPrice))")
+        Text("\(holding.isShort ? "Shorted" : "Bought") \(holding.boughtAt) at \(money(symbol, decimals, holding.buyPrice))")
             .font(.footnote)
             .foregroundStyle(AppTheme.muted)
         Text(holding.headline).font(.subheadline.bold())
@@ -473,7 +474,7 @@ private struct HoldingCard: View {
                 if let v = holding.stopLevel { stat("Exit line", money(symbol, decimals, v)) }
                 if let lock = holding.profitLock, !lock.superseded {
                     if lock.armed { stat("Profit lock (advice)", lock.hit ? "\(money(symbol, decimals, lock.level)) · reached" : money(symbol, decimals, lock.level), color: lock.hit ? AppTheme.red : .primary) }
-                    else { stat("Profit lock (advice)", "arms after a close over \(money(symbol, decimals, lock.armPrice))", color: AppTheme.muted) }
+                    else { stat("Profit lock (advice)", "arms after a close \(holding.isShort ? "under" : "over") \(money(symbol, decimals, lock.armPrice))", color: AppTheme.muted) }
                 }
                 if let v = holding.trailingLevel { stat("Trailing (4H)", money(symbol, decimals, v)) }
                 if let v = holding.target1 { stat("Profit zone 1", money(symbol, decimals, v)) }
@@ -504,8 +505,8 @@ private struct HoldingCard: View {
                 .foregroundStyle(tint)
         }
         HStack {
-            Button("Buy more", action: onBuyMore).buttonStyle(.bordered).tint(AppTheme.amber)
-            Button("Sell", action: onSell).buttonStyle(.bordered)
+            Button(holding.isShort ? "Short more" : "Buy more", action: onBuyMore).buttonStyle(.bordered).tint(AppTheme.amber)
+            Button(holding.isShort ? "Cover" : "Sell", action: onSell).buttonStyle(.bordered)
             if holding.lastEntry != nil {
                 Button("Undo last entry", action: onUndo).buttonStyle(.bordered)
             }
@@ -537,6 +538,7 @@ private struct HoldingCard: View {
 struct AddHoldingSheet: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @State private var direction: String
     @State private var market: String
     @State private var symbol: String
     @State private var shares: String
@@ -544,7 +546,8 @@ struct AddHoldingSheet: View {
     @State private var date = Date()
     @State private var saving = false
 
-    init(market: String = "US", symbol: String = "", shares: String = "", price: String = "") {
+    init(direction: String = "LONG", market: String = "US", symbol: String = "", shares: String = "", price: String = "") {
+        _direction = State(initialValue: direction)
         _market = State(initialValue: market)
         _symbol = State(initialValue: symbol)
         _shares = State(initialValue: shares)
@@ -557,9 +560,16 @@ struct AddHoldingSheet: View {
         !symbol.trimmingCharacters(in: .whitespaces).isEmpty && (parsedShares ?? 0) > 0 && (parsedPrice ?? 0) > 0 && !saving
     }
 
+    private var short: Bool { direction == "SHORT" }
+
     var body: some View {
         NavigationStack {
             Form {
+                Picker("Position", selection: $direction) {
+                    Text("Long").tag("LONG")
+                    Text("Short").tag("SHORT")
+                }
+                .pickerStyle(.segmented)
                 Picker("Market", selection: $market) {
                     Text("US stocks").tag("US")
                     Text("India (BSE)").tag("IN")
@@ -568,13 +578,13 @@ struct AddHoldingSheet: View {
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
                 TextField("Shares", text: $shares).keyboardType(.decimalPad)
-                TextField("Price paid per share", text: $price).keyboardType(.decimalPad)
-                DatePicker("Bought on", selection: $date, in: ...Date(), displayedComponents: .date)
-                Text("Only recorded here for research. Nothing is sent to a broker.")
+                TextField(short ? "Price shorted at, per share" : "Price paid per share", text: $price).keyboardType(.decimalPad)
+                DatePicker(short ? "Shorted on" : "Bought on", selection: $date, in: ...Date(), displayedComponents: .date)
+                Text(short ? "A short sells first and buys back later, so it gains when the price falls. Only recorded here for research. Nothing is sent to a broker." : "Only recorded here for research. Nothing is sent to a broker.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            .navigationTitle("Add holding")
+            .navigationTitle(short ? "Add short" : "Add holding")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -584,7 +594,7 @@ struct AddHoldingSheet: View {
                         saving = true
                         Task {
                             let day = CalendarDay.text(date)
-                            let saved = await model.addHolding(symbol: symbol.trimmingCharacters(in: .whitespaces).uppercased(), market: market, shares: shares, price: price, boughtAt: day)
+                            let saved = await model.addHolding(symbol: symbol.trimmingCharacters(in: .whitespaces).uppercased(), market: market, shares: shares, price: price, boughtAt: day, direction: direction)
                             saving = false
                             if saved { dismiss() }
                         }
@@ -632,8 +642,9 @@ private struct PositionSheet: View {
         let symbol = holding.currencySymbol, decimals = holding.priceDecimals
         if selling {
             guard n <= holding.shares + 1e-9 else { return "You only hold \(shareText(holding.shares)) shares." }
-            let profit = (p - holding.buyPrice) * n
-            let pct = (p / holding.buyPrice - 1) * 100
+            let sign: Double = holding.isShort ? -1 : 1
+            let profit = (p - holding.buyPrice) * n * sign
+            let pct = (p / holding.buyPrice - 1) * 100 * sign
             let lead = n >= holding.shares - 1e-9 ? "This closes the position. " : "\(shareText(holding.shares - n)) shares remain. "
             return "\(lead)Realised \(signed(symbol, profit)) (\(String(format: "%+.2f", pct))%)"
         }
@@ -646,8 +657,8 @@ private struct PositionSheet: View {
         NavigationStack {
             Form {
                 Picker("Action", selection: $selling) {
-                    Text("Buy more").tag(false)
-                    Text("Sell").tag(true)
+                    Text(holding.isShort ? "Short more" : "Buy more").tag(false)
+                    Text(holding.isShort ? "Cover" : "Sell").tag(true)
                 }
                 .pickerStyle(.segmented)
                 .onChange(of: selling) { _, isSelling in
@@ -655,12 +666,12 @@ private struct PositionSheet: View {
                 }
                 Text("You hold \(shareText(holding.shares)) shares of \(holding.symbol) at an average of \(money(holding.currencySymbol, holding.priceDecimals, holding.buyPrice)).")
                 HStack {
-                    TextField(selling ? "Shares sold" : "Extra shares bought", text: $shares).keyboardType(.decimalPad)
+                    TextField(selling ? (holding.isShort ? "Shares covered" : "Shares sold") : (holding.isShort ? "Extra shares shorted" : "Extra shares bought"), text: $shares).keyboardType(.decimalPad)
                     if selling {
                         Button("All") { shares = AmountText.editable(holding.shares) }.buttonStyle(.bordered)
                     }
                 }
-                TextField(selling ? "Price sold at, per share" : "Price paid per share", text: $price).keyboardType(.decimalPad)
+                TextField(selling ? (holding.isShort ? "Price covered at, per share" : "Price sold at, per share") : (holding.isShort ? "Price shorted at, per share" : "Price paid per share"), text: $price).keyboardType(.decimalPad)
                 if let summary { Text(summary).font(.footnote.bold()) }
                 Text(selling ? "Only recorded here for research. It does not place an order." : "Only recorded here for research. The protective level and targets follow the new average price.")
                     .font(.footnote)
@@ -671,7 +682,7 @@ private struct PositionSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(selling ? "Record sale" : "Save") {
+                    Button(selling ? (holding.isShort ? "Record cover" : "Record sale") : "Save") {
                         guard let n = count, let p = value else { return }
                         saving = true
                         Task {
@@ -781,7 +792,7 @@ private struct HistoryPanel: View {
                     let bought = trade.side == "BUY"
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(trade.voided ? "Undone · " : "")\(bought ? "Bought" : "Sold") \(trade.symbol)")
+                            Text("\(trade.voided ? "Undone · " : "")\(bought ? (trade.isShort ? "Shorted" : "Bought") : (trade.isShort ? "Covered" : "Sold")) \(trade.symbol)")
                                 .font(.subheadline.bold())
                                 .strikethrough(trade.voided)
                                 .foregroundStyle(trade.voided ? AppTheme.muted : bought ? AppTheme.mint : AppTheme.red)
@@ -862,7 +873,7 @@ private struct EditEntrySheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Text("\(trade.side == "BUY" ? "Bought" : "Sold") \(trade.symbol) · \(shareText(trade.shares)) shares at \(money(trade.currencySymbol, trade.priceDecimals, trade.price))")
+                Text("\(trade.side == "BUY" ? (trade.isShort ? "Shorted" : "Bought") : (trade.isShort ? "Covered" : "Sold")) \(trade.symbol) · \(shareText(trade.shares)) shares at \(money(trade.currencySymbol, trade.priceDecimals, trade.price))")
                 TextField("Shares", text: $shares)
                     .keyboardType(.decimalPad)
                     .disabled(!canEditShares)

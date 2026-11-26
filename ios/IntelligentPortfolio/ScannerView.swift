@@ -931,7 +931,7 @@ struct RankedDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
             .sheet(isPresented: $logging) {
-                AddHoldingSheet(market: idea.market == "IN" ? "IN" : "US", symbol: idea.symbol, shares: SizingMath.shareText(idea), price: AmountText.editable(idea.price, maxDecimals: 6)).environmentObject(model)
+                AddHoldingSheet(direction: idea.direction == "SHORT" ? "SHORT" : "LONG", market: idea.market == "IN" ? "IN" : "US", symbol: idea.symbol, shares: SizingMath.shareText(idea), price: AmountText.editable(idea.price, maxDecimals: 6)).environmentObject(model)
             }
         }
     }

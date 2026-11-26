@@ -119,6 +119,9 @@ export const holdings = sqliteTable("holdings", {
   // Profit lock (advisory): the day a daily close first reached the arming gain over the buy price, and the day price first came back to the lock. See profitLockState.
   lockArmedAt: text("lock_armed_at"),
   lockHitAt: text("lock_hit_at"),
+  // LONG (bought) or SHORT (sold first, bought back later). For a short the protective level sits above the price and only moves down,
+  // targets sit below, peakHigh holds the lowest price seen since entry, and profit and loss are the other way round.
+  direction: text("direction").notNull().default("LONG"),
 }, table => [
   index("holdings_user_idx").on(table.userId, table.closedAt),
 ]);

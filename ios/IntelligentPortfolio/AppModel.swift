@@ -270,10 +270,10 @@ final class AppModel: ObservableObject {
     }
 
     /// Returns true when the holding was saved, so the entry sheet can close.
-    func addHolding(symbol: String, market: String, shares: Double, price: Double, boughtAt: String) async -> Bool {
+    func addHolding(symbol: String, market: String, shares: Double, price: Double, boughtAt: String, direction: String = "LONG") async -> Bool {
         guard let token else { return false }
         do {
-            try await api.addHolding(AddHoldingBody(symbol: symbol, market: market, shares: shares, price: price, boughtAt: boughtAt), token: token)
+            try await api.addHolding(AddHoldingBody(direction: direction, symbol: symbol, market: market, shares: shares, price: price, boughtAt: boughtAt), token: token)
             await refreshHoldings()
             await refreshHoldingStats()
             return true

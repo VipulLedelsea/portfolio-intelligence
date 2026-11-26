@@ -1,0 +1,1 @@
+ALTER TABLE `holdings` ADD `direction` text DEFAULT 'LONG' NOT NULL;
