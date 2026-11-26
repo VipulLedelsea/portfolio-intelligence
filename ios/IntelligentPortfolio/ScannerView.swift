@@ -741,7 +741,28 @@ private func scannerTint(_ strategy: String) -> Color {
     switch strategy {
     case "SUPERTREND": AppTheme.mint
     case "DIP": AppTheme.amber
+    case "PATTERN": AppTheme.sky
     default: AppTheme.muted
+    }
+}
+
+/// Which strategy the idea comes from: the Supertrend trend flip, a dip in an uptrend, or a candlestick pattern on a breakout.
+private struct StrategyTag: View {
+    let strategy: String
+    private var name: String {
+        switch strategy.uppercased() {
+        case "SUPERTREND": "Supertrend"
+        case "DIP": "Dip"
+        case "PATTERN": "Pattern"
+        default: strategy.capitalized
+        }
+    }
+    var body: some View {
+        let tint = scannerTint(strategy.uppercased())
+        Text("From: \(name)").font(.caption.weight(.semibold)).foregroundStyle(tint)
+            .padding(.horizontal, 9).padding(.vertical, 3)
+            .background(tint.opacity(0.14), in: Capsule())
+            .accessibilityLabel("Strategy: \(name)")
     }
 }
 
@@ -775,7 +796,9 @@ private struct RankedRow: View {
                 Spacer(minLength: 8)
                 SideTag(direction: idea.direction)
             }
+            StrategyTag(strategy: idea.strategy)
             Text(idea.plainReason).font(.subheadline).foregroundStyle(.white.opacity(0.85)).fixedSize(horizontal: false, vertical: true)
+            if let found = idea.chartPatterns, !found.isEmpty { LabelChips(chips: found.map(\.chip)) }
             HStack(alignment: .top, spacing: 8) {
                 FactColumn(title: "Price now", value: money(idea.price))
                 FactColumn(title: PlainWords.exitLabel(idea.direction), value: money(idea.stop))
@@ -803,6 +826,7 @@ struct RankedDetailSheet: View {
     let idea: RankedIdea
     @State private var showingNumbers = false
     @State private var showingLorentzian = false
+    @State private var showingPatterns = true
     @State private var logging = false
     private var long: Bool { idea.isLong }
     private func money(_ value: Double) -> String { PriceFormat.string(value, prefix: idea.currencySymbol, decimals: idea.priceDecimals) }
@@ -849,6 +873,7 @@ struct RankedDetailSheet: View {
                         Spacer(minLength: 8)
                         SideTag(direction: idea.direction)
                     }
+                    StrategyTag(strategy: idea.strategy)
                     Text(idea.plainReason).font(.callout).fixedSize(horizontal: false, vertical: true)
                     HStack(alignment: .top, spacing: 8) {
                         if let zone = idea.buyZoneText(money) { FactColumn(title: long ? "Buy near" : "Short near", value: zone).tile() }
@@ -859,6 +884,20 @@ struct RankedDetailSheet: View {
                     if candles.count > 1 {
                         VStack(alignment: .leading, spacing: 8) {
                             let overlay = idea.lorentzian.flatMap { LorentzianOverlay.make($0, candles: candles) }
+                            let found = idea.chartPatterns ?? []
+                            if overlay != nil || !found.isEmpty {
+                              HStack(spacing: 8) {
+                                if !found.isEmpty {
+                                    Button { withAnimation(.snappy(duration: 0.2)) { showingPatterns.toggle() } } label: {
+                                        Label("Patterns", systemImage: showingPatterns ? "checkmark.circle.fill" : "chart.xyaxis.line")
+                                            .font(.caption.weight(.semibold))
+                                            .padding(.horizontal, 10).padding(.vertical, 5)
+                                            .foregroundStyle(showingPatterns ? AppTheme.sky : AppTheme.muted)
+                                            .background(showingPatterns ? AppTheme.sky.opacity(0.16) : AppTheme.raised, in: Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityAddTraits(showingPatterns ? .isSelected : [])
+                                }
                             if overlay != nil {
                                 Button { withAnimation(.snappy(duration: 0.2)) { showingLorentzian.toggle() } } label: {
                                     Label("Lorentzian", systemImage: showingLorentzian ? "checkmark.circle.fill" : "waveform.path.ecg")
@@ -870,10 +909,13 @@ struct RankedDetailSheet: View {
                                 .buttonStyle(.plain)
                                 .accessibilityAddTraits(showingLorentzian ? .isSelected : [])
                             }
+                              }
+                            }
                             CandlestickChart(series: candles,
                                              levels: ScenarioLevels(reference: idea.entry, current: idea.price, risk: idea.stop, target1: chartTarget1, target2: chartTarget2),
                                              referenceLines: [],
-                                             lorentzian: showingLorentzian ? overlay : nil)
+                                             lorentzian: showingLorentzian ? overlay : nil,
+                                             patterns: showingPatterns ? found : [])
                                 .aspectRatio(1.5, contentMode: .fit)
                                 .frame(minHeight: 220, maxHeight: 440)
                             if showingLorentzian && overlay != nil {
@@ -899,6 +941,7 @@ struct RankedDetailSheet: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .panel()
+                    if let found = idea.chartPatterns, !found.isEmpty { ChartPatternsBlock(patterns: found, long: long, money: money) }
                     if let reading = idea.lorentzian { LorentzianBlock(reading: reading, long: long) }
                     block("When to get out", exitText)
                     if let filing = idea.filing, let text = filingText(filing) { block("Company news", text) }
@@ -1016,6 +1059,34 @@ struct RankedDetailSheet: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .tile()
+    }
+}
+
+/// Chart patterns the stock is making, for information only: our own test found no pattern that beat random stocks given the same stop and target.
+private struct ChartPatternsBlock: View {
+    let patterns: [ChartPatternReading]
+    let long: Bool
+    let money: (Double) -> String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Chart patterns").font(.headline)
+            ForEach(patterns, id: \.name) { pattern in
+                let agrees = pattern.bullish == long
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(pattern.name).font(.subheadline.weight(.semibold))
+                        Text(pattern.bullish ? "bullish" : "bearish").font(.caption.weight(.semibold)).foregroundStyle(pattern.bullish ? AppTheme.mint : AppTheme.red)
+                    }
+                    Text("\(pattern.broke ? "Broke out of" : "Still forming:") the \(money(pattern.level)) line since \(pattern.since). The pattern's own failure point is \(money(pattern.stop)) and its textbook target \(money(pattern.target)). That \(agrees ? "points the same way as" : "points against") this idea.")
+                        .font(.subheadline).foregroundStyle(.white.opacity(0.85)).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Text("Found by rules on this stock's daily bars (swing highs and lows, trendlines, a breakout close past the line). In our test on 20 years of S&P 500 stocks, none of these patterns beat random stocks given the same stop and target, so this is a view of the chart, not a reason to buy or sell. Information only: it doesn't change the strength or the exit line.")
+                .font(.caption).foregroundStyle(AppTheme.muted).fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panel()
     }
 }
 

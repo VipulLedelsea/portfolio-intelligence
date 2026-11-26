@@ -358,17 +358,23 @@ for (let index = 0; index < 5; index += 1) await post("/api/discover", { market:
 assert.equal(fetchLog.length, callsAfterFirstScan, "Repeated requests must be served from storage with no upstream calls");
 
 fetchLog.length = 0;
+// US scans run on quarter-hour slots while the market is open, so a clock that crosses a slot boundary during the checks below makes the scan
+// due again and the call counts jump (this failed whenever the run started within about a minute of :14, :29, :44 or :59). Keep the clock
+// at least three minutes before the next slot for the whole US block; the offset is reapplied to the later time jumps.
+const realNow = Date.now;
+const SLOT_MS = 15 * 60 * 1000;
+const slotSkew = SLOT_MS - (realNow() % SLOT_MS) < 3 * 60 * 1000 ? -4 * 60 * 1000 : 0;
+if (slotSkew) Date.now = () => realNow() + slotSkew;
 const usScan = await (await post("/api/discover", { market: "US" })).json();
 assert.equal(usScan.successful, 503, "Every S&P 500 symbol must be scanned");
 assert.ok(fetchLog.length <= 30, `A full US scan must stay far below the free plan's 50-request limit (used ${fetchLog.length})`);
 const usCalls = fetchLog.length;
 await Promise.all([1, 2, 3, 4].map(() => post("/api/discover", { market: "US", refresh: true })));
 assert.equal(fetchLog.length, usCalls, "A refresh flag must be ignored: requests are served from the shared scan with no provider calls");
-const realNow = Date.now;
-Date.now = () => realNow() + 61000;
+Date.now = () => realNow() + slotSkew + 61000;
 await post("/api/discover", { market: "US", refresh: true });
 assert.equal(fetchLog.length, usCalls, "A refresh flag must stay ignored even after a minute: there is no manual refresh");
-Date.now = () => realNow() + 7 * 3600 * 1000; // past both the 15-minute open interval and the 6-hour closed interval
+Date.now = () => realNow() + slotSkew + 7 * 3600 * 1000; // past both the 15-minute open interval and the 6-hour closed interval
 await post("/api/discover", { market: "US" });
 // The rebuild runs in the background (waitUntil), so wait until the provider calls stop before counting them.
 for (let last = -1; last !== fetchLog.length;) { last = fetchLog.length; await new Promise(resolve => setTimeout(resolve, 400)); }

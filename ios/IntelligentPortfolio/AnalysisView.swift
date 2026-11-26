@@ -343,6 +343,8 @@ struct CandlestickChart: View {
     let levels: ScenarioLevels
     var referenceLines: [ReferenceLine] = []
     var lorentzian: LorentzianOverlay? = nil
+    /// Chart patterns to draw as dashed trendlines (information only). Lines starting before the first candle are extended back to it.
+    var patterns: [ChartPatternReading] = []
 
     var body: some View {
         Canvas { context, size in
@@ -414,6 +416,26 @@ struct CandlestickChart: View {
                 let text = context.resolve(Text(label).font(.system(size: 10, weight: .semibold)).foregroundColor(tint))
                 let measured = text.measure(in: size)
                 let pill = CGRect(x: 4, y: 4, width: measured.width + 12, height: measured.height + 6)
+                context.fill(Path(roundedRect: pill, cornerRadius: pill.height / 2), with: .color(AppTheme.panel.opacity(0.9)))
+                context.stroke(Path(roundedRect: pill, cornerRadius: pill.height / 2), with: .color(tint.opacity(0.5)), lineWidth: 1)
+                context.draw(text, at: CGPoint(x: pill.midX, y: pill.midY), anchor: .center)
+            }
+
+            // Chart patterns: dashed trendlines through the swing points, then a label at the left of each.
+            let dates = series.map(\.date)
+            for (number, pattern) in patterns.enumerated() {
+                let tint = pattern.bullish ? AppTheme.sky : AppTheme.amber
+                for segment in pattern.lines {
+                    // The server clips each line to the 60 days the chart shows, so both ends are on the chart.
+                    guard let i1 = dates.firstIndex(of: segment.d1), let i2 = dates.firstIndex(of: segment.d2), i2 > i1 else { continue }
+                    var path = Path()
+                    path.move(to: CGPoint(x: CGFloat(i1) * xStep, y: y(segment.p1)))
+                    path.addLine(to: CGPoint(x: CGFloat(i2) * xStep, y: y(segment.p2)))
+                    context.stroke(path, with: .color(tint.opacity(0.95)), style: StrokeStyle(lineWidth: 1.4, dash: [6, 3]))
+                }
+                let text = context.resolve(Text(pattern.chip).font(.system(size: 10, weight: .semibold)).foregroundColor(tint))
+                let measured = text.measure(in: size)
+                let pill = CGRect(x: 4, y: 4 + CGFloat(number) * (measured.height + 10) + (lorentzian != nil ? measured.height + 10 : 0), width: measured.width + 12, height: measured.height + 6)
                 context.fill(Path(roundedRect: pill, cornerRadius: pill.height / 2), with: .color(AppTheme.panel.opacity(0.9)))
                 context.stroke(Path(roundedRect: pill, cornerRadius: pill.height / 2), with: .color(tint.opacity(0.5)), lineWidth: 1)
                 context.draw(text, at: CGPoint(x: pill.midX, y: pill.midY), anchor: .center)
