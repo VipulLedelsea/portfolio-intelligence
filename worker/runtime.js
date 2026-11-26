@@ -2208,7 +2208,7 @@ function buildRanking({ candidates, dipScan, patternScan, snapshots, trend, mark
     item.reason = rankRulesReason(item);
     item.sources = ["rules"];
     if (index < 12) item.bars = snapshots.get(item.symbol)?.chart_daily || [];
-    if (index < 12) { const key = `${item.market || "US"}:${item.symbol}`; item.lorentzian = lorentzianReading(LONG_DAILY_OHLC.get(key) || DAILY_OHLC.get(key)); }
+    if (index < 12) { const key = `${item.market || "US"}:${item.symbol}`; item.lorentzian = lorentzianReading(LONG_DAILY_OHLC.get(key) || DAILY_OHLC.get(key)); item.chart_patterns = chartPatternReading(DAILY_OHLC.get(key) || LONG_DAILY_OHLC.get(key)); }
     item.signals = ideaSignals(item, snapshots.get(item.symbol), trend);
     item.signal_tally = { for: item.signals.filter(x => x.reading === "for").length, against: item.signals.filter(x => x.reading === "against").length, neutral: item.signals.filter(x => x.reading === "neutral").length };
     item.evidence_id = item.evidence_key; // kept on the item: a ranking read back from storage no longer holds the RANK_EVIDENCE object itself
@@ -3095,6 +3095,26 @@ async function loadLongDaily(symbols, market) {
       if (bars.length > 260) LONG_DAILY_OHLC.set(`US:${symbol}`, bars.slice(-LORENTZIAN_BARS).map(bar => ({ date: String(bar.date).slice(0, 10), open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.volume })));
     }
   } catch { /* the reading falls back to the one-year bars */ }
+}
+// Information only: classic chart patterns the stock is making (worker/chartpatterns.js). Nothing in the score, stop or exit reads it.
+function chartPatternReading(dailyBars) {
+  if (typeof detectChartPatterns !== "function" || !Array.isArray(dailyBars) || dailyBars.length < 80) return null;
+  try {
+    const bars = dailyBars.slice(-260), found = detectChartPatterns(bars);
+    if (!found || !found.length) return null;
+    // The idea chart shows the last 60 days, so each line is cut to that window (the price is followed along the line).
+    const dates = bars.map(bar => String(bar.date).slice(0, 10)), first = Math.max(0, dates.length - 60);
+    const at = date => { const i = dates.indexOf(date); return i >= 0 ? i : date > dates[dates.length - 1] ? dates.length - 1 : 0; };
+    for (const pattern of found) {
+      pattern.lines = pattern.lines.map(({ d1, p1, d2, p2 }) => {
+        const i1 = at(d1), i2 = at(d2);
+        if (i1 >= first) return { d1, p1, d2, p2 };
+        if (i2 <= first) return null;
+        return { d1: dates[first], p1: +(p1 + (p2 - p1) * (first - i1) / (i2 - i1)).toFixed(2), d2, p2 };
+      }).filter(Boolean);
+    }
+    return found.filter(pattern => pattern.lines.length);
+  } catch { return null; }
 }
 function lorentzianReading(dailyBars) {
   if (typeof lorentzianClassification !== "function" || !Array.isArray(dailyBars) || dailyBars.length < 210) return null;

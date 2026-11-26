@@ -354,6 +354,30 @@ struct RankedIdea: Decodable, Identifiable, Hashable, Sendable {
     let spyBelowHighPct: Double?
     /// Information only: the Lorentzian Classification indicator's reading on the stock's last year of daily bars. Absent on older server data.
     let lorentzian: LorentzianReading?
+    /// Information only: classic chart patterns the stock is making (forming or just broken out). Absent on older server data.
+    let chartPatterns: [ChartPatternReading]?
+}
+
+/// One chart pattern found on a stock's daily bars. `lines` are the trendlines or levels to draw, with dates so they map onto the candles.
+struct ChartPatternReading: Decodable, Hashable, Sendable {
+    let name: String
+    let bias: String
+    let status: String
+    let level: Double
+    let stop: Double
+    let target: Double
+    let since: String
+    let lines: [ChartPatternLine]
+    var bullish: Bool { bias == "bullish" }
+    var broke: Bool { status == "breakout" }
+    var chip: String { "\(name) · \(broke ? "broke out" : "forming")" }
+}
+
+struct ChartPatternLine: Decodable, Hashable, Sendable {
+    let d1: String
+    let p1: Double
+    let d2: String
+    let p2: Double
 }
 
 /// The Lorentzian Classification indicator's output for one stock (a port of jdehorty's open-source TradingView script, default settings).
@@ -383,7 +407,9 @@ extension RankedIdea {
     /// Short chips for the information-only labels, in the order they are shown.
     var labelChips: [String] {
         var chips: [String] = []
-        if let pattern = chartPattern {
+        if let found = chartPatterns, !found.isEmpty {
+            chips.append(contentsOf: found.map(\.chip))
+        } else if let pattern = chartPattern {
             let days = chartPatternDaysAgo ?? 0
             chips.append(days == 0 ? "\(pattern) · today" : "\(pattern) · \(days)d ago")
         }
