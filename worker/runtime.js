@@ -4106,18 +4106,53 @@ const CONSIDER_PROFIT_PCT = 5;
 // +0.78% against +0.95%); after a 5% close 52.4% and +1.29%. A lock only 0.3% to 0.5% over the entry mostly ends in scratches, hence 1%. Armed and hit dates are stored on the
 // holding (lock_armed_at, lock_hit_at) so a lock stays armed once set, and both moments are logged as level events to compare with the backtest.
 const PROFIT_LOCK_ARM_PCT = 3, PROFIT_LOCK_PCT = 1;
-function profitLockState({ buy, boughtDate, bars = [], price, armedAt = null, hitAt = null, stop = 0 }) {
-  const level = buy * (1 + PROFIT_LOCK_PCT / 100), armPrice = buy * (1 + PROFIT_LOCK_ARM_PCT / 100);
-  const base = { arm_pct: PROFIT_LOCK_ARM_PCT, lock_pct: PROFIT_LOCK_PCT, arm_price: round(armPrice, 6), level: round(level, 6), superseded: stop >= level - 1e-9 };
-  const armBar = armedAt ? null : bars.find(bar => bar.d > boughtDate && numeric(bar.c) >= armPrice);
+// For a short the same rule is mirrored: armed by a close 3% UNDER the sell price, the lock sits 1% under it, and it is hit by a later high or the live price reaching it.
+function profitLockState({ buy, boughtDate, bars = [], price, armedAt = null, hitAt = null, stop = 0, direction = "LONG" }) {
+  const short = direction === "SHORT";
+  const level = buy * (1 + (short ? -PROFIT_LOCK_PCT : PROFIT_LOCK_PCT) / 100), armPrice = buy * (1 + (short ? -PROFIT_LOCK_ARM_PCT : PROFIT_LOCK_ARM_PCT) / 100);
+  const base = { arm_pct: PROFIT_LOCK_ARM_PCT, lock_pct: PROFIT_LOCK_PCT, arm_price: round(armPrice, 6), level: round(level, 6), superseded: short ? stop > 0 && stop <= level + 1e-9 : stop >= level - 1e-9 };
+  const armBar = armedAt ? null : bars.find(bar => bar.d > boughtDate && numeric(bar.c) > 0 && (short ? numeric(bar.c) <= armPrice : numeric(bar.c) >= armPrice));
   const armedOn = armedAt ? String(armedAt).slice(0, 10) : armBar?.d || null;
   if (!armedOn) return { ...base, armed: false, armed_on: null, armed_close: null, hit: false, touched_on: null };
-  const touchedBar = bars.find(bar => bar.d > armedOn && numeric(bar.l) > 0 && numeric(bar.l) <= level);
-  const hit = Boolean(hitAt) || Boolean(touchedBar) || (numeric(price) > 0 && numeric(price) <= level);
+  const touchedBar = bars.find(bar => bar.d > armedOn && (short ? numeric(bar.h) >= level : numeric(bar.l) > 0 && numeric(bar.l) <= level));
+  const hit = Boolean(hitAt) || Boolean(touchedBar) || (numeric(price) > 0 && (short ? numeric(price) >= level : numeric(price) <= level));
   return { ...base, armed: true, armed_on: armedOn, armed_close: armBar ? numeric(armBar.c) : null, hit, touched_on: hitAt ? String(hitAt).slice(0, 10) : touchedBar?.d || null };
 }
 
+// The short mirror of monitorLevels: the protective level sits above the price and only moves DOWN, targets sit below, and `peak` holds the LOWEST price seen since entry.
+function monitorShortLevels(row, snapshot) {
+  const market = MARKETS[row.market] || MARKETS.US;
+  const fmt = value => fmtPrice(value, market);
+  const buy = Number(row.buy_price);
+  const atr = numeric(row.monitor_atr) || numeric(snapshot.atr_14) || buy * 0.02;
+  const boughtDate = String(row.bought_at || "").slice(0, 10);
+  const bars = (snapshot.recent_daily || []).filter(bar => bar.d > boughtDate);
+  const price = numeric(snapshot.price);
+  const positive = value => value > 0 ? value : Infinity;
+  const trough = Math.min(positive(numeric(row.peak_high)), buy, positive(price), ...bars.map(bar => positive(numeric(bar.l))));
+  const trendDown = snapshot.daily_supertrend?.direction === "SHORT";
+  const line = trendDown && row.exit_mode !== "LEVELS" ? numeric(snapshot.daily_supertrend?.value) : 0;
+  const fallbackStop = buy + Math.max(2 * atr, buy * 0.01);
+  const persisted = numeric(row.stop_level);
+  const firstRun = row.stop_level == null;
+  let stop = Math.min(positive(persisted), line > price ? line : Infinity, firstRun ? fallbackStop : Infinity);
+  if (!Number.isFinite(stop)) stop = fallbackStop;
+  const ownLevels = (row.idea_strategy === "PATTERN" || row.idea_strategy === "DIP") && numeric(row.target_1) > 0;
+  const target1 = ownLevels ? numeric(row.target_1) : Math.max(0.01, Math.min(positive(numeric(row.target_1)), buy - TARGET_1_ATR * atr));
+  const target2 = ownLevels ? numeric(row.target_2) : Math.max(0.01, Math.min(positive(numeric(row.target_2)), buy - TARGET_2_ATR * atr));
+  const events = [];
+  if (firstRun) events.push({ kind: "INITIAL", reason: `Protective level set at ${fmt(stop)} (${line > 0 && stop === line ? "the daily Supertrend line" : "two daily ranges over your short price, because the daily Supertrend line is not available"}). It falls with the trend and you cover if a day closes over it.` });
+  else if (persisted - stop >= MONITOR_LINE_STEP_ATR * atr) events.push({ kind: "LINE_RAISED", reason: `The daily Supertrend line moved down to ${fmt(stop)}, so your protective level moved down with it.` });
+  const lock = row.exit_mode !== "LEVELS" && !ownLevels ? profitLockState({ buy, boughtDate, bars: snapshot.recent_daily || [], price, armedAt: row.lock_armed_at, hitAt: row.lock_hit_at, stop, direction: "SHORT" }) : null;
+  if (lock?.armed && !row.lock_armed_at) events.push({ kind: "LOCK_ARMED", reason: `${lock.armed_close ? `A daily close of ${fmt(lock.armed_close)} was ${PROFIT_LOCK_ARM_PCT}% or more under your short price, so` : "Your position has closed lower, so"} the profit lock is on at ${fmt(lock.level)} (${PROFIT_LOCK_PCT}% under your short price). If price comes back up to it, the app will suggest locking the gain. This is advice only; the daily Supertrend line is still the exit.` });
+  if (lock?.armed && lock.hit && !lock.superseded && !row.lock_hit_at) events.push({ kind: "LOCK_HIT", reason: `Price ${fmt(price)} is at or over the profit lock ${fmt(lock.level)}${lock.touched_on ? ` (touched ${lock.touched_on})` : ""}. Covering here would lock about ${PROFIT_LOCK_PCT}% under your short price.` });
+  const basis = line > 0 && stop <= line + 1e-9 ? "LINE" : stop < buy - 1e-9 ? "RAISED" : "INITIAL";
+  const stopText = basis === "LINE" ? "the daily Supertrend line, which falls as the downtrend continues; cover if a day closes over it" : basis === "RAISED" ? "lowered with the daily Supertrend line" : "two daily ranges over your short price until the daily Supertrend line is available";
+  return { stop, target1, target2, atr, peak: Number.isFinite(trough) ? trough : buy, basis, stopText, events, line, lock };
+}
+
 function monitorLevels(row, snapshot) {
+  if (isShort(row)) return monitorShortLevels(row, snapshot);
   const market = MARKETS[row.market] || MARKETS.US;
   const fmt = value => fmtPrice(value, market);
   const buy = Number(row.buy_price);
@@ -4150,11 +4185,16 @@ function monitorLevels(row, snapshot) {
 // Writes only what changed. MAX() in SQL keeps a stale read from ever lowering a level that another pass has already raised.
 function monitorStatements(env, row, levels, price, now) {
   const statements = [];
-  const changed = levels.events.length > 0 || row.monitor_atr == null || levels.peak > numeric(row.peak_high) * 1.0005 || levels.stop > numeric(row.stop_level) + 1e-9;
+  const short = isShort(row);
+  const changed = levels.events.length > 0 || row.monitor_atr == null
+    || (short ? row.peak_high == null || levels.peak < numeric(row.peak_high) * 0.9995 || levels.stop < numeric(row.stop_level) - 1e-9
+      : levels.peak > numeric(row.peak_high) * 1.0005 || levels.stop > numeric(row.stop_level) + 1e-9);
   if (!changed) return statements;
   const lockArmed = levels.lock?.armed ? levels.lock.armed_on : null, lockHit = levels.lock?.armed && levels.lock.hit && !levels.lock.superseded ? (levels.lock.touched_on || now.slice(0, 10)) : null;
-  statements.push(env.DB.prepare(`UPDATE holdings SET monitor_atr = COALESCE(monitor_atr, ?), stop_level = MAX(COALESCE(stop_level, 0), ?),
-    target_1 = MAX(COALESCE(target_1, 0), ?), target_2 = MAX(COALESCE(target_2, 0), ?), peak_high = MAX(COALESCE(peak_high, 0), ?), monitor_at = ?,
+  // A short's levels only ever move down, so MIN() (over a huge default) plays the part MAX() does for a long.
+  const [pick, none] = short ? ["MIN", "1e18"] : ["MAX", "0"];
+  statements.push(env.DB.prepare(`UPDATE holdings SET monitor_atr = COALESCE(monitor_atr, ?), stop_level = ${pick}(COALESCE(stop_level, ${none}), ?),
+    target_1 = ${pick}(COALESCE(target_1, ${none}), ?), target_2 = ${pick}(COALESCE(target_2, ${none}), ?), peak_high = ${pick}(COALESCE(peak_high, ${none}), ?), monitor_at = ?,
     lock_armed_at = COALESCE(lock_armed_at, ?), lock_hit_at = COALESCE(lock_hit_at, ?)
     WHERE id = ? AND closed_at IS NULL`).bind(round(levels.atr, 6), round(levels.stop, 6), round(levels.target1, 6), round(levels.target2, 6), round(levels.peak, 6), now, lockArmed, lockHit, row.id));
   for (const event of levels.events) {
@@ -4193,7 +4233,7 @@ async function monitorHoldings(env, market) {
         const meta = ALERT_ACTIONS[evaluation.action];
         if (row.last_action && meta) statements.push(alertStatement(env, row, now, { kind: evaluation.action, severity: meta[0], title: `${row.symbol}: ${meta[1]}`, detail: `${evaluation.headline}. ${evaluation.reasons[0] || ""}`, key: `${row.id}:${evaluation.action}:${day}` }));
       }
-      for (const event of levels.events) if (event.kind === "LINE_RAISED") statements.push(alertStatement(env, row, now, { kind: "STOP_RAISED", severity: "info", title: `${row.symbol}: protective level raised`, detail: event.reason, key: `${row.id}:STOP:${day}` }));
+      for (const event of levels.events) if (event.kind === "LINE_RAISED") statements.push(alertStatement(env, row, now, { kind: "STOP_RAISED", severity: "info", title: `${row.symbol}: protective level ${isShort(row) ? "lowered" : "raised"}`, detail: event.reason, key: `${row.id}:STOP:${day}` }));
     } catch { /* one bad row must not stop the rest */ }
   }
   // Upcoming earnings and serious filings on held stocks, from the same cached lookups as the ranking.
@@ -4220,7 +4260,7 @@ async function monitorHoldings(env, market) {
 // The protective level sits 2 daily ATRs (at least 1%) below the buy price; target 1 is 1 daily ATR above it and
 // target 2 is 2 daily ATRs above (see STOP_ATR). US positions pass `levels` from the position monitor, which ratchets the stop up
 // and the targets out as the trade and the market develop; other markets use the fixed levels.
-function evaluateHolding(holding, snapshot, levels = null) {
+function evaluateLongHolding(holding, snapshot, levels = null) {
   const market = MARKETS[holding.market] || MARKETS.US;
   const fmt = value => fmtPrice(value, market);
   const price = numeric(snapshot.price);
@@ -4378,6 +4418,151 @@ function evaluateHolding(holding, snapshot, levels = null) {
   };
 }
 
+// The short mirror of the read above. Cover (buy back) when a daily close is OVER the daily Supertrend line, the protective level is above the price, targets are below,
+// and profit is price falling. `cost` is what the short sold for and `value` what it would cost to buy back now, so profit is cost minus value.
+function evaluateShortHolding(holding, snapshot, levels = null) {
+  const market = MARKETS[holding.market] || MARKETS.US;
+  const fmt = value => fmtPrice(value, market);
+  const price = numeric(snapshot.price);
+  const buy = Number(holding.buy_price), shares = Number(holding.shares);
+  const trend4h = snapshot.supertrend?.direction || "LONG";
+  const dailyTrend = snapshot.daily_supertrend?.direction || "LONG";
+  const adx = numeric(snapshot.daily_adx?.value);
+  const atr = numeric(snapshot.atr_14) || buy * 0.02;
+  const stopLevel = levels ? levels.stop : buy + Math.max(STOP_ATR * atr, buy * 0.01);
+  const trailing = trend4h === "SHORT" && numeric(snapshot.supertrend?.value) > 0 ? Math.min(stopLevel, numeric(snapshot.supertrend?.value)) : stopLevel;
+  const target1 = levels ? levels.target1 : Math.max(0.01, buy - TARGET_1_ATR * atr), target2 = levels ? levels.target2 : Math.max(0.01, buy - TARGET_2_ATR * atr);
+  const stopText = levels ? levels.stopText : "two daily ranges above your short price";
+  const pnlPct = tradePct(holding, price);
+  const reasons = [];
+  let action, headline;
+  const sma20 = numeric(snapshot.sma_20);
+  if (levels && holding.exit_mode === "LEVELS") {
+    // Counter-trend or idea-based shorts: the daily trend is up by design, so it is not an exit. Cover at the protective level or take profit at target 1, with a 10-day limit.
+    const boughtDay = String(holding.bought_at || "").slice(0, 10), dailyBars = snapshot.recent_daily || [];
+    const daysHeld = dailyBars.filter(bar => bar.d > boughtDay).length + (dailyBars.some(bar => bar.d === boughtDay) ? 1 : 0);
+    const sinceBuy = dailyBars.filter(bar => bar.d > boughtDay);
+    const stopBar = sinceBuy.find(bar => numeric(bar.h) >= stopLevel);
+    const targetBar = sinceBuy.find(bar => numeric(bar.l) > 0 && numeric(bar.l) <= target1);
+    const trough = levels.peak || price;
+    const targetFirst = Boolean(targetBar) && (!stopBar || targetBar.d < stopBar.d);
+    const targetSeen = targetFirst || (!stopBar && (price <= target1 || trough <= target1));
+    if (stopBar && !targetFirst) {
+      action = "EXIT";
+      headline = "Price traded over the protective level after you shorted";
+      reasons.push(`On ${stopBar.d} the high (${fmt(numeric(stopBar.h))}) went over the protective level ${fmt(stopLevel)} (${stopText}), which is the exit for this short. Price now ${fmt(price)}.`);
+    } else if (targetSeen) {
+      action = "TAKE_PROFIT";
+      headline = price <= target1 ? (price <= target2 ? "Target 2 has been reached" : "Target 1 has been reached") : "Target 1 was reached earlier and price has since bounced back";
+      reasons.push(price <= target1
+        ? `Price ${fmt(price)} is under ${price <= target2 ? `target 2 at ${fmt(target2)}` : `target 1 at ${fmt(target1)}`}. This kind of short is graded at its first target.`
+        : `Price reached target 1 (${fmt(target1)})${targetBar ? ` on ${targetBar.d}` : " earlier"} and is now ${fmt(price)}. The plan was to take profit there.`);
+    } else if (price >= stopLevel) {
+      action = "EXIT";
+      headline = "Price is over the protective level for this short";
+      reasons.push(`Price ${fmt(price)} is over the protective level ${fmt(stopLevel)} (${stopText}).`);
+    } else if (daysHeld >= 10 && price > target1) {
+      action = "EXIT";
+      headline = "Time limit reached: this kind of short is closed by day 10";
+      reasons.push(`Counter-trend shorts are tested with a 10-day limit and did not reach target 1 (${fmt(target1)}) in that time, so holding longer is outside the tested plan.`);
+    } else if ((stopLevel - price) < 0.5 * atr) {
+      action = "WATCH";
+      headline = "Close to the protective level";
+      reasons.push(`Price is within half a daily range of the protective level ${fmt(stopLevel)}.`);
+    } else {
+      action = "HOLD";
+      headline = "Within plan";
+      reasons.push(`Shorted against an up daily trend, so that trend is not an exit. Protective level ${fmt(stopLevel)}, first target ${fmt(target1)}, and a 10-day limit (day ${Math.max(1, daysHeld)} now).`);
+    }
+  } else if (levels) {
+    const warnings = [];
+    if (trend4h === "LONG") warnings.push("The 4-hour Supertrend has turned up. This is an early warning, not the exit.");
+    if (adx < 20) warnings.push(`Daily ADX is ${adx.toFixed(1)}, below 20, so the downtrend is losing strength.`);
+    if (sma20 && price > sma20) warnings.push(`Price is over its 20-day average (${fmt(sma20)}).`);
+    if (price >= stopLevel && dailyTrend !== "LONG") warnings.push(`Price is at or over the protective level ${fmt(stopLevel)}. The exit is a day CLOSING over it, so a close over it today means cover at the next open.`);
+    const rest = () => warnings.filter(text => !text.startsWith("Price is at or over"));
+    if (snapshot.daily_supertrend?.direction && snapshot.data_complete !== false && dailyTrend === "LONG") {
+      action = "EXIT";
+      headline = "The daily trend has turned up";
+      reasons.push("A completed daily close is over the daily Supertrend line, which is the exit for a Supertrend short. Cover at the next open.");
+      reasons.push(...rest());
+    } else if (levels.lock?.armed && levels.lock.hit && !levels.lock.superseded) {
+      action = "TAKE_PROFIT";
+      headline = "Back at your profit lock: consider locking the gain";
+      reasons.push(`Price ${fmt(price)} is at or over your profit lock ${fmt(levels.lock.level)} (${PROFIT_LOCK_PCT}% under your short price ${fmt(buy)})${levels.lock.touched_on ? `, first touched ${levels.lock.touched_on}` : ""}. It was set after a daily close ${PROFIT_LOCK_ARM_PCT}% or more under your short price${levels.lock.armed_on ? ` (${levels.lock.armed_on})` : ""}.`);
+      reasons.push(`The daily Supertrend is still down (exit line ${fmt(stopLevel)}), so this is advice, not an exit signal. The rule was tested on longs; it is mirrored here and has not been tested on shorts.`);
+      reasons.push(...rest());
+    } else if (pnlPct >= CONSIDER_PROFIT_PCT) {
+      action = "TAKE_PROFIT";
+      headline = `Up ${pnlPct.toFixed(1)}%: consider taking profit`;
+      reasons.push(`Price ${fmt(price)} is ${pnlPct.toFixed(1)}% under your short price ${fmt(buy)}, past the ${CONSIDER_PROFIT_PCT}% point where this app suggests considering covering.`);
+      reasons.push(`The daily Supertrend is still down, with the exit line at ${fmt(stopLevel)}; the targets (${fmt(target1)} and ${fmt(target2)}) are unchanged. Covering here locks the gain.`);
+      reasons.push(...rest());
+    } else if (warnings.length) {
+      action = "WATCH";
+      headline = price >= stopLevel ? "Over the exit line: it only counts if the day closes there" : "The downtrend may be weakening";
+      reasons.push(...warnings);
+      reasons.push("These are warnings only; the exit is the daily Supertrend line.");
+    } else {
+      action = "HOLD";
+      headline = price <= target1 ? "Downtrend is intact (profit zone reached, stay with the trend)" : "Downtrend is intact";
+      reasons.push(`The daily trend is down and the exit line is ${fmt(stopLevel)}. There is no time limit: stay short while the daily Supertrend holds.`);
+      if (price <= target1) reasons.push(`The first profit zone ${fmt(target1)} has been reached. Reaching it does not mean cover.`);
+    }
+  } else if (price >= stopLevel) {
+    action = "EXIT";
+    headline = "Price is over the protective level for this short";
+    reasons.push(`Price ${fmt(price)} is over the protective level ${fmt(stopLevel)} (${stopText}).`);
+  } else if (trend4h === "LONG") {
+    action = "EXIT";
+    headline = "The 4-hour trend has turned up";
+    reasons.push("The confirmed 4H Supertrend (10, 3) is now pointing up, which is how the strategy leaves a short trade.");
+    if (dailyTrend === "LONG") reasons.push("The daily trend is up as well, so both timeframes agree.");
+  } else if (price <= target1) {
+    action = "TAKE_PROFIT";
+    headline = price <= target2 ? "Target 2 has been reached" : "Target 1 has been reached";
+    reasons.push(`Price ${fmt(price)} is under ${price <= target2 ? `target 2 at ${fmt(target2)}` : `target 1 at ${fmt(target1)}`}.`);
+    reasons.push(`The 4H trend is still down. Covering part of the short and trailing the rest over ${fmt(trailing)} follows the trend.`);
+  } else if (dailyTrend === "LONG" || adx < 20 || (trailing - price) < 0.5 * atr) {
+    action = "WATCH";
+    headline = "Downtrend is intact but weakening";
+    if (dailyTrend === "LONG") reasons.push("The daily trend is up while the 4H trend is still down, so the move is against the bigger direction.");
+    if (adx < 20) reasons.push(`Daily ADX is ${adx.toFixed(1)}, below 20, which means weak trend strength.`);
+    if ((trailing - price) < 0.5 * atr) reasons.push(`Price is within half a daily range of the trailing level ${fmt(trailing)}.`);
+  } else {
+    action = "HOLD";
+    headline = "Downtrend is intact";
+    reasons.push(`The 4H trend is down and the daily trend is down. The trailing level is ${fmt(trailing)}.`);
+    reasons.push(`Daily ADX is ${adx.toFixed(1)}${snapshot.daily_adx?.rising ? " and rising" : ""}.`);
+  }
+  return {
+    action, action_label: HOLDING_ACTIONS[action], headline, reasons,
+    current_price: round(price, 4),
+    cost: round(buy * shares, 2),
+    value: round(price * shares, 2),
+    pnl_value: round((buy - price) * shares, 2),
+    pnl_pct: round(pnlPct, 2),
+    stop_level: round(stopLevel, 4),
+    reference_lines: referenceLines(snapshot.chart_refs),
+    exit_mode: holding.exit_mode || "TREND",
+    stop_basis: levels ? levels.basis : "INITIAL",
+    stop_note: levels ? levels.stopText : stopText,
+    profit_lock: levels?.lock || null,
+    trailing_level: round(trailing, 4),
+    target_1: round(target1, 4),
+    target_2: round(target2, 4),
+    trend_4h: trend4h,
+    daily_trend: dailyTrend,
+    daily_adx: round(adx, 1),
+    market_time: snapshot.market_time || null,
+  };
+}
+
+function evaluateHolding(holding, snapshot, levels = null) {
+  const short = isShort(holding);
+  return { ...(short ? evaluateShortHolding : evaluateLongHolding)(holding, snapshot, levels), direction: short ? "SHORT" : "LONG" };
+}
+
 function noDataEvaluation() {
   return { action: "NO_DATA", action_label: HOLDING_ACTIONS.NO_DATA, headline: "Market data is unavailable right now", reasons: ["The data provider did not return enough history for this symbol. It will be checked again on the next refresh."] };
 }
@@ -4411,24 +4596,24 @@ async function buildPortfolio(items) {
     const group = items.filter(item => item.market === marketId && item.action !== "NO_DATA");
     if (!group.length) continue;
     const sectors = await sectorsFor(marketId);
-    const value = group.reduce((sum, item) => sum + item.value, 0), cost = group.reduce((sum, item) => sum + item.cost, 0);
+    const value = group.reduce((sum, item) => sum + item.value, 0), cost = group.reduce((sum, item) => sum + item.cost, 0), pnl = group.reduce((sum, item) => sum + item.pnl_value, 0);
     const bySymbol = new Map(), bySector = new Map(), byAction = new Map();
     let riskToStops = 0;
     for (const item of group) {
       const sector = sectors.get(item.symbol) || "Unknown";
-      const position = bySymbol.get(item.symbol) || { symbol: item.symbol, sector, value: 0, cost: 0, action: item.action };
-      position.value += item.value; position.cost += item.cost;
+      const position = bySymbol.get(item.symbol) || { symbol: item.symbol, sector, value: 0, cost: 0, pnl: 0, action: item.action, direction: item.direction };
+      position.value += item.value; position.cost += item.cost; position.pnl += item.pnl_value;
       bySymbol.set(item.symbol, position);
       const sectorEntry = bySector.get(sector) || { sector, value: 0 };
       sectorEntry.value += item.value; bySector.set(sector, sectorEntry);
       const actionEntry = byAction.get(item.action) || { action: item.action, label: HOLDING_ACTIONS[item.action], count: 0, value: 0 };
       actionEntry.count += 1; actionEntry.value += item.value; byAction.set(item.action, actionEntry);
-      riskToStops += Math.max(0, (item.current_price - item.stop_level) * item.shares);
+      riskToStops += Math.max(0, (item.direction === "SHORT" ? item.stop_level - item.current_price : item.current_price - item.stop_level) * item.shares);
     }
     const weight = amount => value ? round(amount / value * 100, 1) : 0;
     const positions = [...bySymbol.values()].sort((a, b) => b.value - a.value).map(position => ({
-      symbol: position.symbol, sector: position.sector, action: position.action, value: round(position.value, 2), weight_pct: weight(position.value),
-      pnl_pct: position.cost ? round((position.value / position.cost - 1) * 100, 2) : 0,
+      symbol: position.symbol, sector: position.sector, action: position.action, direction: position.direction, value: round(position.value, 2), weight_pct: weight(position.value),
+      pnl_pct: position.cost ? round(position.pnl / position.cost * 100, 2) : 0,
     }));
     markets.push({
       market: marketId,
@@ -4436,8 +4621,8 @@ async function buildPortfolio(items) {
       currency_symbol: MARKETS[marketId].symbolPrefix,
       value: round(value, 2),
       cost: round(cost, 2),
-      pnl_value: round(value - cost, 2),
-      pnl_pct: cost ? round((value / cost - 1) * 100, 2) : 0,
+      pnl_value: round(pnl, 2),
+      pnl_pct: cost ? round(pnl / cost * 100, 2) : 0,
       risk_to_stops_value: round(riskToStops, 2),
       risk_to_stops_pct: value ? round(riskToStops / value * 100, 1) : 0,
       positions,
@@ -4476,15 +4661,20 @@ const MIN_AMOUNT = 1e-4;
 
 // A position bought from a dip or pattern idea (or bought while the daily trend is already down) must not be judged by the Supertrend exit:
 // its daily trend is down by design, so "exit when the daily trend turns down" would fire on day one. Those use a fixed protective level and target.
-async function entryExitMode(env, marketId, symbol, boughtAt, snapshot) {
+// A holding is LONG (bought) or SHORT (sold first, bought back later). Shorts mirror every rule: stops above, targets below, profit when price falls.
+const isShort = row => row?.direction === "SHORT";
+const tradePnl = (row, exitPrice, shares) => (exitPrice - Number(row.buy_price)) * shares * (isShort(row) ? -1 : 1);
+const tradePct = (row, exitPrice) => (isShort(row) ? 1 - exitPrice / Number(row.buy_price) : exitPrice / Number(row.buy_price) - 1) * 100;
+
+async function entryExitMode(env, marketId, symbol, boughtAt, snapshot, direction = "LONG") {
   if (marketId !== "US") return { mode: null };
   try {
     const since = new Date(Date.parse(`${boughtAt}T00:00:00Z`) - 10 * 86400000).toISOString().slice(0, 10);
     const row = await env.DB.prepare(`SELECT strategy, stop_price, target_1, target_2, failure_level, entry_price FROM recommendations WHERE symbol = ? AND strategy IN ('DIP', 'PATTERN')
-      AND action = 'IDEA' AND direction = 'LONG' AND substr(generated_at, 1, 10) >= ? AND substr(generated_at, 1, 10) <= ? ORDER BY generated_at DESC LIMIT 1`).bind(symbol, since, boughtAt).first();
+      AND action = 'IDEA' AND direction = ? AND substr(generated_at, 1, 10) >= ? AND substr(generated_at, 1, 10) <= ? ORDER BY generated_at DESC LIMIT 1`).bind(symbol, direction, since, boughtAt).first();
     if (row) return { mode: "LEVELS", strategy: row.strategy, idea: row };
   } catch { /* fall through to the trend check */ }
-  return { mode: snapshot?.daily_supertrend?.direction === "LONG" ? "TREND" : "LEVELS", strategy: null };
+  return { mode: snapshot?.daily_supertrend?.direction === direction ? "TREND" : "LEVELS", strategy: null };
 }
 
 async function addHolding(request, env) {
@@ -4496,12 +4686,15 @@ async function addHolding(request, env) {
   const market = MARKETS[marketId];
   if (!/^[A-Z0-9.\-^&]{1,15}$/.test(symbol)) throw Object.assign(new Error("Enter a valid ticker symbol"), { status: 400 });
   if (market.universe && !market.universe.some(entry => entry.symbol === symbol)) throw Object.assign(new Error(`Choose one of the ${market.name} symbols`), { status: 400 });
+  const direction = body.direction === undefined || body.direction === null || body.direction === "" ? "LONG" : String(body.direction).toUpperCase();
+  if (direction !== "LONG" && direction !== "SHORT") throw Object.assign(new Error("Choose Long or Short"), { status: 400 });
+  const short = direction === "SHORT";
   const shares = toAmount(body.shares), price = toAmount(body.price);
-  if (!Number.isFinite(shares) || shares < MIN_AMOUNT || shares > 1e9) throw Object.assign(new Error("Enter how many shares you bought"), { status: 400 });
-  if (!Number.isFinite(price) || price < MIN_AMOUNT || price > 1e8) throw Object.assign(new Error("Enter the price you paid per share"), { status: 400 });
+  if (!Number.isFinite(shares) || shares < MIN_AMOUNT || shares > 1e9) throw Object.assign(new Error(short ? "Enter how many shares you shorted" : "Enter how many shares you bought"), { status: 400 });
+  if (!Number.isFinite(price) || price < MIN_AMOUNT || price > 1e8) throw Object.assign(new Error(short ? "Enter the price you shorted at, per share" : "Enter the price you paid per share"), { status: 400 });
   const today = new Date().toISOString().slice(0, 10);
   const boughtAt = body.bought_at === undefined || body.bought_at === null || body.bought_at === "" ? today : body.bought_at;
-  if (!validPastDay(boughtAt, latestDayAnywhere())) throw Object.assign(new Error("Enter a valid purchase date that is not in the future"), { status: 400 });
+  if (!validPastDay(boughtAt, latestDayAnywhere())) throw Object.assign(new Error(`Enter a valid ${short ? "entry" : "purchase"} date that is not in the future`), { status: 400 });
   if (body.allow_duplicate !== true) {
     const dup = await env.DB.prepare("SELECT id FROM holdings WHERE user_id = ? AND symbol = ? AND market = ? AND closed_at IS NULL LIMIT 1").bind(user.id, symbol, marketId).first();
     if (dup) throw Object.assign(new Error(`You already hold ${symbol}. Use "Add shares" on that position so it keeps one average price.`), { status: 409 });
@@ -4511,17 +4704,17 @@ async function addHolding(request, env) {
   const { snapshots, errors } = await holdingSnapshotsFor(env, market, [symbol]);
   if (!snapshots.get(symbol)) throw Object.assign(new Error(`No market data found for ${symbol}${errors?.[0]?.error ? ` (${errors[0].error})` : ""}`), { status: 400 });
   const id = randomBase64Url(12);
-  const entry = await entryExitMode(env, marketId, symbol, boughtAt, snapshots.get(symbol));
+  const entry = await entryExitMode(env, marketId, symbol, boughtAt, snapshots.get(symbol), direction);
   // A pattern buy follows the pattern's own stop, targets and failure level (its idea was tested with those), so they are stored with the holding.
   // A dip buy does the same with the dip idea's stop and targets (2 and 1 to 2 daily ranges from the signal close), so the position is judged against what the scanner saw.
-  const own = (entry.strategy === "PATTERN" || entry.strategy === "DIP") && numeric(entry.idea?.stop_price) > 0 && numeric(entry.idea?.stop_price) < price ? entry.idea : null;
+  const own = (entry.strategy === "PATTERN" || entry.strategy === "DIP") && numeric(entry.idea?.stop_price) > 0 && (short ? numeric(entry.idea?.stop_price) > price : numeric(entry.idea?.stop_price) < price) ? entry.idea : null;
   await env.DB.batch([
-    env.DB.prepare("INSERT INTO holdings (id, user_id, symbol, market, shares, buy_price, bought_at, created_at, exit_mode, idea_strategy, failure_level, stop_level, target_1, target_2, monitor_atr) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    env.DB.prepare("INSERT INTO holdings (id, user_id, symbol, market, shares, buy_price, bought_at, created_at, exit_mode, idea_strategy, failure_level, stop_level, target_1, target_2, monitor_atr, direction) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .bind(id, user.id, symbol, marketId, shares, price, boughtAt, new Date().toISOString(), entry.mode, entry.strategy, own && numeric(own.failure_level) > 0 ? own.failure_level : null,
-        own ? own.stop_price : null, own ? own.target_1 : null, own ? own.target_2 : null, own ? Math.abs(own.target_1 - own.entry_price) : null),
+        own ? own.stop_price : null, own ? own.target_1 : null, own ? own.target_2 : null, own ? Math.abs(own.target_1 - own.entry_price) : null, direction),
     tradeStatement(env, user.id, id, { symbol, market: marketId }, "BUY", shares, price, `${boughtAt}T00:00:00.000Z`),
   ]);
-  return { added: true, id };
+  return { added: true, id, direction };
 }
 
 async function listHoldings(request, env) {
@@ -4550,7 +4743,7 @@ async function listHoldings(request, env) {
     if (list.length < 5) list.push({ at: event.at, kind: event.kind, reason: event.reason });
     eventsByHolding.set(event.holding_id, list);
   }
-  const base = row => ({ id: row.id, symbol: row.symbol, market: row.market, currency_symbol: MARKETS[row.market]?.symbolPrefix || "$", price_decimals: MARKETS[row.market]?.decimals(row.buy_price) ?? 2, shares: row.shares, buy_price: row.buy_price, bought_at: row.bought_at });
+  const base = row => ({ id: row.id, symbol: row.symbol, market: row.market, currency_symbol: MARKETS[row.market]?.symbolPrefix || "$", price_decimals: MARKETS[row.market]?.decimals(row.buy_price) ?? 2, shares: row.shares, buy_price: row.buy_price, bought_at: row.bought_at, direction: isShort(row) ? "SHORT" : "LONG" });
   const openOut = open.map(row => {
     let evaluation;
     try {
@@ -4582,8 +4775,8 @@ async function listHoldings(request, env) {
   const totals = new Map();
   for (const item of openOut) {
     if (item.action === "NO_DATA") continue;
-    const total = totals.get(item.market) || { market: item.market, currency_symbol: item.currency_symbol, cost: 0, value: 0 };
-    total.cost += item.cost; total.value += item.value;
+    const total = totals.get(item.market) || { market: item.market, currency_symbol: item.currency_symbol, cost: 0, value: 0, pnl: 0 };
+    total.cost += item.cost; total.value += item.value; total.pnl += item.pnl_value;
     totals.set(item.market, total);
   }
   const anyOpen = [...symbolsByMarket.keys()].some(marketId => MARKETS[marketId] && marketIsOpen(MARKETS[marketId]));
@@ -4594,8 +4787,8 @@ async function listHoldings(request, env) {
     alerts: { unseen: alertRows.filter(row => !row.seen_at).length, items: alertRows },
     portfolio: await buildPortfolio(openOut),
     market_trends: Object.fromEntries(await Promise.all([...symbolsByMarket.keys()].filter(id => MARKETS[id]).map(async id => [id, (await readStoredScan(env, MARKETS[id]))?.payload?.market_trend || null]))),
-    closed: closed.slice(0, 20).map(row => ({ ...base(row), sell_price: row.sell_price, closed_at: row.closed_at, pnl_value: round((row.sell_price - row.buy_price) * row.shares, 2), pnl_pct: round((row.sell_price / row.buy_price - 1) * 100, 2) })),
-    totals: [...totals.values()].map(total => ({ ...total, cost: round(total.cost, 2), value: round(total.value, 2), pnl_value: round(total.value - total.cost, 2), pnl_pct: total.cost ? round((total.value / total.cost - 1) * 100, 2) : 0 })),
+    closed: closed.slice(0, 20).map(row => ({ ...base(row), sell_price: row.sell_price, closed_at: row.closed_at, pnl_value: round(tradePnl(row, row.sell_price, row.shares), 2), pnl_pct: round(tradePct(row, row.sell_price), 2) })),
+    totals: [...totals.values()].map(({ pnl, ...total }) => ({ ...total, cost: round(total.cost, 2), value: round(total.value, 2), pnl_value: round(pnl, 2), pnl_pct: total.cost ? round(pnl / total.cost * 100, 2) : 0 })),
     disclaimer: "Automated research scenarios from public price data, not personal financial advice. You decide what to do; nothing is ever sent to a broker.",
   };
 }
@@ -4636,16 +4829,16 @@ async function sellHolding(request, env) {
   if (sold >= Number(row.shares) - 1e-9) {
     await env.DB.batch([
       env.DB.prepare("UPDATE holdings SET closed_at = ?, sell_price = ? WHERE id = ? AND user_id = ? AND closed_at IS NULL").bind(now, price, id, user.id),
-      tradeStatement(env, user.id, id, row, "SELL", Number(row.shares), price, now, (price - Number(row.buy_price)) * Number(row.shares)),
+      tradeStatement(env, user.id, id, row, "SELL", Number(row.shares), price, now, tradePnl(row, price, Number(row.shares))),
     ]);
     return { sold: true, closed: true, remaining: 0 };
   }
   const closedId = randomBase64Url(12);
   await env.DB.batch([
     env.DB.prepare("UPDATE holdings SET shares = shares - ? WHERE id = ? AND user_id = ? AND closed_at IS NULL AND shares > ?").bind(sold, id, user.id, sold),
-    env.DB.prepare("INSERT INTO holdings (id, user_id, symbol, market, shares, buy_price, bought_at, created_at, closed_at, sell_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(closedId, user.id, row.symbol, row.market, sold, row.buy_price, row.bought_at, now, now, price),
-    tradeStatement(env, user.id, closedId, row, "SELL", sold, price, now, (price - Number(row.buy_price)) * sold, id),
+    env.DB.prepare("INSERT INTO holdings (id, user_id, symbol, market, shares, buy_price, bought_at, created_at, closed_at, sell_price, direction) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(closedId, user.id, row.symbol, row.market, sold, row.buy_price, row.bought_at, now, now, price, isShort(row) ? "SHORT" : "LONG"),
+    tradeStatement(env, user.id, closedId, row, "SELL", sold, price, now, tradePnl(row, price, sold), id),
   ]);
   return { sold: true, closed: false, remaining: round(Number(row.shares) - sold, 6) };
 }
@@ -4661,7 +4854,7 @@ async function closeHolding(request, env) {
   const now = new Date().toISOString();
   await env.DB.batch([
     env.DB.prepare("UPDATE holdings SET closed_at = ?, sell_price = ? WHERE id = ? AND user_id = ? AND closed_at IS NULL").bind(now, sellPrice, id, user.id),
-    tradeStatement(env, user.id, id, row, "SELL", Number(row.shares), sellPrice, now, (sellPrice - Number(row.buy_price)) * Number(row.shares)),
+    tradeStatement(env, user.id, id, row, "SELL", Number(row.shares), sellPrice, now, tradePnl(row, sellPrice, Number(row.shares))),
   ]);
   return { closed: true };
 }
@@ -4673,7 +4866,7 @@ function computeHoldingStats(closed) {
   for (const row of closed) {
     const shares = Number(row.shares), buy = Number(row.buy_price), sell = Number(row.sell_price);
     if (!(shares > 0 && buy > 0 && sell > 0)) continue;
-    const entry = { symbol: row.symbol, pnl: (sell - buy) * shares, pct: (sell / buy - 1) * 100, closed_at: row.closed_at,
+    const entry = { symbol: row.symbol, pnl: tradePnl(row, sell, shares), pct: tradePct(row, sell), closed_at: row.closed_at,
       days: Math.max(0, (Date.parse(row.closed_at) - Date.parse(`${row.bought_at}T00:00:00Z`)) / 86400000) };
     if (!byMarket.has(row.market)) byMarket.set(row.market, []);
     byMarket.get(row.market).push(entry);
@@ -4782,11 +4975,12 @@ async function holdingStats(request, env) {
     if (trade.side === "BUY") return { shares: true, date: activeCount.get(chain) === 1 };
     return { shares: trade.holding_id !== chain, date: false };
   };
+  const directions = new Map(((await env.DB.prepare("SELECT id, direction FROM holdings WHERE user_id = ?").bind(user.id).all()).results || []).map(row => [row.id, row.direction]));
   return {
     updated_at: new Date().toISOString(),
     markets: computeHoldingStats(closed),
     history: trades.map(trade => ({
-      id: trade.id, at: trade.at, symbol: trade.symbol, market: trade.market, side: trade.side, shares: trade.shares, price: trade.price,
+      id: trade.id, at: trade.at, symbol: trade.symbol, market: trade.market, side: trade.side, direction: directions.get(trade.chain_id || trade.holding_id) === "SHORT" ? "SHORT" : "LONG", shares: trade.shares, price: trade.price,
       currency_symbol: MARKETS[trade.market]?.symbolPrefix || "$", price_decimals: MARKETS[trade.market]?.decimals(trade.price) ?? 2,
       realized_pnl: trade.realized_pnl == null ? null : round(trade.realized_pnl, 2),
       voided: Boolean(trade.voided_at),
@@ -4881,7 +5075,7 @@ async function editEntry(request, env) {
     if (!holding.closed_at || holding.sell_price == null) throw Object.assign(new Error("This entry cannot be edited"), { status: 400 });
     await env.DB.batch([
       env.DB.prepare("UPDATE holdings SET sell_price = ? WHERE id = ? AND user_id = ?").bind(price, holding.id, user.id),
-      voidOld, record(oldShares, trade.at, (price - Number(holding.buy_price)) * oldShares),
+      voidOld, record(oldShares, trade.at, tradePnl(holding, price, oldShares)),
     ]);
   } else {
     const parent = await env.DB.prepare("SELECT * FROM holdings WHERE id = ? AND user_id = ?").bind(chain, user.id).first();
@@ -4891,7 +5085,7 @@ async function editEntry(request, env) {
     await env.DB.batch([
       env.DB.prepare("UPDATE holdings SET shares = ? WHERE id = ? AND user_id = ? AND closed_at IS NULL").bind(available - shares, parent.id, user.id),
       env.DB.prepare("UPDATE holdings SET shares = ?, sell_price = ? WHERE id = ? AND user_id = ?").bind(shares, price, holding.id, user.id),
-      voidOld, record(shares, trade.at, (price - Number(holding.buy_price)) * shares),
+      voidOld, record(shares, trade.at, tradePnl(holding, price, shares)),
     ]);
   }
   return { edited: true };

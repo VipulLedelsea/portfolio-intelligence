@@ -898,6 +898,9 @@ struct Holding: Decodable, Identifiable, Sendable {
     let lastEntry: LastEntry?
     /// Advisory profit lock on Supertrend-exit positions: armed by a daily close 3% over the buy price, set 1% over it. Absent on older payloads and on dip or pattern buys.
     let profitLock: ProfitLock?
+    /// "LONG" or "SHORT". Absent on older payloads, which are longs.
+    let direction: String?
+    var isShort: Bool { direction == "SHORT" }
 }
 
 struct ProfitLock: Decodable, Sendable {
@@ -930,6 +933,8 @@ struct ClosedHolding: Decodable, Identifiable, Sendable {
     let sellPrice: Double
     let pnlValue: Double
     let pnlPct: Double
+    let direction: String?
+    var isShort: Bool { direction == "SHORT" }
 }
 
 struct HoldingTotal: Decodable, Identifiable, Sendable {
@@ -942,6 +947,8 @@ struct HoldingTotal: Decodable, Identifiable, Sendable {
 }
 
 struct AddHoldingBody: Encodable, Sendable {
+    /// "LONG" or "SHORT".
+    let direction: String
     let symbol: String
     let market: String
     let shares: Double
@@ -949,7 +956,7 @@ struct AddHoldingBody: Encodable, Sendable {
     let boughtAt: String
 
     enum CodingKeys: String, CodingKey {
-        case symbol, market, shares, price
+        case direction, symbol, market, shares, price
         case boughtAt = "bought_at"
     }
 }
@@ -1043,6 +1050,8 @@ struct TradeEntry: Decodable, Identifiable, Sendable {
     let currencySymbol: String
     let priceDecimals: Int
     let realizedPnl: Double?
+    let direction: String?
+    var isShort: Bool { direction == "SHORT" }
     let voided: Bool
     let canUndo: Bool
     let edit: TradeEditRules?
